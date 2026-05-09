@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bookkeeper — Free Accounting</title>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -225,16 +225,22 @@ textarea{resize:vertical;min-height:70px}
 
 <!-- LOADING -->
 <div class="loading-screen" id="loading-screen">
-  <div style="font-size:22px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">Bookkeeper</div>
-  <div style="font-size:12px;color:var(--text3);font-family:'JetBrains Mono',monospace">Loading your data...</div>
-  <div class="loading-bar"></div>
+  <div style="display:flex;align-items:center;gap:16px"><svg width="52" height="52" viewBox="0 0 92 94" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ls1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#ls1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="53" x2="74" y2="53" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="63" x2="62" y2="63" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></svg><div><div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:28px;color:#e8eaf0;letter-spacing:-0.5px;line-height:1">Bookkeeper</div><div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:4px;letter-spacing:2px">LOADING...</div></div></div>
+  <div class="loading-bar" style="margin-top:8px"></div>
+</div><div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:4px;letter-spacing:2px">LOADING...</div></div></div>
+  <div class="loading-bar" style="margin-top:8px"></div>
 </div>
 
 <!-- AUTH -->
 <div class="auth-wrap" id="auth-wrap" style="display:none">
   <div class="auth-card">
-    <div class="auth-logo">Bookkeeper</div>
-    <div class="auth-sub">Free accounting software — your data, always safe</div>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:1.75rem">
+      <svg width="48" height="48" viewBox="0 0 92 94" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="al1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#al1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="53" x2="74" y2="53" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="63" x2="62" y2="63" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></svg>
+      <div>
+        <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:26px;color:var(--text);letter-spacing:-0.5px;line-height:1">Bookkeeper</div>
+        <div class="auth-sub" style="margin-bottom:0">Free accounting software — your data, always safe</div>
+      </div>
+    </div>
     <div class="auth-tabs">
       <button class="auth-tab active" onclick="switchAuthTab('login')">Sign In</button>
       <button class="auth-tab" onclick="switchAuthTab('signup')">Create Account</button>
@@ -260,10 +266,12 @@ textarea{resize:vertical;min-height:70px}
 <div class="app" id="app">
   <nav class="sidebar">
     <div class="sidebar-logo">
-      <div class="sidebar-logo-icon">💼</div>
-      <div>
-        <h1>Bookkeeper</h1>
-        <span id="user-company-name">Free accounting</span>
+      <div style="display:flex;align-items:center;gap:10px;padding:0">
+        <svg width="32" height="32" viewBox="0 0 92 94" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="sb1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#sb1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></svg>
+        <div>
+          <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:16px;color:var(--text);letter-spacing:-0.3px;line-height:1.1">Bookkeeper</div>
+          <span id="user-company-name" style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">Free accounting</span>
+        </div>
       </div>
     </div>
     <div class="nav-section">Overview</div>
