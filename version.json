@@ -1,4 +1,4 @@
 {
-  "version": 2,
-  "note": "Reports on home, removed Vendors & Reports tabs, faster loading"
+  "version": 3,
+  "note": "Locked background scroll behind modals, hid scrollbars"
 }
