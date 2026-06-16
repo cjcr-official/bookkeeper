@@ -4,8 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bookkeeper">
 <meta name="theme-color" content="#0f1117">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.png">
 <title>Bookkeeper — Free Accounting</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet">
@@ -376,6 +380,13 @@ body.modal-open .main{overflow:hidden}
 </style>
 </head>
 <body>
+
+<!-- INSTALL HINT (iOS Safari only, dismissible) -->
+<div id="install-hint" style="display:none;position:fixed;bottom:62px;left:0;right:0;z-index:9000;background:var(--surface2,#232d42);border-top:1px solid var(--border2,#2a3349);padding:.9rem 1rem;padding-bottom:max(.9rem,env(safe-area-inset-bottom,.9rem));font-size:13px;color:var(--text,#e8eaf0);display:flex;align-items:center;gap:.75rem">
+  <i class="ti ti-device-mobile" style="font-size:22px;color:#3b82f6;flex-shrink:0"></i>
+  <div style="flex:1;line-height:1.4">For fullscreen, tap <i class="ti ti-share" style="font-size:15px;vertical-align:-2px"></i> <strong>Share</strong> then <strong>Add to Home Screen</strong>.</div>
+  <button onclick="dismissInstallHint()" style="background:none;border:none;color:var(--text3,#8b93a8);font-size:20px;cursor:pointer;flex-shrink:0"><i class="ti ti-x"></i></button>
+</div>
 
 <!-- UPDATE OVERLAY (forced) -->
 <div id="update-overlay" style="display:none;position:fixed;inset:0;z-index:99999;background:var(--bg,#0f1117);align-items:center;justify-content:center;flex-direction:column;padding:2rem;text-align:center">
@@ -1699,7 +1710,7 @@ document.addEventListener('touchend', e=>{
 }, {passive:false});
 
 // ====== AUTO-UPDATE (version check) ======
-const APP_VERSION = 6;  // <-- bump this AND version.json on every deploy
+const APP_VERSION = 7;  // <-- bump this AND version.json on every deploy
 
 async function checkForUpdate() {
   try {
@@ -1729,6 +1740,21 @@ function doUpdate() {
     finish();
   }
 }
+
+// ====== INSTALL HINT (iOS, show only in Safari tab, not standalone) ======
+function dismissInstallHint() {
+  document.getElementById('install-hint').style.display = 'none';
+  try { localStorage.setItem('bk-hide-install-hint','1'); } catch(e){}
+}
+(function(){
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const standalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+  let dismissed = false;
+  try { dismissed = localStorage.getItem('bk-hide-install-hint')==='1'; } catch(e){}
+  if (isIOS && !standalone && !dismissed) {
+    window.addEventListener('load', ()=>{ setTimeout(()=>{ const h=document.getElementById('install-hint'); if(h) h.style.display='flex'; }, 2500); });
+  }
+})();
 
 // Check on load, and every 2 minutes while the app is open
 checkForUpdate();
