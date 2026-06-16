@@ -269,11 +269,18 @@ body.modal-open .main{overflow:hidden}
   .nav-item i{font-size:20px}
 
   /* ── LAYOUT ── */
-  .app{flex-direction:column}
-  .main{padding-bottom:calc(62px + env(safe-area-inset-bottom,0px));height:100vh;overflow-y:auto}
+  .app{flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
+  .main{
+    flex:1;
+    height:auto;
+    min-height:0;
+    overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:calc(62px + env(safe-area-inset-bottom,0px));
+  }
 
   /* ── TOPBAR ── */
-  .topbar{padding:.6rem 1rem;padding-top:calc(.6rem + env(safe-area-inset-top,0px));position:sticky;top:0;z-index:400}
+  .topbar{padding:.6rem 1rem;padding-top:calc(.6rem + env(safe-area-inset-top,0px));position:sticky;top:0;z-index:400;background:var(--bg2)}
   .topbar-breadcrumb{display:none}
   .topbar-title{font-size:16px}
   #topbar-actions .btn span{display:none}
