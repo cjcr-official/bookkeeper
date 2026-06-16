@@ -216,10 +216,13 @@ textarea{resize:vertical;min-height:70px}
 .bar-label{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace}
 
 /* ── SCROLLBAR ── */
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px}
-::-webkit-scrollbar-thumb:hover{background:var(--text3)}
+/* hide all scrollbars (still scrollable) */
+*{scrollbar-width:none;-ms-overflow-style:none}
+::-webkit-scrollbar{width:0;height:0;display:none}
+
+/* lock background scroll when a modal is open */
+body.modal-open{overflow:hidden;position:fixed;width:100%}
+body.modal-open .main{overflow:hidden}
 
 @media print{.sidebar,.topbar,.modal-overlay{display:none!important}.main{overflow:visible}}
 
@@ -1031,7 +1034,7 @@ function openInvoiceModal(inv) {
     editingInvLines = [{desc:'',qty:1,rate:0,amount:0}];
   }
   renderInvLines();
-  document.getElementById('modal-invoice').classList.add('open');
+  openModal('modal-invoice');
 }
 
 function editInvoice(id) { openInvoiceModal(cache.invoices.find(i=>i.id===id)); }
@@ -1141,7 +1144,7 @@ function viewInvoice(id) {
     </div>
     ${inv.notes?`<div style="margin-top:1.5rem;padding:1rem;background:#F7F6F3;border-radius:var(--radius-sm);font-size:12px;color:var(--text2)">${inv.notes}</div>`:''}
   </div>`;
-  document.getElementById('modal-view-invoice').classList.add('open');
+  openModal('modal-view-invoice');
 }
 
 // ====== CUSTOMERS ======
@@ -1180,7 +1183,7 @@ function openCustomerModal(c) {
   document.getElementById('cust-phone').value = c?c.phone:'';
   document.getElementById('cust-address').value = c?c.address:'';
   document.getElementById('cust-miles').value = c&&c.miles?c.miles:'';
-  document.getElementById('modal-customer').classList.add('open');
+  openModal('modal-customer');
 }
 function editCustomer(id) { openCustomerModal(cache.customers.find(c=>c.id===id)); }
 
@@ -1275,7 +1278,7 @@ function openTripModal(trip) {
     document.getElementById('trip-purpose').value = '';
   }
   calcTripMiles();
-  document.getElementById('modal-trip').classList.add('open');
+  openModal('modal-trip');
 }
 function editTrip(id) { openTripModal(cache.trips.find(t=>t.id===id)); }
 
@@ -1370,7 +1373,7 @@ function openExpenseModal(exp) {
   document.getElementById('exp-desc').value = exp?exp.description:'';
   document.getElementById('exp-account').innerHTML = cache.accounts.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
   if (exp) document.getElementById('exp-account').value = exp.account_id||'';
-  document.getElementById('modal-expense').classList.add('open');
+  openModal('modal-expense');
 }
 function editExpense(id) { openExpenseModal(cache.expenses.find(e=>e.id===id)); }
 
@@ -1427,7 +1430,7 @@ function openVendorModal(v) {
   document.getElementById('vend-email').value=v?v.email:'';
   document.getElementById('vend-phone').value=v?v.phone:'';
   document.getElementById('vend-category').value=v?v.category:'';
-  document.getElementById('modal-vendor').classList.add('open');
+  openModal('modal-vendor');
 }
 function editVendor(id) { openVendorModal(cache.vendors.find(v=>v.id===id)); }
 
@@ -1493,7 +1496,7 @@ function openAccountModal(a) {
   document.getElementById('acc-type').value=a?a.type:'Bank';
   document.getElementById('acc-balance').value=a?a.balance:'0';
   document.getElementById('acc-desc').value=a?a.description:'';
-  document.getElementById('modal-account').classList.add('open');
+  openModal('modal-account');
 }
 function editAccount(id) { openAccountModal(cache.accounts.find(a=>a.id===id)); }
 
@@ -1585,7 +1588,15 @@ async function saveSettings() {
 }
 
 // ====== MODAL ======
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+  document.body.classList.add('modal-open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  // only unlock scroll if no other modal is still open
+  if (!document.querySelector('.modal-overlay.open')) document.body.classList.remove('modal-open');
+}
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');}));
 
 // ====== BOOT ======
@@ -1669,7 +1680,7 @@ document.addEventListener('touchend', e=>{
 }, {passive:false});
 
 // ====== AUTO-UPDATE (version check) ======
-const APP_VERSION = 2;  // <-- bump this AND version.json on every deploy
+const APP_VERSION = 3;  // <-- bump this AND version.json on every deploy
 
 async function checkForUpdate() {
   try {
