@@ -171,6 +171,17 @@ tr:hover td{background:var(--surface2)}
 .form-group{margin-bottom:1rem}
 label{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace}
 input,select,textarea{width:100%;padding:.55rem .75rem;border:1px solid var(--border2);border-radius:var(--radius-sm);font-size:13.5px;font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg2);color:var(--text);outline:none;transition:border .15s,box-shadow .15s}
+/* date inputs: keep content inside the box, align left, never overflow on iOS */
+input[type="date"]{
+  -webkit-appearance:none;appearance:none;
+  text-align:left;
+  min-width:0;max-width:100%;
+  display:block;
+}
+input[type="date"]::-webkit-date-and-time-value{text-align:left;margin:0}
+input[type="date"]::-webkit-calendar-picker-indicator{margin-left:auto;flex-shrink:0}
+input[type="date"]::-webkit-datetime-edit{padding:0}
+
 input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
 select option{background:var(--surface);color:var(--text)}
 textarea{resize:vertical;min-height:70px}
