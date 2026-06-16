@@ -436,11 +436,9 @@ textarea{resize:vertical;min-height:70px}
     <div class="nav-item" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
     <div class="nav-section">Money Out</div>
     <div class="nav-item" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
-    <div class="nav-item" onclick="showPage('vendors',this)"><i class="ti ti-building-store"></i><span>Vendors</span></div>
     <div class="nav-section">Finance</div>
     <div class="nav-item" onclick="showPage('accounts',this)"><i class="ti ti-credit-card"></i><span>Accounts</span></div>
     <div class="nav-item" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
-    <div class="nav-item" onclick="showPage('reports',this)"><i class="ti ti-chart-bar"></i><span>Reports</span></div>
     </div>
     <div style="margin-top:auto">
       <div class="nav-item" onclick="showPage('settings',this)"><i class="ti ti-settings"></i> Settings</div>
@@ -491,6 +489,17 @@ textarea{resize:vertical;min-height:70px}
           <div class="card-header"><h3>Recent Expenses</h3><button class="btn btn-sm" onclick="showPage('expenses',null)">View all</button></div>
           <div id="dash-expenses"></div>
         </div>
+
+        <!-- REPORTS (on dashboard) -->
+        <div style="margin-top:1.5rem">
+          <div class="tabs" id="report-tabs">
+            <div class="tab active" onclick="showReport('pl',this)">Profit & Loss</div>
+            <div class="tab" onclick="showReport('bs',this)">Balance Sheet</div>
+            <div class="tab" onclick="showReport('ar',this)">Accounts Receivable</div>
+            <div class="tab" onclick="showReport('exp',this)">Expense Summary</div>
+          </div>
+          <div id="report-content"></div>
+        </div>
       </div>
 
       <!-- INVOICES -->
@@ -515,25 +524,9 @@ textarea{resize:vertical;min-height:70px}
         <div class="card"><div id="expenses-table"></div></div>
       </div>
 
-      <!-- VENDORS -->
-      <div id="page-vendors" class="page">
-        <div class="card"><div id="vendors-table"></div></div>
-      </div>
-
       <!-- ACCOUNTS -->
       <div id="page-accounts" class="page">
         <div class="card"><div id="accounts-table"></div></div>
-      </div>
-
-      <!-- REPORTS -->
-      <div id="page-reports" class="page">
-        <div class="tabs">
-          <div class="tab active" onclick="showReport('pl',this)">Profit & Loss</div>
-          <div class="tab" onclick="showReport('bs',this)">Balance Sheet</div>
-          <div class="tab" onclick="showReport('ar',this)">Accounts Receivable</div>
-          <div class="tab" onclick="showReport('exp',this)">Expense Summary</div>
-        </div>
-        <div id="report-content"></div>
       </div>
 
       <!-- SETTINGS -->
@@ -886,20 +879,21 @@ async function doLogout() {
 
 // ====== DATA LOADING ======
 async function loadAllData() {
-  const [prof, customers, invoices, expenses, vendors, accounts, trips] = await Promise.all([
-    sb.from('profiles').select('*').eq('id', currentUser.id).single(),
-    sb.from('customers').select('*').eq('user_id', currentUser.id).order('name'),
-    sb.from('invoices').select('*').eq('user_id', currentUser.id).order('created_at', {ascending:false}),
-    sb.from('expenses').select('*').eq('user_id', currentUser.id).order('date', {ascending:false}),
-    sb.from('vendors').select('*').eq('user_id', currentUser.id).order('name'),
-    sb.from('accounts').select('*').eq('user_id', currentUser.id).order('name'),
-    sb.from('trips').select('*').eq('user_id', currentUser.id).order('date', {ascending:false}),
+  // Each query wrapped so one missing table (e.g. trips before SQL is run) can't hang the whole load
+  const safe = (q) => q.then(r=>r).catch(e=>({data:null,error:e}));
+  const [prof, customers, invoices, expenses, accounts, trips] = await Promise.all([
+    safe(sb.from('profiles').select('*').eq('id', currentUser.id).single()),
+    safe(sb.from('customers').select('*').eq('user_id', currentUser.id).order('name')),
+    safe(sb.from('invoices').select('*').eq('user_id', currentUser.id).order('created_at', {ascending:false})),
+    safe(sb.from('expenses').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
+    safe(sb.from('accounts').select('*').eq('user_id', currentUser.id).order('name')),
+    safe(sb.from('trips').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
   ]);
   profile = prof.data || {};
   cache.customers = customers.data || [];
   cache.invoices = invoices.data || [];
   cache.expenses = expenses.data || [];
-  cache.vendors = vendors.data || [];
+  cache.vendors = [];
   cache.accounts = accounts.data || [];
   cache.trips = trips.data || [];
 }
@@ -910,7 +904,7 @@ function showPage(page, el) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   if (el) { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
-  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',vendors:'Vendors',accounts:'Chart of Accounts',mileage:'Mileage',reports:'Reports',settings:'Settings'};
+  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Chart of Accounts',mileage:'Mileage',settings:'Settings'};
   document.getElementById('page-title').textContent = titles[page]||page;
   const bc = document.getElementById('topbar-breadcrumb-page');
   if (bc) bc.textContent = titles[page]||page;
@@ -918,7 +912,6 @@ function showPage(page, el) {
     invoices:`<button class="btn btn-primary" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> New Invoice</button>`,
     customers:`<button class="btn btn-primary" onclick="openCustomerModal()"><i class="ti ti-plus"></i> New Customer</button>`,
     expenses:`<button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> New Expense</button>`,
-    vendors:`<button class="btn btn-primary" onclick="openVendorModal()"><i class="ti ti-plus"></i> New Vendor</button>`,
     accounts:`<button class="btn btn-primary" onclick="openAccountModal()"><i class="ti ti-plus"></i> New Account</button>`,
     mileage:`<button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> Log Trip</button>`,
   };
@@ -931,10 +924,8 @@ function renderPage(page) {
   else if (page==='invoices') renderInvoices();
   else if (page==='customers') renderCustomers();
   else if (page==='expenses') renderExpenses();
-  else if (page==='vendors') renderVendors();
   else if (page==='accounts') renderAccounts();
   else if (page==='mileage') renderMileage();
-  else if (page==='reports') renderReport(currentReport);
   else if (page==='settings') loadSettingsForm();
 }
 
@@ -977,6 +968,9 @@ function renderDashboard() {
   re.innerHTML = rexp.length
     ? `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Amount</th></tr></thead><tbody>${rexp.map(e=>`<tr><td>${fmtDate(e.date)}</td><td>${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td class="red">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`;
+
+  // Render the reports section that now lives on the dashboard
+  if (document.getElementById('report-content')) renderReport(currentReport);
 }
 
 // ====== INVOICES ======
@@ -1523,7 +1517,7 @@ async function deleteAccount(id) {
 }
 
 // ====== REPORTS ======
-function showReport(r,el) { currentReport=r; document.querySelectorAll('#page-reports .tab').forEach(t=>t.classList.remove('active')); if(el)el.classList.add('active'); renderReport(r); }
+function showReport(r,el) { currentReport=r; document.querySelectorAll('#report-tabs .tab').forEach(t=>t.classList.remove('active')); if(el)el.classList.add('active'); renderReport(r); }
 
 function renderReport(r) {
   const el=document.getElementById('report-content');
@@ -1675,7 +1669,7 @@ document.addEventListener('touchend', e=>{
 }, {passive:false});
 
 // ====== AUTO-UPDATE (version check) ======
-const APP_VERSION = 1;  // <-- bump this AND version.json on every deploy
+const APP_VERSION = 2;  // <-- bump this AND version.json on every deploy
 
 async function checkForUpdate() {
   try {
