@@ -582,6 +582,10 @@ body.modal-open .main{overflow:hidden}
           <div class="tab" onclick="filterInvoices('paid',this)">Paid</div>
           <div class="tab" onclick="filterInvoices('overdue',this)">Overdue</div>
         </div>
+        <div style="position:relative;margin-bottom:1rem">
+          <i class="ti ti-search" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;pointer-events:none"></i>
+          <input type="text" id="inv-search" placeholder="Search by invoice # or customer..." oninput="renderInvoices()" style="padding-left:2.2rem">
+        </div>
         <div class="card"><div id="invoices-table"></div></div>
       </div>
 
@@ -1050,11 +1054,41 @@ function renderDashboard() {
 }
 
 // ====== INVOICES ======
+function viewCustomerInvoices(name) {
+  // jump to Invoices tab, reset status filter to All, and search by this customer's name
+  invFilter = 'all';
+  // switch page
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const invPage = document.getElementById('page-invoices');
+  if (invPage) invPage.classList.add('active');
+  // update nav highlight (bottom bar)
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const navInv = Array.from(document.querySelectorAll('.nav-item')).find(n=>/invoices/i.test(n.textContent));
+  if (navInv) navInv.classList.add('active');
+  // update header title
+  const pt = document.getElementById('page-title'); if (pt) pt.textContent = 'Invoices';
+  // reset status tabs to All
+  const tabs = document.querySelectorAll('#page-invoices .tab');
+  tabs.forEach(t=>t.classList.remove('active'));
+  if (tabs[0]) tabs[0].classList.add('active');
+  // set the search box to the customer name and render
+  const box = document.getElementById('inv-search');
+  if (box) box.value = name;
+  renderInvoices();
+  // scroll list into view at top
+  const main = document.querySelector('.main'); if (main) main.scrollTop = 0;
+}
+
 function filterInvoices(f,el) { invFilter=f; document.querySelectorAll('#page-invoices .tab').forEach(t=>t.classList.remove('active')); if(el)el.classList.add('active'); renderInvoices(); }
 
 function renderInvoices() {
   let list = cache.invoices.slice();
   if (invFilter!=='all') list = list.filter(i=>i.status===invFilter);
+  const q = (document.getElementById('inv-search')?.value||'').trim().toLowerCase();
+  if (q) list = list.filter(i =>
+    (i.number||'').toLowerCase().includes(q) ||
+    (i.customer_name||'').toLowerCase().includes(q)
+  );
   const el = document.getElementById('invoices-table');
   if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices found</p></div>`; return; }
   const isMobile = window.innerWidth <= 768;
@@ -1274,13 +1308,14 @@ function renderCustomers() {
         <div class="m-card-right">
           <div class="m-card-amount">${fmt(totalOf(c))}</div>
           <div class="m-card-actions">
+            <button class="btn btn-sm" onclick="event.stopPropagation();viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button>
             <button class="btn btn-sm" onclick="event.stopPropagation();editCustomer('${c.id}')"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button>
           </div>
         </div>
       </div>`).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td>${c.phone||'—'}</td><td>${fmt(totalOf(c))}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td>${c.phone||'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
