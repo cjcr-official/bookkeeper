@@ -1,4 +1,4 @@
 {
-  "version": 5,
-  "note": "Fixed stuck LOADING text in corner"
+  "version": 6,
+  "note": "Settings moved to top bar, fixed bottom nav (no scroll)"
 }
