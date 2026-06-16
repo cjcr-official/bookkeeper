@@ -1,4 +1,4 @@
 {
-  "version": 22,
-  "note": "Added customer search by name"
+  "version": 24,
+  "note": "View Invoices button per customer + search refinements"
 }
