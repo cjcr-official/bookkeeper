@@ -587,6 +587,10 @@ body.modal-open .main{overflow:hidden}
 
       <!-- CUSTOMERS -->
       <div id="page-customers" class="page">
+        <div style="position:relative;margin-bottom:1rem">
+          <i class="ti ti-search" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;pointer-events:none"></i>
+          <input type="text" id="cust-search" placeholder="Search customers by name..." oninput="renderCustomers()" style="padding-left:2.2rem">
+        </div>
         <div class="card"><div id="customers-table"></div></div>
       </div>
 
@@ -1250,8 +1254,16 @@ function renderCustomers() {
   const el = document.getElementById('customers-table');
   if (!cache.customers.length) { el.innerHTML = `<div class="empty"><i class="ti ti-users"></i><p>No customers yet</p></div>`; return; }
   const totalOf = c => cache.invoices.filter(i=>i.customer_id===c.id).reduce((s,i)=>s+parseFloat(i.total||0),0);
+  const q = (document.getElementById('cust-search')?.value||'').trim().toLowerCase();
+  let list = cache.customers;
+  if (q) list = list.filter(c =>
+    (c.name||'').toLowerCase().includes(q) ||
+    (c.contact||'').toLowerCase().includes(q) ||
+    (c.email||'').toLowerCase().includes(q)
+  );
+  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-search"></i><p>No customers match "${q}"</p></div>`; return; }
   if (window.innerWidth <= 768) {
-    el.innerHTML = cache.customers.map(c=>`
+    el.innerHTML = list.map(c=>`
       <div class="m-card" onclick="editCustomer('${c.id}')">
         <div class="m-card-main">
           <div class="m-card-title">${c.name}</div>
@@ -1268,7 +1280,7 @@ function renderCustomers() {
         </div>
       </div>`).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${cache.customers.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td>${c.phone||'—'}</td><td>${fmt(totalOf(c))}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td>${c.phone||'—'}</td><td>${fmt(totalOf(c))}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
