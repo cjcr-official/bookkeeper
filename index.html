@@ -1738,17 +1738,22 @@ document.addEventListener('touchend', e=>{
 }, {passive:false});
 
 // ====== AUTO-UPDATE (version check) ======
-const APP_VERSION = 10;  // <-- bump this AND version.json on every deploy
+const APP_VERSION = 11;  // <-- bump this AND version.json on every deploy
 
 async function checkForUpdate() {
   try {
-    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    // strong cache-bust: unique param + no-store + pragma headers
+    const res = await fetch('version.json?nocache=' + Date.now() + Math.random(), {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+    });
     if (!res.ok) return;
     const data = await res.json();
     if (data && typeof data.version === 'number' && data.version > APP_VERSION) {
       const note = document.getElementById('update-note');
       if (note) note.textContent = data.note ? data.note : ('Version ' + data.version);
-      document.getElementById('update-overlay').style.display = 'flex';
+      const ov = document.getElementById('update-overlay');
+      if (ov) ov.style.display = 'flex';
     }
   } catch(e) { /* offline or no file — ignore silently */ }
 }
@@ -1756,17 +1761,22 @@ async function checkForUpdate() {
 function doUpdate() {
   const btn = document.getElementById('update-btn');
   if (btn) btn.innerHTML = '<span class="spinner"></span> Updating...';
-  // Best-effort: clear caches we are allowed to clear, then hard reload with cache-buster
   const finish = () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('v', Date.now());  // cache-bust the HTML
-    window.location.replace(url.toString());
+    // reload with a fresh cache-buster so the HTML itself is re-fetched
+    const base = window.location.href.split('?')[0].split('#')[0];
+    window.location.replace(base + '?v=' + Date.now());
   };
+  // unregister any service workers + clear caches we're allowed to
+  const tasks = [];
   if (window.caches && caches.keys) {
-    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).then(finish).catch(finish);
-  } else {
-    finish();
+    tasks.push(caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))));
   }
+  if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+    tasks.push(navigator.serviceWorker.getRegistrations().then(rs => Promise.all(rs.map(r => r.unregister()))));
+  }
+  Promise.all(tasks).then(finish).catch(finish);
+  // safety: force reload even if cache clearing stalls
+  setTimeout(finish, 1500);
 }
 
 // ====== INSTALL HINT (iOS, show only in Safari tab, not standalone) ======
@@ -1774,15 +1784,27 @@ function dismissInstallHint() {
   document.getElementById('install-hint').style.display = 'none';
   try { localStorage.setItem('bk-hide-install-hint','1'); } catch(e){}
 }
-(function(){
+function isStandalone() {
+  return window.navigator.standalone === true
+      || window.matchMedia('(display-mode: standalone)').matches
+      || window.matchMedia('(display-mode: fullscreen)').matches;
+}
+function evaluateInstallHint() {
+  const h = document.getElementById('install-hint');
+  if (!h) return;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const standalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
   let dismissed = false;
   try { dismissed = localStorage.getItem('bk-hide-install-hint')==='1'; } catch(e){}
-  if (isIOS && !standalone && !dismissed) {
-    window.addEventListener('load', ()=>{ setTimeout(()=>{ const h=document.getElementById('install-hint'); if(h) h.style.display='flex'; }, 2500); });
+  // Only show in a real iOS Safari TAB (not standalone / not fullscreen) and not dismissed
+  if (isIOS && !isStandalone() && !dismissed) {
+    h.style.display = 'flex';
+  } else {
+    h.style.display = 'none';
   }
-})();
+}
+window.addEventListener('load', ()=>{ setTimeout(evaluateInstallHint, 2000); });
+// re-check if the display mode changes (e.g. launched from home screen)
+try { window.matchMedia('(display-mode: standalone)').addEventListener('change', evaluateInstallHint); } catch(e){}
 
 // Check on load, and every 2 minutes while the app is open
 checkForUpdate();
