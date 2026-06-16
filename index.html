@@ -197,6 +197,8 @@ textarea{resize:vertical;min-height:70px}
 
 /* ── TABS ── */
 .tabs{display:flex;gap:.4rem;margin-bottom:1.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px;width:fit-content}
+.tabs.tabs-full{width:100%}
+.tabs.tabs-full .tab{flex:1;text-align:center}
 .tab{padding:.38rem .85rem;border-radius:6px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--text2);border:none;background:transparent;font-family:'Plus Jakarta Sans',sans-serif;transition:all .15s}
 .tab.active{background:var(--accent);color:#fff;box-shadow:0 2px 8px var(--accent-glow)}
 .tab:hover:not(.active){background:var(--surface2);color:var(--text)}
@@ -573,7 +575,7 @@ body.modal-open .main{overflow:hidden}
 
       <!-- INVOICES -->
       <div id="page-invoices" class="page">
-        <div class="tabs">
+        <div class="tabs tabs-full">
           <div class="tab active" onclick="filterInvoices('all',this)">All</div>
           <div class="tab" onclick="filterInvoices('draft',this)">Draft</div>
           <div class="tab" onclick="filterInvoices('sent',this)">Sent</div>
