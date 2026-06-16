@@ -1,4 +1,4 @@
 {
-  "version": 12,
-  "note": "Update prompts now work reliably"
+  "version": 14,
+  "note": "Pinned header on all pages, collapsible Reports card"
 }
