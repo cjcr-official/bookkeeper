@@ -1,4 +1,4 @@
 {
-  "version": 4,
-  "note": "Modals now scroll vertically only — no sideways movement"
+  "version": 5,
+  "note": "Fixed stuck LOADING text in corner"
 }
