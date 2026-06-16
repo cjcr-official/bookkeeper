@@ -1,4 +1,4 @@
 {
-  "version": 19,
-  "note": "Added top buffer to popups so they clear the status bar"
+  "version": 20,
+  "note": "Removed color seam at bottom nav"
 }
