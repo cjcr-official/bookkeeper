@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f1117">
@@ -70,7 +70,7 @@
   --shadow-lg:0 20px 60px rgba(0,0,0,.15);
 }
 
-body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh;transition:background .2s,color .2s}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh;transition:background .2s,color .2s;touch-action:pan-x pan-y;-webkit-text-size-adjust:100%}
 h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 
 /* ── THEME TOGGLE ── */
@@ -329,6 +329,26 @@ textarea{resize:vertical;min-height:70px}
   .toast{left:1rem;right:1rem;bottom:74px;text-align:center}
   .bar-chart{height:90px;gap:5px}
   .bar-label{font-size:9px}
+
+  /* ── SHARED COMPACT LIST CARDS ── */
+  .m-card{
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:.65rem .9rem;margin-bottom:.5rem;
+    display:flex;align-items:center;gap:.75rem;cursor:pointer;
+  }
+  .m-card:active{background:var(--surface2)}
+  .m-card-main{flex:1;min-width:0}
+  .m-card-title{font-size:14px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m-card-sub{font-size:12px;margin-top:.2rem}
+  .m-card-meta{font-size:11px;color:var(--text3);margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'JetBrains Mono',monospace}
+  .m-card-right{text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end}
+  .m-card-amount{font-size:15px;font-weight:700;color:var(--text)}
+  .m-card-actions{display:flex;gap:.35rem;margin-top:.4rem}
+  .m-group-label{
+    font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;
+    letter-spacing:1px;font-family:'JetBrains Mono',monospace;
+    padding:.6rem .25rem .35rem;
+  }
 
   /* keep invoice line-item table as real table */
   #line-items-table thead{display:table-header-group}
@@ -1051,12 +1071,28 @@ function viewInvoice(id) {
 // ====== CUSTOMERS ======
 function renderCustomers() {
   const el = document.getElementById('customers-table');
-  el.innerHTML = cache.customers.length
-    ? `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${cache.customers.map(c=>{
-        const total=cache.invoices.filter(i=>i.customer_id===c.id).reduce((s,i)=>s+parseFloat(i.total||0),0);
-        return `<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td>${c.phone||'—'}</td><td>${fmt(total)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`;
-      }).join('')}</tbody></table>`
-    : `<div class="empty"><i class="ti ti-users"></i><p>No customers yet</p></div>`;
+  if (!cache.customers.length) { el.innerHTML = `<div class="empty"><i class="ti ti-users"></i><p>No customers yet</p></div>`; return; }
+  const totalOf = c => cache.invoices.filter(i=>i.customer_id===c.id).reduce((s,i)=>s+parseFloat(i.total||0),0);
+  if (window.innerWidth <= 768) {
+    el.innerHTML = cache.customers.map(c=>`
+      <div class="m-card" onclick="editCustomer('${c.id}')">
+        <div class="m-card-main">
+          <div class="m-card-title">${c.name}</div>
+          ${c.contact?`<div class="m-card-sub">${c.contact}</div>`:''}
+          ${c.email?`<div class="m-card-meta" style="color:var(--accent)">${c.email}</div>`:''}
+          ${c.phone?`<div class="m-card-meta">${c.phone}</div>`:''}
+        </div>
+        <div class="m-card-right">
+          <div class="m-card-amount">${fmt(totalOf(c))}</div>
+          <div class="m-card-actions">
+            <button class="btn btn-sm" onclick="event.stopPropagation();editCustomer('${c.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button>
+          </div>
+        </div>
+      </div>`).join('');
+  } else {
+    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${cache.customers.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td>${c.phone||'—'}</td><td>${fmt(totalOf(c))}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+  }
 }
 
 function openCustomerModal(c) {
@@ -1093,9 +1129,27 @@ async function deleteCustomer(id) {
 // ====== EXPENSES ======
 function renderExpenses() {
   const el = document.getElementById('expenses-table');
-  el.innerHTML = cache.expenses.length
-    ? `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${cache.expenses.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.description||'—'}</td><td>${e.method||'—'}</td><td class="red" style="font-family:'DM Mono',monospace">${fmt(e.amount)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`
-    : `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`;
+  if (!cache.expenses.length) { el.innerHTML = `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`; return; }
+  if (window.innerWidth <= 768) {
+    el.innerHTML = cache.expenses.map(e=>`
+      <div class="m-card" onclick="editExpense('${e.id}')">
+        <div class="m-card-main">
+          <div class="m-card-title">${e.vendor}</div>
+          <div class="m-card-sub"><span class="badge badge-gray">${e.category}</span></div>
+          ${e.description?`<div class="m-card-meta">${e.description}</div>`:''}
+          <div class="m-card-meta">${fmtDate(e.date)} · ${e.method||'—'}</div>
+        </div>
+        <div class="m-card-right">
+          <div class="m-card-amount red">${fmt(e.amount)}</div>
+          <div class="m-card-actions">
+            <button class="btn btn-sm" onclick="event.stopPropagation();editExpense('${e.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button>
+          </div>
+        </div>
+      </div>`).join('');
+  } else {
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${cache.expenses.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.description||'—'}</td><td>${e.method||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+  }
 }
 
 function openExpenseModal(exp) {
@@ -1135,12 +1189,28 @@ async function deleteExpense(id) {
 // ====== VENDORS ======
 function renderVendors() {
   const el = document.getElementById('vendors-table');
-  el.innerHTML = cache.vendors.length
-    ? `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Category</th><th>Total Paid</th><th></th></tr></thead><tbody>${cache.vendors.map(v=>{
-        const total=cache.expenses.filter(e=>e.vendor===v.name).reduce((s,e)=>s+parseFloat(e.amount||0),0);
-        return `<tr><td style="font-weight:500">${v.name}</td><td>${v.contact||'—'}</td><td style="color:var(--accent)">${v.email||'—'}</td><td>${v.category||'—'}</td><td class="red">${fmt(total)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editVendor('${v.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteVendor('${v.id}')"><i class="ti ti-trash"></i></button></td></tr>`;
-      }).join('')}</tbody></table>`
-    : `<div class="empty"><i class="ti ti-building-store"></i><p>No vendors yet</p></div>`;
+  if (!cache.vendors.length) { el.innerHTML = `<div class="empty"><i class="ti ti-building-store"></i><p>No vendors yet</p></div>`; return; }
+  const paidOf = v => cache.expenses.filter(e=>e.vendor===v.name).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+  if (window.innerWidth <= 768) {
+    el.innerHTML = cache.vendors.map(v=>`
+      <div class="m-card" onclick="editVendor('${v.id}')">
+        <div class="m-card-main">
+          <div class="m-card-title">${v.name}</div>
+          ${v.contact?`<div class="m-card-sub">${v.contact}</div>`:''}
+          ${v.email?`<div class="m-card-meta" style="color:var(--accent)">${v.email}</div>`:''}
+          ${v.category?`<div class="m-card-meta">${v.category}</div>`:''}
+        </div>
+        <div class="m-card-right">
+          <div class="m-card-amount red">${fmt(paidOf(v))}</div>
+          <div class="m-card-actions">
+            <button class="btn btn-sm" onclick="event.stopPropagation();editVendor('${v.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteVendor('${v.id}')"><i class="ti ti-trash"></i></button>
+          </div>
+        </div>
+      </div>`).join('');
+  } else {
+    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Category</th><th>Total Paid</th><th></th></tr></thead><tbody>${cache.vendors.map(v=>`<tr><td style="font-weight:500">${v.name}</td><td>${v.contact||'—'}</td><td style="color:var(--accent)">${v.email||'—'}</td><td>${v.category||'—'}</td><td class="red">${fmt(paidOf(v))}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editVendor('${v.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteVendor('${v.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+  }
 }
 
 function openVendorModal(v) {
@@ -1178,13 +1248,36 @@ function renderAccounts() {
   const el = document.getElementById('accounts-table');
   if (!cache.accounts.length) { el.innerHTML=`<div class="empty"><i class="ti ti-credit-card"></i><p>No accounts yet</p></div>`; return; }
   const types=['Bank','Accounts Receivable','Accounts Payable','Credit Card','Income','Expense','Equity','Other Asset','Other Liability'];
-  let html='';
-  types.forEach(t=>{
-    const accs=cache.accounts.filter(a=>a.type===t); if(!accs.length) return;
-    html+=`<tr><td colspan="5" style="background:#F7F6F3;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-family:'DM Mono',monospace;padding:.5rem 1rem">${t}</td></tr>`;
-    html+=accs.map(a=>`<tr><td style="padding-left:1.5rem;font-weight:500">${a.name}</td><td>${a.type}</td><td style="color:var(--text2)">${a.description||'—'}</td><td style="font-family:'DM Mono',monospace">${fmt(a.balance)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editAccount('${a.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteAccount('${a.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('');
-  });
-  el.innerHTML=`<table><thead><tr><th>Account</th><th>Type</th><th>Description</th><th>Balance</th><th></th></tr></thead><tbody>${html}</tbody></table>`;
+  if (window.innerWidth <= 768) {
+    let h='';
+    types.forEach(t=>{
+      const accs=cache.accounts.filter(a=>a.type===t); if(!accs.length) return;
+      h+=`<div class="m-group-label">${t}</div>`;
+      h+=accs.map(a=>`
+        <div class="m-card" onclick="editAccount('${a.id}')">
+          <div class="m-card-main">
+            <div class="m-card-title">${a.name}</div>
+            ${a.description?`<div class="m-card-meta">${a.description}</div>`:''}
+          </div>
+          <div class="m-card-right">
+            <div class="m-card-amount">${fmt(a.balance)}</div>
+            <div class="m-card-actions">
+              <button class="btn btn-sm" onclick="event.stopPropagation();editAccount('${a.id}')"><i class="ti ti-edit"></i></button>
+              <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteAccount('${a.id}')"><i class="ti ti-trash"></i></button>
+            </div>
+          </div>
+        </div>`).join('');
+    });
+    el.innerHTML = h;
+  } else {
+    let html='';
+    types.forEach(t=>{
+      const accs=cache.accounts.filter(a=>a.type===t); if(!accs.length) return;
+      html+=`<tr><td colspan="5" style="background:var(--bg2);font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-family:'JetBrains Mono',monospace;padding:.5rem 1rem">${t}</td></tr>`;
+      html+=accs.map(a=>`<tr><td style="padding-left:1.5rem;font-weight:500">${a.name}</td><td>${a.type}</td><td style="color:var(--text2)">${a.description||'—'}</td><td style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editAccount('${a.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteAccount('${a.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('');
+    });
+    el.innerHTML=`<table><thead><tr><th>Account</th><th>Type</th><th>Description</th><th>Balance</th><th></th></tr></thead><tbody>${html}</tbody></table>`;
+  }
 }
 
 function openAccountModal(a) {
@@ -1355,6 +1448,17 @@ function toggleTheme() {
     });
   }
 })();
+
+// ====== LOCK ZOOM (iOS Safari) ======
+document.addEventListener('gesturestart', e=>e.preventDefault());
+document.addEventListener('gesturechange', e=>e.preventDefault());
+document.addEventListener('gestureend', e=>e.preventDefault());
+let lastTouch = 0;
+document.addEventListener('touchend', e=>{
+  const now = Date.now();
+  if (now - lastTouch <= 300) e.preventDefault();
+  lastTouch = now;
+}, {passive:false});
 
 boot();
 </script>
