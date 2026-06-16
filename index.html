@@ -422,6 +422,7 @@ textarea{resize:vertical;min-height:70px}
     <div class="nav-item" onclick="showPage('vendors',this)"><i class="ti ti-building-store"></i><span>Vendors</span></div>
     <div class="nav-section">Finance</div>
     <div class="nav-item" onclick="showPage('accounts',this)"><i class="ti ti-credit-card"></i><span>Accounts</span></div>
+    <div class="nav-item" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
     <div class="nav-item" onclick="showPage('reports',this)"><i class="ti ti-chart-bar"></i><span>Reports</span></div>
     </div>
     <div style="margin-top:auto">
@@ -535,6 +536,7 @@ textarea{resize:vertical;min-height:70px}
                 <select id="s-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD ($)</option><option value="AUD">AUD ($)</option></select>
               </div>
             </div>
+            <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
             <div class="form-group"><label>Invoice Terms / Notes</label><textarea id="s-terms" rows="2" placeholder="Payment due within 30 days."></textarea></div>
             <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button>
           </div>
@@ -545,6 +547,25 @@ textarea{resize:vertical;min-height:70px}
             <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Signed in as <strong id="user-email-display"></strong></p>
             <button class="btn btn-danger" onclick="doLogout()"><i class="ti ti-logout"></i> Sign Out</button>
           </div>
+        </div>
+      </div>
+
+      <div id="page-mileage" class="page">
+        <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
+          <div class="stat-card"><div class="stat-label">Total Miles</div><div class="stat-value" id="mi-total-miles">0</div><div class="stat-sub" id="mi-total-trips">0 trips</div></div>
+          <div class="stat-card"><div class="stat-label">This Month</div><div class="stat-value" id="mi-month-miles">0</div><div class="stat-sub">miles</div></div>
+          <div class="stat-card"><div class="stat-label">This Year</div><div class="stat-value" id="mi-year-miles">0</div><div class="stat-sub">miles</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Trip Log</h3>
+            <div style="display:flex;gap:.5rem;align-items:center">
+              <input type="date" id="mi-from" onchange="renderMileage()" style="width:auto;padding:.35rem .5rem;font-size:12px">
+              <span style="color:var(--text3);font-size:12px">to</span>
+              <input type="date" id="mi-to" onchange="renderMileage()" style="width:auto;padding:.35rem .5rem;font-size:12px">
+            </div>
+          </div>
+          <div id="mileage-table"></div>
         </div>
       </div>
 
@@ -582,6 +603,7 @@ textarea{resize:vertical;min-height:70px}
         </table>
       </div>
       <button class="btn btn-sm" onclick="addInvLine()"><i class="ti ti-plus"></i> Add Line</button>
+      <button class="btn btn-sm" onclick="addMileageLine()" style="margin-left:.5rem"><i class="ti ti-car"></i> Add Mileage</button>
       <div style="margin-top:1rem;text-align:right;font-size:13.5px">
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Subtotal:</span><span id="inv-subtotal">$0.00</span></div>
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Tax (<span id="inv-tax-pct">0</span>%):</span><span id="inv-tax-amt">$0.00</span></div>
@@ -611,10 +633,36 @@ textarea{resize:vertical;min-height:70px}
         <div class="form-group"><label>Phone</label><input id="cust-phone" type="tel"></div>
       </div>
       <div class="form-group"><label>Address</label><textarea id="cust-address" rows="2"></textarea></div>
+      <div class="form-group"><label>Round-Trip Miles (from your base)</label><input id="cust-miles" type="number" min="0" step="0.1" placeholder="e.g. 24"><div style="font-size:11px;color:var(--text3);margin-top:.35rem">Set once — trips to this client auto-fill this distance. Check Google Maps for the round-trip figure.</div></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-customer')">Cancel</button>
       <button class="btn btn-primary" onclick="saveCustomer()"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- TRIP MODAL -->
+<div class="modal-overlay" id="modal-trip">
+  <div class="modal">
+    <div class="modal-header"><h2 id="trip-title">Log Trip</h2><button class="btn btn-sm" onclick="closeModal('modal-trip')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <input type="hidden" id="trip-id">
+      <div class="form-row">
+        <div class="form-group"><label>Date</label><input id="trip-date" type="date"></div>
+        <div class="form-group"><label>Round Trips</label><input id="trip-count" type="number" min="1" step="1" value="1" oninput="calcTripMiles()"></div>
+      </div>
+      <div class="form-group"><label>Client</label><select id="trip-client" onchange="onTripClientChange()"><option value="">Select client...</option></select></div>
+      <div class="form-row">
+        <div class="form-group"><label>Miles (per round trip)</label><input id="trip-miles" type="number" min="0" step="0.1" oninput="calcTripMiles()"></div>
+        <div class="form-group"><label>Total Miles</label><input id="trip-total" type="number" readonly style="background:var(--bg2);font-weight:700"></div>
+      </div>
+      <div class="form-group"><label>Purpose</label><input id="trip-purpose" type="text" placeholder="e.g. On-site repair, pickup, delivery"></div>
+      <div id="trip-maps-link" style="font-size:12px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-trip')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTrip()"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -719,7 +767,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // ====== STATE ======
 let currentUser = null;
 let profile = {};
-let cache = {customers:[],invoices:[],expenses:[],vendors:[],accounts:[]};
+let cache = {customers:[],invoices:[],expenses:[],vendors:[],accounts:[],trips:[]};
 let currentPage = 'dashboard';
 let invFilter = 'all';
 let currentReport = 'pl';
@@ -814,20 +862,21 @@ async function doResetPassword() {
 
 async function doLogout() {
   await sb.auth.signOut();
-  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],vendors:[],accounts:[]};
+  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],vendors:[],accounts:[],trips:[]};
   document.getElementById('app').style.display = 'none';
   document.getElementById('auth-wrap').style.display = 'flex';
 }
 
 // ====== DATA LOADING ======
 async function loadAllData() {
-  const [prof, customers, invoices, expenses, vendors, accounts] = await Promise.all([
+  const [prof, customers, invoices, expenses, vendors, accounts, trips] = await Promise.all([
     sb.from('profiles').select('*').eq('id', currentUser.id).single(),
     sb.from('customers').select('*').eq('user_id', currentUser.id).order('name'),
     sb.from('invoices').select('*').eq('user_id', currentUser.id).order('created_at', {ascending:false}),
     sb.from('expenses').select('*').eq('user_id', currentUser.id).order('date', {ascending:false}),
     sb.from('vendors').select('*').eq('user_id', currentUser.id).order('name'),
     sb.from('accounts').select('*').eq('user_id', currentUser.id).order('name'),
+    sb.from('trips').select('*').eq('user_id', currentUser.id).order('date', {ascending:false}),
   ]);
   profile = prof.data || {};
   cache.customers = customers.data || [];
@@ -835,6 +884,7 @@ async function loadAllData() {
   cache.expenses = expenses.data || [];
   cache.vendors = vendors.data || [];
   cache.accounts = accounts.data || [];
+  cache.trips = trips.data || [];
 }
 
 // ====== NAVIGATION ======
@@ -843,7 +893,7 @@ function showPage(page, el) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   if (el) { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
-  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',vendors:'Vendors',accounts:'Chart of Accounts',reports:'Reports',settings:'Settings'};
+  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',vendors:'Vendors',accounts:'Chart of Accounts',mileage:'Mileage',reports:'Reports',settings:'Settings'};
   document.getElementById('page-title').textContent = titles[page]||page;
   const bc = document.getElementById('topbar-breadcrumb-page');
   if (bc) bc.textContent = titles[page]||page;
@@ -853,6 +903,7 @@ function showPage(page, el) {
     expenses:`<button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> New Expense</button>`,
     vendors:`<button class="btn btn-primary" onclick="openVendorModal()"><i class="ti ti-plus"></i> New Vendor</button>`,
     accounts:`<button class="btn btn-primary" onclick="openAccountModal()"><i class="ti ti-plus"></i> New Account</button>`,
+    mileage:`<button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> Log Trip</button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   renderPage(page);
@@ -865,6 +916,7 @@ function renderPage(page) {
   else if (page==='expenses') renderExpenses();
   else if (page==='vendors') renderVendors();
   else if (page==='accounts') renderAccounts();
+  else if (page==='mileage') renderMileage();
   else if (page==='reports') renderReport(currentReport);
   else if (page==='settings') loadSettingsForm();
 }
@@ -983,6 +1035,19 @@ function renderInvLines() {
   </tr>`).join('');
   calcInvTotals();
 }
+function addMileageLine() {
+  const cid = document.getElementById('inv-customer').value;
+  if (!cid) { showToast('Select a customer first','error'); return; }
+  const c = cache.customers.find(x=>x.id===cid);
+  // total miles logged for this client not yet billed (simple: all trips for client)
+  const clientTrips = cache.trips.filter(t=>t.customer_id===cid);
+  if (!clientTrips.length) { showToast('No trips logged for this client','error'); return; }
+  const totalMiles = clientTrips.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+  editingInvLines.push({desc:`Mileage — ${totalMiles.toFixed(1)} mi (${clientTrips.length} trip${clientTrips.length===1?'':'s'})`, qty:totalMiles, rate:0, amount:0});
+  renderInvLines();
+  showToast(`Added ${totalMiles.toFixed(1)} miles — set your rate per mile`,'success');
+}
+
 function calcLine(i) { editingInvLines[i].amount=(editingInvLines[i].qty||0)*(editingInvLines[i].rate||0); renderInvLines(); }
 function addInvLine() { editingInvLines.push({desc:'',qty:1,rate:0,amount:0}); renderInvLines(); }
 function removeInvLine(i) { editingInvLines.splice(i,1); renderInvLines(); }
@@ -1103,13 +1168,14 @@ function openCustomerModal(c) {
   document.getElementById('cust-email').value = c?c.email:'';
   document.getElementById('cust-phone').value = c?c.phone:'';
   document.getElementById('cust-address').value = c?c.address:'';
+  document.getElementById('cust-miles').value = c&&c.miles?c.miles:'';
   document.getElementById('modal-customer').classList.add('open');
 }
 function editCustomer(id) { openCustomerModal(cache.customers.find(c=>c.id===id)); }
 
 async function saveCustomer() {
   const id = document.getElementById('cust-id').value;
-  const row = {user_id:currentUser.id,name:document.getElementById('cust-name').value,contact:document.getElementById('cust-contact').value,email:document.getElementById('cust-email').value,phone:document.getElementById('cust-phone').value,address:document.getElementById('cust-address').value};
+  const row = {user_id:currentUser.id,name:document.getElementById('cust-name').value,contact:document.getElementById('cust-contact').value,email:document.getElementById('cust-email').value,phone:document.getElementById('cust-phone').value,address:document.getElementById('cust-address').value,miles:parseFloat(document.getElementById('cust-miles').value)||null};
   if (!row.name) { showToast('Name is required','error'); return; }
   let err;
   if (id) { const r=await sb.from('customers').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.customers.findIndex(c=>c.id===id);cache.customers[idx]={...cache.customers[idx],...row};} }
@@ -1124,6 +1190,136 @@ async function deleteCustomer(id) {
   if (error) { showToast(error.message,'error'); return; }
   cache.customers = cache.customers.filter(c=>c.id!==id);
   showToast('Customer deleted'); renderCustomers();
+}
+
+// ====== MILEAGE ======
+function getTripsInRange() {
+  let list = cache.trips.slice();
+  const from = document.getElementById('mi-from')?.value;
+  const to = document.getElementById('mi-to')?.value;
+  if (from) list = list.filter(t=>t.date >= from);
+  if (to) list = list.filter(t=>t.date <= to);
+  return list;
+}
+
+function renderMileage() {
+  const all = cache.trips;
+  const now = new Date();
+  const ym = now.toISOString().slice(0,7);
+  const yr = now.toISOString().slice(0,4);
+  const monthMiles = all.filter(t=>(t.date||'').slice(0,7)===ym).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+  const yearMiles = all.filter(t=>(t.date||'').slice(0,4)===yr).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+  const totalMiles = all.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+  document.getElementById('mi-total-miles').textContent = totalMiles.toLocaleString(undefined,{maximumFractionDigits:1});
+  document.getElementById('mi-total-trips').textContent = all.length+' trip'+(all.length===1?'':'s');
+  document.getElementById('mi-month-miles').textContent = monthMiles.toLocaleString(undefined,{maximumFractionDigits:1});
+  document.getElementById('mi-year-miles').textContent = yearMiles.toLocaleString(undefined,{maximumFractionDigits:1});
+
+  const list = getTripsInRange();
+  const el = document.getElementById('mileage-table');
+  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-car"></i><p>No trips logged${(document.getElementById('mi-from')?.value||document.getElementById('mi-to')?.value)?' in this range':' yet'}</p></div>`; return; }
+  const rangeTotal = list.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+
+  if (window.innerWidth <= 768) {
+    el.innerHTML = list.map(t=>`
+      <div class="m-card" onclick="editTrip('${t.id}')">
+        <div class="m-card-main">
+          <div class="m-card-title">${t.client_name||'—'}</div>
+          ${t.purpose?`<div class="m-card-sub" style="color:var(--text2);font-size:12px">${t.purpose}</div>`:''}
+          <div class="m-card-meta">${fmtDate(t.date)}${t.trips>1?' · '+t.trips+' trips':''}</div>
+        </div>
+        <div class="m-card-right">
+          <div class="m-card-amount">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:1})} mi</div>
+          <div class="m-card-actions">
+            <button class="btn btn-sm" onclick="event.stopPropagation();editTrip('${t.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button>
+          </div>
+        </div>
+      </div>`).join('') +
+      `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;font-weight:700"><span>Range Total</span><span>${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} mi</span></div>`;
+  } else {
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>`<tr><td>${fmtDate(t.date)}</td><td style="font-weight:500">${t.client_name||'—'}</td><td style="color:var(--text2)">${t.purpose||'—'}</td><td>${t.trips||1}</td><td style="font-weight:600;font-family:'JetBrains Mono',monospace">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editTrip('${t.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Range Total: ${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} miles</div>`;
+  }
+}
+
+function openTripModal(trip) {
+  const sel = document.getElementById('trip-client');
+  sel.innerHTML = '<option value="">Select client...</option>' + cache.customers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  document.getElementById('trip-maps-link').innerHTML = '';
+  if (trip) {
+    document.getElementById('trip-title').textContent = 'Edit Trip';
+    document.getElementById('trip-id').value = trip.id;
+    document.getElementById('trip-date').value = trip.date;
+    document.getElementById('trip-client').value = trip.customer_id||'';
+    document.getElementById('trip-miles').value = trip.miles||'';
+    document.getElementById('trip-count').value = trip.trips||1;
+    document.getElementById('trip-purpose').value = trip.purpose||'';
+  } else {
+    document.getElementById('trip-title').textContent = 'Log Trip';
+    document.getElementById('trip-id').value = '';
+    document.getElementById('trip-date').value = today();
+    document.getElementById('trip-client').value = '';
+    document.getElementById('trip-miles').value = '';
+    document.getElementById('trip-count').value = 1;
+    document.getElementById('trip-purpose').value = '';
+  }
+  calcTripMiles();
+  document.getElementById('modal-trip').classList.add('open');
+}
+function editTrip(id) { openTripModal(cache.trips.find(t=>t.id===id)); }
+
+function onTripClientChange() {
+  const cid = document.getElementById('trip-client').value;
+  const c = cache.customers.find(x=>x.id===cid);
+  if (c && c.miles) document.getElementById('trip-miles').value = c.miles;
+  // build maps link from base -> client address
+  const link = document.getElementById('trip-maps-link');
+  if (c && c.address && profile.base_address) {
+    const url = 'https://www.google.com/maps/dir/'+encodeURIComponent(profile.base_address)+'/'+encodeURIComponent(c.address);
+    link.innerHTML = `<a href="${url}" target="_blank" style="color:var(--accent);text-decoration:none"><i class="ti ti-map-pin"></i> Open route in Google Maps</a>`;
+  } else if (c && !c.miles) {
+    link.innerHTML = `<span style="color:var(--text3)">No saved miles for this client — enter manually or set it in their record.</span>`;
+  } else { link.innerHTML = ''; }
+  calcTripMiles();
+}
+
+function calcTripMiles() {
+  const miles = parseFloat(document.getElementById('trip-miles').value)||0;
+  const count = parseInt(document.getElementById('trip-count').value)||1;
+  document.getElementById('trip-total').value = (miles*count).toFixed(1);
+}
+
+async function saveTrip() {
+  const id = document.getElementById('trip-id').value;
+  const cid = document.getElementById('trip-client').value;
+  const c = cache.customers.find(x=>x.id===cid);
+  const miles = parseFloat(document.getElementById('trip-miles').value)||0;
+  const count = parseInt(document.getElementById('trip-count').value)||1;
+  if (!cid) { showToast('Select a client','error'); return; }
+  if (!miles) { showToast('Enter miles','error'); return; }
+  const row = {
+    user_id:currentUser.id,
+    date:document.getElementById('trip-date').value,
+    customer_id:cid,
+    client_name:c?c.name:'',
+    miles:miles,
+    trips:count,
+    total_miles:miles*count,
+    purpose:document.getElementById('trip-purpose').value
+  };
+  let err;
+  if (id) { const r=await sb.from('trips').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.trips.findIndex(t=>t.id===id);cache.trips[idx]={...cache.trips[idx],...row};} }
+  else { const r=await sb.from('trips').insert(row).select().single(); err=r.error; if(!err)cache.trips.unshift(r.data); }
+  if (err) { showToast(err.message,'error'); return; }
+  showToast('Trip saved','success'); closeModal('modal-trip'); renderMileage();
+}
+
+async function deleteTrip(id) {
+  if (!confirm('Delete this trip?')) return;
+  const {error} = await sb.from('trips').delete().eq('id',id);
+  if (error) { showToast(error.message,'error'); return; }
+  cache.trips = cache.trips.filter(t=>t.id!==id);
+  showToast('Trip deleted'); renderMileage();
 }
 
 // ====== EXPENSES ======
@@ -1364,11 +1560,12 @@ function loadSettingsForm() {
   document.getElementById('s-tax').value=profile.tax||0;
   document.getElementById('s-currency').value=profile.currency||'USD';
   document.getElementById('s-terms').value=profile.terms||'';
+  document.getElementById('s-base-address').value=profile.base_address||'';
   document.getElementById('user-email-display').textContent=currentUser.email;
 }
 
 async function saveSettings() {
-  const row={company:document.getElementById('s-company').value,address:document.getElementById('s-address').value,email:document.getElementById('s-email').value,phone:document.getElementById('s-phone').value,tax:parseFloat(document.getElementById('s-tax').value)||0,currency:document.getElementById('s-currency').value,terms:document.getElementById('s-terms').value};
+  const row={company:document.getElementById('s-company').value,address:document.getElementById('s-address').value,email:document.getElementById('s-email').value,phone:document.getElementById('s-phone').value,tax:parseFloat(document.getElementById('s-tax').value)||0,currency:document.getElementById('s-currency').value,terms:document.getElementById('s-terms').value,base_address:document.getElementById('s-base-address').value};
   const {error}=await sb.from('profiles').upsert({id:currentUser.id,...row});
   if (error) { showToast(error.message,'error'); return; }
   profile={...profile,...row};
