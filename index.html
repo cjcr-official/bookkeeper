@@ -897,9 +897,30 @@ function renderInvoices() {
   let list = cache.invoices.slice();
   if (invFilter!=='all') list = list.filter(i=>i.status===invFilter);
   const el = document.getElementById('invoices-table');
-  el.innerHTML = list.length
-    ? `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'DM Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="viewInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}</td><td>${statusBadge(i.status)}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`
-    : `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices found</p></div>`;
+  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices found</p></div>`; return; }
+  const isMobile = window.innerWidth <= 768;
+  if (isMobile) {
+    el.innerHTML = list.map(i=>`
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .9rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.75rem;cursor:pointer" onclick="editInvoice('${i.id}')">
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);font-weight:700">${i.number}</span>
+            ${statusBadge(i.status)}
+          </div>
+          <div style="font-size:13.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.customer_name||'—'}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:.1rem;font-family:'JetBrains Mono',monospace">Due ${fmtDate(i.due)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:15px;font-weight:700;color:var(--text)">${fmt(i.total)}</div>
+          <div style="display:flex;gap:.35rem;margin-top:.4rem;justify-content:flex-end">
+            <button class="btn btn-sm" onclick="event.stopPropagation();editInvoice('${i.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button>
+          </div>
+        </div>
+      </div>`).join('');
+  } else {
+    el.innerHTML = `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="editInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}</td><td>${statusBadge(i.status)}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+  }
 }
 
 function openInvoiceModal(inv) {
@@ -1268,16 +1289,31 @@ document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click
 
 // ====== BOOT ======
 async function boot() {
-  const {data:{session}} = await sb.auth.getSession();
-  if (session) {
-    currentUser = session.user;
-    await loadAllData();
-    document.getElementById('user-company-name').textContent = profile.company||'My Business';
-    document.getElementById('loading-screen').style.display='none';
-    document.getElementById('app').style.display='flex';
-    renderDashboard();
-  } else {
-    document.getElementById('loading-screen').style.display='none';
+  // Safety: always hide loading after 6 seconds no matter what
+  setTimeout(()=>{
+    const ls = document.getElementById('loading-screen');
+    if (ls && ls.style.display !== 'none') {
+      ls.style.display = 'none';
+      document.getElementById('auth-wrap').style.display = 'flex';
+    }
+  }, 6000);
+  const hide = ()=>{ document.getElementById('loading-screen').style.display='none'; };
+  try {
+    const {data:{session}} = await sb.auth.getSession();
+    if (session) {
+      currentUser = session.user;
+      await loadAllData();
+      document.getElementById('user-company-name').textContent = profile.company||'My Business';
+      hide();
+      document.getElementById('app').style.display='flex';
+      renderDashboard();
+    } else {
+      hide();
+      document.getElementById('auth-wrap').style.display='flex';
+    }
+  } catch(e) {
+    console.error('Boot error:', e);
+    hide();
     document.getElementById('auth-wrap').style.display='flex';
   }
 
