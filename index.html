@@ -242,15 +242,18 @@ body.modal-open .main{overflow:hidden}
   .sidebar-logo,.nav-section{display:none}
   .sidebar-nav-scroll{
     display:flex;flex-direction:row;width:100%;
-    overflow-x:auto;padding:0;margin:0;scrollbar-width:none;
+    overflow:hidden;padding:0;margin:0;
   }
-  .sidebar-nav-scroll::-webkit-scrollbar{display:none}
+  /* hide the desktop-only Settings/Sign Out block on mobile — Settings is in the topbar now */
+  .sidebar-bottom{display:none}
   .nav-item{
     flex-direction:column;align-items:center;justify-content:center;
-    gap:3px;padding:.4rem .2rem .5rem;
-    border-radius:0;margin:0;min-width:64px;flex:1;
-    font-size:10px;border-left:none;border-top:2px solid transparent;
+    gap:2px;padding:.35rem .1rem .45rem;
+    border-radius:0;margin:0;min-width:0;flex:1;
+    font-size:9.5px;border-left:none;border-top:2px solid transparent;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
+  .nav-item span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .nav-item.active{border-top:2px solid var(--accent);background:var(--accent-bg);box-shadow:none}
   .nav-item i{font-size:20px}
 
@@ -458,7 +461,7 @@ body.modal-open .main{overflow:hidden}
     <div class="nav-item" onclick="showPage('accounts',this)"><i class="ti ti-credit-card"></i><span>Accounts</span></div>
     <div class="nav-item" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
     </div>
-    <div style="margin-top:auto">
+    <div style="margin-top:auto" class="sidebar-bottom">
       <div class="nav-item" onclick="showPage('settings',this)"><i class="ti ti-settings"></i> Settings</div>
       <div class="nav-item" onclick="doLogout()"><i class="ti ti-logout"></i> Sign Out</div>
     </div>
@@ -474,6 +477,7 @@ body.modal-open .main{overflow:hidden}
       </div>
       <div class="topbar-right">
         <div style="display:flex;gap:.5rem" id="topbar-actions"></div>
+        <button class="theme-toggle" onclick="showPage('settings',null)" title="Settings"><i class="ti ti-settings"></i></button>
         <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode" id="theme-btn"><i class="ti ti-sun" id="theme-icon"></i></button>
       </div>
     </div>
@@ -1695,7 +1699,7 @@ document.addEventListener('touchend', e=>{
 }, {passive:false});
 
 // ====== AUTO-UPDATE (version check) ======
-const APP_VERSION = 5;  // <-- bump this AND version.json on every deploy
+const APP_VERSION = 6;  // <-- bump this AND version.json on every deploy
 
 async function checkForUpdate() {
   try {
