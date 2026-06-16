@@ -238,10 +238,12 @@ body.modal-open .main{overflow:hidden}
   /* ── BOTTOM TAB BAR ── */
   .sidebar{
     position:fixed;bottom:0;left:0;right:0;top:auto;
-    width:100%;height:62px;
-    flex-direction:row;
+    width:100%;
+    height:calc(62px + env(safe-area-inset-bottom,0px));
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    flex-direction:row;align-items:flex-start;
     border-right:none;border-top:1px solid var(--border);
-    z-index:500;padding:0;overflow:hidden;
+    z-index:500;overflow:hidden;
   }
   .sidebar-logo,.nav-section{display:none}
   .sidebar-nav-scroll{
@@ -252,7 +254,7 @@ body.modal-open .main{overflow:hidden}
   .sidebar-bottom{display:none}
   .nav-item{
     flex-direction:column;align-items:center;justify-content:center;
-    gap:2px;padding:.35rem .1rem .45rem;
+    gap:2px;padding:.35rem .1rem .45rem;height:62px;
     border-radius:0;margin:0;min-width:0;flex:1;
     font-size:9.5px;border-left:none;border-top:2px solid transparent;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
@@ -263,10 +265,10 @@ body.modal-open .main{overflow:hidden}
 
   /* ── LAYOUT ── */
   .app{flex-direction:column}
-  .main{padding-bottom:62px;height:100vh;overflow-y:auto}
+  .main{padding-bottom:calc(62px + env(safe-area-inset-bottom,0px));height:100vh;overflow-y:auto}
 
   /* ── TOPBAR ── */
-  .topbar{padding:.6rem 1rem;position:sticky;top:0;z-index:400}
+  .topbar{padding:.6rem 1rem;padding-top:calc(.6rem + env(safe-area-inset-top,0px));position:sticky;top:0;z-index:400}
   .topbar-breadcrumb{display:none}
   .topbar-title{font-size:16px}
   #topbar-actions .btn span{display:none}
@@ -329,12 +331,17 @@ body.modal-open .main{overflow:hidden}
   .modal-footer{padding:.75rem 1.25rem;flex-wrap:wrap}
   .modal-footer .btn{flex:1;justify-content:center}
 
-  /* ── AUTH → BOTTOM SHEET ── */
-  .auth-wrap{align-items:flex-end;padding:0}
+  /* ── AUTH → CENTERED CARD ── */
+  .auth-wrap{
+    align-items:center;justify-content:center;
+    padding:1.25rem;
+    padding-top:max(1.25rem,env(safe-area-inset-top,1.25rem));
+    padding-bottom:max(1.25rem,env(safe-area-inset-bottom,1.25rem));
+  }
   .auth-card{
-    width:100%;border-radius:20px 20px 0 0;
-    padding:1.75rem 1.5rem 2rem;
-    padding-bottom:max(2rem,env(safe-area-inset-bottom,2rem));
+    width:100%;max-width:400px;
+    border-radius:16px;
+    padding:1.75rem 1.5rem;
   }
 
   /* ── MISC ── */
@@ -1710,7 +1717,7 @@ document.addEventListener('touchend', e=>{
 }, {passive:false});
 
 // ====== AUTO-UPDATE (version check) ======
-const APP_VERSION = 7;  // <-- bump this AND version.json on every deploy
+const APP_VERSION = 9;  // <-- bump this AND version.json on every deploy
 
 async function checkForUpdate() {
   try {
