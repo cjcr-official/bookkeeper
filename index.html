@@ -360,6 +360,23 @@ textarea{resize:vertical;min-height:70px}
 </head>
 <body>
 
+<!-- UPDATE OVERLAY (forced) -->
+<div id="update-overlay" style="display:none;position:fixed;inset:0;z-index:99999;background:var(--bg,#0f1117);align-items:center;justify-content:center;flex-direction:column;padding:2rem;text-align:center">
+  <svg width="64" height="64" viewBox="0 0 92 94" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:1.5rem">
+    <defs><linearGradient id="up1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs>
+    <rect x="0" y="0" width="92" height="94" rx="14" fill="#1c2845" stroke="#2a4070" stroke-width="1"/>
+    <rect x="0" y="0" width="14" height="94" rx="14" fill="url(#up1)"/>
+    <polyline points="30,48 42,60 64,34" fill="none" stroke="#06b6d4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:26px;color:#e8eaf0;margin-bottom:.5rem">Update Available</div>
+  <div style="font-size:14px;color:#8b93a8;max-width:320px;margin-bottom:.4rem">A new version of Bookkeeper is ready.</div>
+  <div id="update-note" style="font-size:13px;color:#55607a;max-width:320px;margin-bottom:1.75rem;font-family:'JetBrains Mono',monospace"></div>
+  <button onclick="doUpdate()" id="update-btn" style="background:#3b82f6;color:#fff;border:none;padding:.85rem 2rem;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;box-shadow:0 0 20px rgba(59,130,246,.4)">
+    <i class="ti ti-refresh"></i> Update Now
+  </button>
+</div>
+
+
 <!-- LOADING -->
 <div class="loading-screen" id="loading-screen">
   <div style="display:flex;align-items:center;gap:16px"><svg width="52" height="52" viewBox="0 0 92 94" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ls1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#ls1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="53" x2="74" y2="53" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="63" x2="62" y2="63" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></svg><div><div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:28px;color:#e8eaf0;letter-spacing:-0.5px;line-height:1">Bookkeeper</div><div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:4px;letter-spacing:2px">LOADING...</div></div></div>
@@ -1656,6 +1673,44 @@ document.addEventListener('touchend', e=>{
   if (now - lastTouch <= 300) e.preventDefault();
   lastTouch = now;
 }, {passive:false});
+
+// ====== AUTO-UPDATE (version check) ======
+const APP_VERSION = 1;  // <-- bump this AND version.json on every deploy
+
+async function checkForUpdate() {
+  try {
+    const res = await fetch('version.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data && typeof data.version === 'number' && data.version > APP_VERSION) {
+      const note = document.getElementById('update-note');
+      if (note) note.textContent = data.note ? data.note : ('Version ' + data.version);
+      document.getElementById('update-overlay').style.display = 'flex';
+    }
+  } catch(e) { /* offline or no file — ignore silently */ }
+}
+
+function doUpdate() {
+  const btn = document.getElementById('update-btn');
+  if (btn) btn.innerHTML = '<span class="spinner"></span> Updating...';
+  // Best-effort: clear caches we are allowed to clear, then hard reload with cache-buster
+  const finish = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('v', Date.now());  // cache-bust the HTML
+    window.location.replace(url.toString());
+  };
+  if (window.caches && caches.keys) {
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).then(finish).catch(finish);
+  } else {
+    finish();
+  }
+}
+
+// Check on load, and every 2 minutes while the app is open
+checkForUpdate();
+setInterval(checkForUpdate, 120000);
+// Re-check when the app is brought back to the foreground (common on phones)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
 
 boot();
 </script>
