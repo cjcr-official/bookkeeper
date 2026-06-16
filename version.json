@@ -1,4 +1,4 @@
 {
-  "version": 3,
-  "note": "Locked background scroll behind modals, hid scrollbars"
+  "version": 4,
+  "note": "Modals now scroll vertically only — no sideways movement"
 }
