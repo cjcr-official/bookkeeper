@@ -331,11 +331,12 @@ body.modal-open .main{overflow:hidden}
   table td:last-child{justify-content:flex-end;margin-top:.25rem}
 
   /* ── MODALS → BOTTOM SHEET ── */
-  .modal-overlay{align-items:flex-end;padding:0}
+  .modal-overlay{align-items:flex-end;padding:0;padding-top:calc(env(safe-area-inset-top,0px) + 12px)}
   .modal{
     width:100%;max-width:100%;
     border-radius:20px 20px 0 0;
-    max-height:92vh;
+    /* leave a buffer below the status bar / notch so content never touches the top */
+    max-height:100%;
     overflow-y:auto;overflow-x:hidden;
     touch-action:pan-y;
     overscroll-behavior:contain;
@@ -344,10 +345,11 @@ body.modal-open .main{overflow:hidden}
   /* keep all modal fields within width — no sideways overflow */
   .modal-body{overflow-x:hidden}
   .modal input,.modal select,.modal textarea{max-width:100%}
+  /* drag handle sticks to the top of the sheet with breathing room */
   .modal::before{
     content:'';display:block;width:36px;height:4px;
     background:var(--border2);border-radius:2px;
-    margin:.75rem auto .25rem;
+    margin:.9rem auto .35rem;
   }
   .modal-header{padding:.75rem 1.25rem}
   .modal-body{padding:1rem 1.25rem}
