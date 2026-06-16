@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f1117">
 <title>Bookkeeper — Free Accounting</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet">
@@ -219,6 +222,120 @@ textarea{resize:vertical;min-height:70px}
 ::-webkit-scrollbar-thumb:hover{background:var(--text3)}
 
 @media print{.sidebar,.topbar,.modal-overlay{display:none!important}.main{overflow:visible}}
+
+/* ════════════════════════════
+   MOBILE / iPHONE STYLES
+   ════════════════════════════ */
+@media(max-width:768px){
+
+  /* ── BOTTOM TAB BAR ── */
+  .sidebar{
+    position:fixed;bottom:0;left:0;right:0;top:auto;
+    width:100%;height:62px;
+    flex-direction:row;
+    border-right:none;border-top:1px solid var(--border);
+    z-index:500;padding:0;overflow:hidden;
+  }
+  .sidebar-logo,.nav-section{display:none}
+  .sidebar-nav-scroll{
+    display:flex;flex-direction:row;width:100%;
+    overflow-x:auto;padding:0;margin:0;scrollbar-width:none;
+  }
+  .sidebar-nav-scroll::-webkit-scrollbar{display:none}
+  .nav-item{
+    flex-direction:column;align-items:center;justify-content:center;
+    gap:3px;padding:.4rem .2rem .5rem;
+    border-radius:0;margin:0;min-width:64px;flex:1;
+    font-size:10px;border-left:none;border-top:2px solid transparent;
+  }
+  .nav-item.active{border-top:2px solid var(--accent);background:var(--accent-bg);box-shadow:none}
+  .nav-item i{font-size:20px}
+
+  /* ── LAYOUT ── */
+  .app{flex-direction:column}
+  .main{padding-bottom:62px;height:100vh;overflow-y:auto}
+
+  /* ── TOPBAR ── */
+  .topbar{padding:.6rem 1rem;position:sticky;top:0;z-index:400}
+  .topbar-breadcrumb{display:none}
+  .topbar-title{font-size:16px}
+  #topbar-actions .btn span{display:none}
+  #topbar-actions .btn{padding:.4rem .5rem;min-width:34px;justify-content:center}
+
+  /* ── CONTENT ── */
+  .content{padding:1rem .875rem}
+
+  /* ── STAT CARDS ── */
+  .stats-grid{grid-template-columns:1fr 1fr;gap:.65rem;margin-bottom:1rem}
+  .stat-value{font-size:20px}
+  .stat-card{padding:.85rem 1rem}
+
+  /* ── GRIDS ── */
+  .two-col,.form-row{grid-template-columns:1fr}
+
+  /* ── TABLES → CARDS ── */
+  table thead{display:none}
+  table,table tbody,table tr,table td{display:block;width:100%}
+  table tr{
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius-sm);margin-bottom:.5rem;
+    padding:.6rem .75rem;position:relative;
+  }
+  table tr:hover{background:var(--surface2)}
+  table td{
+    border:none;padding:.15rem 0;font-size:13px;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  table td::before{
+    content:attr(data-label);font-size:10px;font-weight:700;
+    color:var(--text3);text-transform:uppercase;letter-spacing:.6px;
+    font-family:'JetBrains Mono',monospace;margin-right:.5rem;flex-shrink:0;
+  }
+  table td:first-child{font-weight:600;color:var(--text);font-size:13.5px}
+  table td:first-child::before,table td:last-child::before{display:none}
+  table td:last-child{justify-content:flex-end;margin-top:.25rem}
+
+  /* ── MODALS → BOTTOM SHEET ── */
+  .modal-overlay{align-items:flex-end;padding:0}
+  .modal{
+    width:100%;max-width:100%;
+    border-radius:20px 20px 0 0;
+    max-height:92vh;
+    padding-bottom:env(safe-area-inset-bottom,16px);
+  }
+  .modal::before{
+    content:'';display:block;width:36px;height:4px;
+    background:var(--border2);border-radius:2px;
+    margin:.75rem auto .25rem;
+  }
+  .modal-header{padding:.75rem 1.25rem}
+  .modal-body{padding:1rem 1.25rem}
+  .modal-footer{padding:.75rem 1.25rem;flex-wrap:wrap}
+  .modal-footer .btn{flex:1;justify-content:center}
+
+  /* ── AUTH → BOTTOM SHEET ── */
+  .auth-wrap{align-items:flex-end;padding:0}
+  .auth-card{
+    width:100%;border-radius:20px 20px 0 0;
+    padding:1.75rem 1.5rem 2rem;
+    padding-bottom:max(2rem,env(safe-area-inset-bottom,2rem));
+  }
+
+  /* ── MISC ── */
+  .card{border-radius:var(--radius-sm)}
+  .card-header{padding:.75rem 1rem}
+  .tabs{overflow-x:auto;scrollbar-width:none;width:100%}
+  .tabs::-webkit-scrollbar{display:none}
+  .toast{left:1rem;right:1rem;bottom:74px;text-align:center}
+  .bar-chart{height:90px;gap:5px}
+  .bar-label{font-size:9px}
+
+  /* keep invoice line-item table as real table */
+  #line-items-table thead{display:table-header-group}
+  #line-items-table tr{display:table-row;border:none;border-radius:0;margin:0;padding:0;background:transparent}
+  #line-items-table td{display:table-cell;padding:.4rem .3rem;border-bottom:1px solid var(--border)}
+  #line-items-table td::before{display:none}
+}
 </style>
 </head>
 <body>
@@ -274,17 +391,19 @@ textarea{resize:vertical;min-height:70px}
         </div>
       </div>
     </div>
+    <div class="sidebar-nav-scroll">
     <div class="nav-section">Overview</div>
-    <div class="nav-item active" onclick="showPage('dashboard',this)"><i class="ti ti-layout-dashboard"></i> Dashboard</div>
+    <div class="nav-item active" onclick="showPage('dashboard',this)"><i class="ti ti-layout-dashboard"></i><span>Home</span></div>
     <div class="nav-section">Money In</div>
-    <div class="nav-item" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i> Invoices</div>
-    <div class="nav-item" onclick="showPage('customers',this)"><i class="ti ti-users"></i> Customers</div>
+    <div class="nav-item" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i><span>Invoices</span></div>
+    <div class="nav-item" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
     <div class="nav-section">Money Out</div>
-    <div class="nav-item" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i> Expenses</div>
-    <div class="nav-item" onclick="showPage('vendors',this)"><i class="ti ti-building-store"></i> Vendors</div>
+    <div class="nav-item" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
+    <div class="nav-item" onclick="showPage('vendors',this)"><i class="ti ti-building-store"></i><span>Vendors</span></div>
     <div class="nav-section">Finance</div>
-    <div class="nav-item" onclick="showPage('accounts',this)"><i class="ti ti-credit-card"></i> Chart of Accounts</div>
-    <div class="nav-item" onclick="showPage('reports',this)"><i class="ti ti-chart-bar"></i> Reports</div>
+    <div class="nav-item" onclick="showPage('accounts',this)"><i class="ti ti-credit-card"></i><span>Accounts</span></div>
+    <div class="nav-item" onclick="showPage('reports',this)"><i class="ti ti-chart-bar"></i><span>Reports</span></div>
+    </div>
     <div style="margin-top:auto">
       <div class="nav-item" onclick="showPage('settings',this)"><i class="ti ti-settings"></i> Settings</div>
       <div class="nav-item" onclick="doLogout()"><i class="ti ti-logout"></i> Sign Out</div>
