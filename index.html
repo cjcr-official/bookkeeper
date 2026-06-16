@@ -1737,19 +1737,36 @@ document.addEventListener('touchend', e=>{
   lastTouch = now;
 }, {passive:false});
 
-// ====== AUTO-UPDATE (version check) ======
-const APP_VERSION = 11;  // <-- bump this AND version.json on every deploy
+// ====== AUTO-UPDATE (stored-version compare) ======
+// version.json is the single source of truth. The app remembers the version it
+// last successfully loaded. If the live version.json differs, it prompts to update.
+// Push index.html + version.json together — any open app detects the change on its
+// next check (on load, every 2 min, or when brought to the foreground).
+
+let serverVersion = null;
 
 async function checkForUpdate() {
   try {
-    // strong cache-bust: unique param + no-store + pragma headers
-    const res = await fetch('version.json?nocache=' + Date.now() + Math.random(), {
+    const res = await fetch('version.json?nocache=' + Date.now() + '_' + Math.random(), {
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
     });
     if (!res.ok) return;
     const data = await res.json();
-    if (data && typeof data.version === 'number' && data.version > APP_VERSION) {
+    if (!data || typeof data.version === 'undefined') return;
+    serverVersion = data.version;
+
+    let installed = null;
+    try { installed = localStorage.getItem('bk-installed-version'); } catch(e){}
+
+    // First ever load: record the current live version, don't prompt.
+    if (installed === null) {
+      try { localStorage.setItem('bk-installed-version', String(data.version)); } catch(e){}
+      return;
+    }
+
+    // If the live version differs from what we have installed, prompt.
+    if (String(data.version) !== String(installed)) {
       const note = document.getElementById('update-note');
       if (note) note.textContent = data.note ? data.note : ('Version ' + data.version);
       const ov = document.getElementById('update-overlay');
@@ -1761,12 +1778,12 @@ async function checkForUpdate() {
 function doUpdate() {
   const btn = document.getElementById('update-btn');
   if (btn) btn.innerHTML = '<span class="spinner"></span> Updating...';
+  // record the version we're updating to, so we don't prompt again after reload
+  try { if (serverVersion !== null) localStorage.setItem('bk-installed-version', String(serverVersion)); } catch(e){}
   const finish = () => {
-    // reload with a fresh cache-buster so the HTML itself is re-fetched
     const base = window.location.href.split('?')[0].split('#')[0];
     window.location.replace(base + '?v=' + Date.now());
   };
-  // unregister any service workers + clear caches we're allowed to
   const tasks = [];
   if (window.caches && caches.keys) {
     tasks.push(caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))));
@@ -1775,7 +1792,6 @@ function doUpdate() {
     tasks.push(navigator.serviceWorker.getRegistrations().then(rs => Promise.all(rs.map(r => r.unregister()))));
   }
   Promise.all(tasks).then(finish).catch(finish);
-  // safety: force reload even if cache clearing stalls
   setTimeout(finish, 1500);
 }
 
