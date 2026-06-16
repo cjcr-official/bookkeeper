@@ -1,4 +1,4 @@
 {
-  "version": 14,
-  "note": "Pinned header on all pages, collapsible Reports card"
+  "version": 15,
+  "note": "Header now stays pinned while scrolling"
 }
