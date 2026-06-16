@@ -1,4 +1,4 @@
 {
-  "version": 15,
-  "note": "Header now stays pinned while scrolling"
+  "version": 17,
+  "note": "Fixed cramped invoice line items — stacked card layout on mobile"
 }
