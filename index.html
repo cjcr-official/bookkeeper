@@ -156,7 +156,7 @@ tr:hover td{background:var(--surface2)}
 /* ── MODALS ── */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);z-index:1000;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
-.modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);width:520px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);width:520px;max-height:90vh;overflow-y:auto;overflow-x:hidden;box-shadow:var(--shadow-lg);touch-action:pan-y}
 .modal-header{padding:1.1rem 1.5rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
 .modal-header h2{font-size:16px}
 .modal-body{padding:1.25rem 1.5rem}
@@ -304,8 +304,14 @@ body.modal-open .main{overflow:hidden}
     width:100%;max-width:100%;
     border-radius:20px 20px 0 0;
     max-height:92vh;
+    overflow-y:auto;overflow-x:hidden;
+    touch-action:pan-y;
+    overscroll-behavior:contain;
     padding-bottom:env(safe-area-inset-bottom,16px);
   }
+  /* keep all modal fields within width — no sideways overflow */
+  .modal-body{overflow-x:hidden}
+  .modal input,.modal select,.modal textarea{max-width:100%}
   .modal::before{
     content:'';display:block;width:36px;height:4px;
     background:var(--border2);border-radius:2px;
@@ -356,8 +362,13 @@ body.modal-open .main{overflow:hidden}
   /* keep invoice line-item table as real table */
   #line-items-table thead{display:table-header-group}
   #line-items-table tr{display:table-row;border:none;border-radius:0;margin:0;padding:0;background:transparent}
-  #line-items-table td{display:table-cell;padding:.4rem .3rem;border-bottom:1px solid var(--border)}
+  #line-items-table td{display:table-cell;padding:.4rem .2rem;border-bottom:1px solid var(--border)}
   #line-items-table td::before{display:none}
+  #line-items-table input{width:100%!important;min-width:0;font-size:13px;padding:.3rem .25rem}
+  #line-items-table th:nth-child(2),#line-items-table td:nth-child(2){width:42px}
+  #line-items-table th:nth-child(3),#line-items-table td:nth-child(3){width:62px}
+  #line-items-table th:nth-child(4),#line-items-table td:nth-child(4){width:62px}
+  #line-items-table th:nth-child(5),#line-items-table td:nth-child(5){width:26px}
 }
 </style>
 </head>
@@ -604,7 +615,7 @@ body.modal-open .main{overflow:hidden}
         <select id="inv-status"><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select>
       </div>
       <div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:1rem">
-        <table style="width:100%;border-collapse:collapse">
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed" id="line-items-table">
           <thead><tr>
             <th style="background:var(--bg2);padding:.5rem .75rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:left">Description</th>
             <th style="background:var(--bg2);padding:.5rem .5rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;width:60px;text-align:center">Qty</th>
@@ -1680,7 +1691,7 @@ document.addEventListener('touchend', e=>{
 }, {passive:false});
 
 // ====== AUTO-UPDATE (version check) ======
-const APP_VERSION = 3;  // <-- bump this AND version.json on every deploy
+const APP_VERSION = 4;  // <-- bump this AND version.json on every deploy
 
 async function checkForUpdate() {
   try {
