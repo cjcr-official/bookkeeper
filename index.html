@@ -383,6 +383,29 @@ body.modal-open .main{overflow:hidden}
   .bar-label{font-size:9px}
 
   /* ── SHARED COMPACT LIST CARDS ── */
+  /* ── CUSTOMER CARD (richer layout with action buttons) ── */
+  .cust-card{
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius-sm);padding:.85rem .9rem;margin-bottom:.6rem;
+  }
+  .cust-card-head{display:flex;align-items:flex-start;gap:.75rem;margin-bottom:.75rem}
+  .cust-name{font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cust-line{font-size:12.5px;color:var(--text2);margin-top:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cust-amount{font-size:17px;font-weight:700;color:var(--text);flex-shrink:0;white-space:nowrap}
+  .cust-actions{display:grid;grid-template-columns:repeat(5,1fr);gap:.4rem}
+  .cust-btn{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    padding:.55rem .2rem;border-radius:var(--radius-sm);
+    border:1px solid var(--border2);background:var(--bg2);color:var(--text);
+    font-size:10px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;
+    cursor:pointer;text-decoration:none;transition:all .12s;min-height:48px;
+  }
+  .cust-btn i{font-size:18px}
+  .cust-btn:active{transform:scale(.96);background:var(--surface2)}
+  .cust-btn-call{color:var(--green);border-color:rgba(34,197,94,.3);background:var(--green-bg)}
+  .cust-btn-email{color:var(--accent-text);border-color:rgba(59,130,246,.3);background:var(--accent-bg)}
+  .cust-btn-del{color:var(--red);border-color:rgba(239,68,68,.3);background:var(--red-bg)}
+
   .m-card{
     background:var(--surface);border:1px solid var(--border);
     border-radius:var(--radius-sm);padding:.65rem .9rem;margin-bottom:.5rem;
@@ -424,9 +447,9 @@ body.modal-open .main{overflow:hidden}
     <rect x="0" y="0" width="14" height="94" rx="14" fill="url(#up1)"/>
     <polyline points="30,48 42,60 64,34" fill="none" stroke="#06b6d4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
-  <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:26px;color:#e8eaf0;margin-bottom:.5rem">Update Available</div>
-  <div style="font-size:14px;color:#8b93a8;max-width:320px;margin-bottom:.4rem">A new version of Bookkeeper is ready.</div>
-  <div id="update-note" style="font-size:13px;color:#55607a;max-width:320px;margin-bottom:1.75rem;font-family:'JetBrains Mono',monospace"></div>
+  <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:26px;color:var(--text);margin-bottom:.5rem">Update Available</div>
+  <div style="font-size:14px;color:var(--text2);max-width:320px;margin-bottom:.4rem">A new version of Bookkeeper is ready.</div>
+  <div id="update-note" style="font-size:13px;color:var(--text3);max-width:320px;margin-bottom:1.75rem;font-family:'JetBrains Mono',monospace"></div>
   <button onclick="doUpdate()" id="update-btn" style="background:#3b82f6;color:#fff;border:none;padding:.85rem 2rem;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;box-shadow:0 0 20px rgba(59,130,246,.4)">
     <i class="ti ti-refresh"></i> Update Now
   </button>
@@ -1284,6 +1307,15 @@ function viewInvoice(id) {
 }
 
 // ====== CUSTOMERS ======
+function fmtPhone(p) {
+  if (!p) return '';
+  const d = (''+p).replace(/\D/g,'');
+  // US/Canada: 11 digits starting with 1, or 10 digits
+  if (d.length === 11 && d[0] === '1') return `+1 (${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  return p; // fall back to raw for international/other
+}
+
 function renderCustomers() {
   const el = document.getElementById('customers-table');
   if (!cache.customers.length) { el.innerHTML = `<div class="empty"><i class="ti ti-users"></i><p>No customers yet</p></div>`; return; }
@@ -1297,25 +1329,30 @@ function renderCustomers() {
   );
   if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-search"></i><p>No customers match "${q}"</p></div>`; return; }
   if (window.innerWidth <= 768) {
-    el.innerHTML = list.map(c=>`
-      <div class="m-card" onclick="editCustomer('${c.id}')">
-        <div class="m-card-main">
-          <div class="m-card-title">${c.name}</div>
-          ${c.contact?`<div class="m-card-sub">${c.contact}</div>`:''}
-          ${c.email?`<div class="m-card-meta" style="color:var(--accent)">${c.email}</div>`:''}
-          ${c.phone?`<div class="m-card-meta">${c.phone}</div>`:''}
-        </div>
-        <div class="m-card-right">
-          <div class="m-card-amount">${fmt(totalOf(c))}</div>
-          <div class="m-card-actions">
-            <button class="btn btn-sm" onclick="event.stopPropagation();viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button>
-            <button class="btn btn-sm" onclick="event.stopPropagation();editCustomer('${c.id}')"><i class="ti ti-edit"></i></button>
-            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button>
-          </div>
-        </div>
-      </div>`).join('');
+    el.innerHTML = list.map(c=>{
+      const nm = (c.name||'').replace(/'/g, "\\'");
+      const phoneHref = (c.phone||'').replace(/[^\d+]/g,'');
+      return '<div class="cust-card">' +
+        '<div class="cust-card-head">' +
+          '<div style="min-width:0;flex:1">' +
+            '<div class="cust-name">' + c.name + '</div>' +
+            (c.contact ? '<div class="cust-line">' + c.contact + '</div>' : '') +
+            (c.email ? '<div class="cust-line" style="color:var(--accent);word-break:break-all">' + c.email + '</div>' : '') +
+            (c.phone ? '<div class="cust-line" style="font-family:\'JetBrains Mono\',monospace">' + fmtPhone(c.phone) + '</div>' : '') +
+          '</div>' +
+          '<div class="cust-amount">' + fmt(totalOf(c)) + '</div>' +
+        '</div>' +
+        '<div class="cust-actions">' +
+          (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + phoneHref + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
+          (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + c.email + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
+          '<button class="cust-btn" onclick="viewCustomerInvoices(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
+          '<button class="cust-btn" onclick="editCustomer(\'' + c.id + '\')"><i class="ti ti-edit"></i><span>Edit</span></button>' +
+          '<button class="cust-btn cust-btn-del" onclick="deleteCustomer(\'' + c.id + '\')"><i class="ti ti-trash"></i><span>Delete</span></button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td>${c.phone||'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?fmtPhone(c.phone):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${(c.phone||'').replace(/[^\d+]/g,'')}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${c.email}" title="Email"><i class="ti ti-mail"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
