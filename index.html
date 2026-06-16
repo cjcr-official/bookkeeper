@@ -210,14 +210,19 @@ textarea{resize:vertical;min-height:70px}
 .green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}
 
 /* ── BAR CHART ── */
-.bar-chart{display:flex;align-items:flex-end;gap:8px;height:120px;padding-top:10px}
-.bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
-.bar{width:100%;background:var(--accent-bg);border-radius:4px 4px 0 0;min-height:2px;position:relative;overflow:hidden;transition:opacity .15s}
-.bar::after{content:'';position:absolute;inset:0;background:linear-gradient(to top,var(--accent),transparent);opacity:.4}
-.bar:hover{opacity:.85}
-.bar.expense{background:var(--red-bg)}
-.bar.expense::after{background:linear-gradient(to top,var(--red),transparent)}
-.bar-label{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+.bar-chart{position:relative;display:flex;align-items:flex-end;gap:10px;height:150px;padding-top:8px}
+.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;position:relative;z-index:1}
+.bar-pair{display:flex;gap:3px;align-items:flex-end;width:100%;justify-content:center;height:124px}
+.bar{width:42%;max-width:18px;border-radius:3px 3px 0 0;min-height:3px;transition:filter .15s,transform .15s;cursor:pointer}
+.bar.income{background:linear-gradient(to top,#2563eb,#60a5fa)}
+.bar.expense{background:linear-gradient(to top,#dc2626,#f87171)}
+.bar:hover{filter:brightness(1.15);transform:scaleY(1.02)}
+.bar-label{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:6px}
+.bar-grid{position:absolute;left:0;right:0;top:8px;bottom:24px;z-index:0;pointer-events:none}
+.bar-grid-line{position:absolute;left:0;right:0;border-top:1px dashed var(--border);height:0}
+.bar-grid-label{position:absolute;left:0;font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace;transform:translateY(-50%);background:var(--surface);padding-right:4px}
+.bar-tip{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:.3rem .5rem;font-size:10px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;margin-bottom:4px;z-index:5;box-shadow:var(--shadow)}
+.bar-col:hover .bar-tip{opacity:1}
 
 /* ── SCROLLBAR ── */
 /* hide all scrollbars (still scrollable) */
@@ -350,7 +355,8 @@ body.modal-open .main{overflow:hidden}
   .tabs{overflow-x:auto;scrollbar-width:none;width:100%}
   .tabs::-webkit-scrollbar{display:none}
   .toast{left:1rem;right:1rem;bottom:74px;text-align:center}
-  .bar-chart{height:90px;gap:5px}
+  .bar-chart{height:140px;gap:6px}
+  .bar-pair{height:114px}
   .bar-label{font-size:9px}
 
   /* ── SHARED COMPACT LIST CARDS ── */
@@ -511,12 +517,14 @@ body.modal-open .main{overflow:hidden}
         </div>
         <div class="two-col">
           <div class="card">
-            <div class="card-header"><h3>Income vs Expenses (6 months)</h3></div>
-            <div style="padding:1rem">
-              <div style="display:flex;gap:1rem;margin-bottom:.75rem">
-                <span style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2)"><span style="width:12px;height:12px;background:var(--accent-bg);border-radius:2px;border:1px solid var(--accent);display:inline-block"></span>Income</span>
-                <span style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text2)"><span style="width:12px;height:12px;background:#FCEBEB;border-radius:2px;border:1px solid #F7C1C1;display:inline-block"></span>Expenses</span>
+            <div class="card-header">
+              <h3>Income vs Expenses</h3>
+              <div style="display:flex;gap:.85rem">
+                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:10px;height:10px;background:linear-gradient(to top,#3b82f6,#60a5fa);border-radius:2px;display:inline-block"></span>Income</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:10px;height:10px;background:linear-gradient(to top,#ef4444,#f87171);border-radius:2px;display:inline-block"></span>Expenses</span>
               </div>
+            </div>
+            <div style="padding:1rem 1.1rem .85rem">
               <div class="bar-chart" id="bar-chart"></div>
             </div>
           </div>
@@ -985,17 +993,30 @@ function renderDashboard() {
   const chart = document.getElementById('bar-chart');
   const months = [];
   for (let i=5;i>=0;i--) { const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({y:d.getFullYear(),m:d.getMonth(),label:d.toLocaleDateString('en-US',{month:'short'})}); }
-  const maxVal = Math.max(1,...months.map(mo=>{
-    const inc=cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getMonth()===mo.m&&new Date(i.date).getFullYear()===mo.y).reduce((s,i)=>s+parseFloat(i.total||0),0);
-    const exp=cache.expenses.filter(e=>new Date(e.date).getMonth()===mo.m&&new Date(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0);
-    return Math.max(inc,exp);
+  const data = months.map(mo=>({
+    label: mo.label,
+    inc: cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getMonth()===mo.m&&new Date(i.date).getFullYear()===mo.y).reduce((s,i)=>s+parseFloat(i.total||0),0),
+    exp: cache.expenses.filter(e=>new Date(e.date).getMonth()===mo.m&&new Date(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0)
   }));
-  chart.innerHTML = months.map(mo=>{
-    const inc=cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getMonth()===mo.m&&new Date(i.date).getFullYear()===mo.y).reduce((s,i)=>s+parseFloat(i.total||0),0);
-    const exp=cache.expenses.filter(e=>new Date(e.date).getMonth()===mo.m&&new Date(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0);
-    const ih=Math.round((inc/maxVal)*100); const eh=Math.round((exp/maxVal)*100);
-    return `<div class="bar-wrap"><div style="font-size:10px;color:var(--text2)">${inc>0?fmt(inc):''}</div><div style="display:flex;gap:2px;align-items:flex-end;height:100px"><div class="bar" style="height:${ih}%"></div><div class="bar expense" style="height:${eh}%"></div></div><div class="bar-label">${mo.label}</div></div>`;
+  const maxVal = Math.max(1, ...data.map(d=>Math.max(d.inc,d.exp)));
+  // round max up to a nice gridline number
+  const niceMax = (v)=>{ const pow=Math.pow(10,Math.floor(Math.log10(v))); const n=v/pow; const step=n<=1?1:n<=2?2:n<=5?5:10; return step*pow; };
+  const chartTop = niceMax(maxVal);
+  // gridlines at 0, 50%, 100%
+  const grid = [0,0.5,1].map(f=>`<div class="bar-grid-line" style="bottom:${f*100}%"><span class="bar-grid-label">${f>0?fmt(chartTop*f):''}</span></div>`).join('');
+  const bars = data.map(d=>{
+    const ih=Math.max(d.inc>0?3:0,Math.round((d.inc/chartTop)*100));
+    const eh=Math.max(d.exp>0?3:0,Math.round((d.exp/chartTop)*100));
+    return `<div class="bar-col">
+      <div class="bar-tip">${d.label}: <span style="color:#60a5fa">${fmt(d.inc)}</span> / <span style="color:#f87171">${fmt(d.exp)}</span></div>
+      <div class="bar-pair">
+        <div class="bar income" style="height:${ih}%"></div>
+        <div class="bar expense" style="height:${eh}%"></div>
+      </div>
+      <div class="bar-label">${d.label}</div>
+    </div>`;
   }).join('');
+  chart.innerHTML = `<div class="bar-grid">${grid}</div>${bars}`;
 
   const ri = document.getElementById('dash-invoices');
   const recent = cache.invoices.slice(0,5);
@@ -1717,7 +1738,7 @@ document.addEventListener('touchend', e=>{
 }, {passive:false});
 
 // ====== AUTO-UPDATE (version check) ======
-const APP_VERSION = 9;  // <-- bump this AND version.json on every deploy
+const APP_VERSION = 10;  // <-- bump this AND version.json on every deploy
 
 async function checkForUpdate() {
   try {
