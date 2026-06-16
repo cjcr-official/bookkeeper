@@ -1,4 +1,4 @@
 {
-  "version": 18,
-  "note": "Fixed date fields overflowing on mobile"
+  "version": 19,
+  "note": "Added top buffer to popups so they clear the status bar"
 }
