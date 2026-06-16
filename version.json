@@ -1,4 +1,4 @@
 {
-  "version": 10,
-  "note": "Nicer compact income vs expenses chart"
+  "version": 11,
+  "note": "Reliable update checks + smarter fullscreen hint"
 }
