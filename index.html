@@ -107,7 +107,7 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .nav-item i{font-size:17px;flex-shrink:0}
 .nav-section{font-size:10px;font-weight:700;letter-spacing:1.2px;color:var(--text3);padding:.8rem 1.25rem .3rem;text-transform:uppercase;font-family:'JetBrains Mono',monospace}
 .main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
-.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:.7rem 1.5rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:1rem}
+.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:.7rem 1.5rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:1rem;position:sticky;top:0;z-index:400}
 .topbar-left{display:flex;align-items:center;gap:.75rem}
 .topbar-title{font-size:17px;font-weight:700;letter-spacing:-.3px}
 .topbar-breadcrumb{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace}
@@ -214,7 +214,7 @@ textarea{resize:vertical;min-height:70px}
 .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;position:relative;z-index:1}
 .bar-pair{display:flex;gap:3px;align-items:flex-end;width:100%;justify-content:center;height:124px}
 .bar{width:42%;max-width:18px;border-radius:3px 3px 0 0;min-height:3px;transition:filter .15s,transform .15s;cursor:pointer}
-.bar.income{background:linear-gradient(to top,#2563eb,#60a5fa)}
+.bar.income{background:linear-gradient(to top,#16a34a,#4ade80)}
 .bar.expense{background:linear-gradient(to top,#dc2626,#f87171)}
 .bar:hover{filter:brightness(1.15);transform:scaleY(1.02)}
 .bar-label{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:6px}
@@ -520,7 +520,7 @@ body.modal-open .main{overflow:hidden}
             <div class="card-header">
               <h3>Income vs Expenses</h3>
               <div style="display:flex;gap:.85rem">
-                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:10px;height:10px;background:linear-gradient(to top,#3b82f6,#60a5fa);border-radius:2px;display:inline-block"></span>Income</span>
+                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:10px;height:10px;background:linear-gradient(to top,#16a34a,#4ade80);border-radius:2px;display:inline-block"></span>Income</span>
                 <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:10px;height:10px;background:linear-gradient(to top,#ef4444,#f87171);border-radius:2px;display:inline-block"></span>Expenses</span>
               </div>
             </div>
@@ -538,15 +538,23 @@ body.modal-open .main{overflow:hidden}
           <div id="dash-expenses"></div>
         </div>
 
-        <!-- REPORTS (on dashboard) -->
-        <div style="margin-top:1.5rem">
-          <div class="tabs" id="report-tabs">
-            <div class="tab active" onclick="showReport('pl',this)">Profit & Loss</div>
-            <div class="tab" onclick="showReport('bs',this)">Balance Sheet</div>
-            <div class="tab" onclick="showReport('ar',this)">Accounts Receivable</div>
-            <div class="tab" onclick="showReport('exp',this)">Expense Summary</div>
+        <!-- REPORTS (collapsible card on dashboard) -->
+        <div class="card" style="margin-top:1rem">
+          <div class="card-header" onclick="toggleReports()" style="cursor:pointer;user-select:none">
+            <h3><i class="ti ti-chart-pie" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Reports</h3>
+            <i class="ti ti-chevron-down" id="reports-chevron" style="transition:transform .2s;color:var(--text3)"></i>
           </div>
-          <div id="report-content"></div>
+          <div id="reports-body" style="display:none">
+            <div style="padding:.85rem 1rem 0">
+              <div class="tabs" id="report-tabs">
+                <div class="tab active" onclick="showReport('pl',this)">Profit & Loss</div>
+                <div class="tab" onclick="showReport('bs',this)">Balance Sheet</div>
+                <div class="tab" onclick="showReport('ar',this)">Accounts Receivable</div>
+                <div class="tab" onclick="showReport('exp',this)">Expense Summary</div>
+              </div>
+            </div>
+            <div id="report-content"></div>
+          </div>
         </div>
       </div>
 
@@ -1008,7 +1016,7 @@ function renderDashboard() {
     const ih=Math.max(d.inc>0?3:0,Math.round((d.inc/chartTop)*100));
     const eh=Math.max(d.exp>0?3:0,Math.round((d.exp/chartTop)*100));
     return `<div class="bar-col">
-      <div class="bar-tip">${d.label}: <span style="color:#60a5fa">${fmt(d.inc)}</span> / <span style="color:#f87171">${fmt(d.exp)}</span></div>
+      <div class="bar-tip">${d.label}: <span style="color:#4ade80">${fmt(d.inc)}</span> / <span style="color:#f87171">${fmt(d.exp)}</span></div>
       <div class="bar-pair">
         <div class="bar income" style="height:${ih}%"></div>
         <div class="bar expense" style="height:${eh}%"></div>
@@ -1021,7 +1029,7 @@ function renderDashboard() {
   const ri = document.getElementById('dash-invoices');
   const recent = cache.invoices.slice(0,5);
   ri.innerHTML = recent.length
-    ? `<table><thead><tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead><tbody>${recent.map(i=>`<tr><td><span style="font-family:'DM Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="viewInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmt(i.total)}</td><td>${statusBadge(i.status)}</td></tr>`).join('')}</tbody></table>`
+    ? `<table><thead><tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead><tbody>${recent.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="viewInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmt(i.total)}</td><td>${statusBadge(i.status)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices yet</p></div>`;
 
   const re = document.getElementById('dash-expenses');
@@ -1030,8 +1038,7 @@ function renderDashboard() {
     ? `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Amount</th></tr></thead><tbody>${rexp.map(e=>`<tr><td>${fmtDate(e.date)}</td><td>${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td class="red">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`;
 
-  // Render the reports section that now lives on the dashboard
-  if (document.getElementById('report-content')) renderReport(currentReport);
+  // Reports render on demand when the collapsible card is opened (see toggleReports)
 }
 
 // ====== INVOICES ======
@@ -1102,7 +1109,7 @@ function renderInvLines() {
     <td style="padding:4px 6px"><input type="text" value="${l.desc||''}" oninput="editingInvLines[${i}].desc=this.value" style="font-size:13px;padding:.3rem .5rem" placeholder="Service or item..."></td>
     <td style="padding:4px 4px"><input type="number" value="${l.qty}" min="0" oninput="editingInvLines[${i}].qty=+this.value;calcLine(${i})" style="font-size:13px;padding:.3rem;text-align:center;width:55px"></td>
     <td style="padding:4px 4px"><input type="number" value="${l.rate}" min="0" step="0.01" oninput="editingInvLines[${i}].rate=+this.value;calcLine(${i})" style="font-size:13px;padding:.3rem;text-align:right;width:80px"></td>
-    <td style="padding:4px 6px;text-align:right;font-family:'DM Mono',monospace;font-size:13px">${fmt(l.amount||0)}</td>
+    <td style="padding:4px 6px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px">${fmt(l.amount||0)}</td>
     <td style="text-align:center"><button onclick="removeInvLine(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px"><i class="ti ti-x"></i></button></td>
   </tr>`).join('');
   calcInvTotals();
@@ -1172,28 +1179,28 @@ function viewInvoice(id) {
   <div style="background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:2rem">
     <div style="display:flex;justify-content:space-between;margin-bottom:2rem">
       <div>
-        <div style="font-family:'Fraunces',serif;font-size:22px;font-weight:600">${p.company||'My Business'}</div>
+        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:22px;font-weight:600">${p.company||'My Business'}</div>
         <div style="font-size:12px;color:var(--text2);margin-top:.5rem;line-height:1.8">${p.address?p.address+'<br>':''}${p.email?p.email+'<br>':''}${p.phone||''}</div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:28px;font-family:'Fraunces',serif;color:var(--text3)">INVOICE</div>
-        <div style="font-family:'DM Mono',monospace;font-size:13px;color:var(--text2);margin-top:.25rem">${inv.number}</div>
+        <div style="font-size:28px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;color:var(--text3)">INVOICE</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2);margin-top:.25rem">${inv.number}</div>
         <div style="font-size:12px;color:var(--text2);line-height:1.8">Date: ${fmtDate(inv.date)}<br>Due: ${fmtDate(inv.due)}</div>
         <div style="margin-top:.4rem">${statusBadge(inv.status)}</div>
       </div>
     </div>
     <div style="margin-bottom:1.5rem;padding:1rem;background:#F7F6F3;border-radius:var(--radius-sm)">
-      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.25rem;font-family:'DM Mono',monospace">Bill To</div>
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.25rem;font-family:'JetBrains Mono',monospace">Bill To</div>
       <div style="font-weight:500;font-size:15px">${inv.customer_name||'—'}</div>
     </div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:1rem">
       <thead><tr>
-        <th style="text-align:left;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'DM Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border)">Description</th>
-        <th style="text-align:center;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'DM Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border);width:60px">Qty</th>
-        <th style="text-align:right;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'DM Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border);width:100px">Rate</th>
-        <th style="text-align:right;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'DM Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border);width:100px">Amount</th>
+        <th style="text-align:left;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border)">Description</th>
+        <th style="text-align:center;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border);width:60px">Qty</th>
+        <th style="text-align:right;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border);width:100px">Rate</th>
+        <th style="text-align:right;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border);width:100px">Amount</th>
       </tr></thead>
-      <tbody>${(inv.lines||[]).map(l=>`<tr><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border)">${l.desc||'—'}</td><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:center">${l.qty}</td><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace">${fmt(l.rate)}</td><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:right;font-family:'DM Mono',monospace;font-weight:500">${fmt(l.amount)}</td></tr>`).join('')}</tbody>
+      <tbody>${(inv.lines||[]).map(l=>`<tr><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border)">${l.desc||'—'}</td><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:center">${l.qty}</td><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:right;font-family:'JetBrains Mono',monospace">${fmt(l.rate)}</td><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:right;font-family:'JetBrains Mono',monospace;font-weight:500">${fmt(l.amount)}</td></tr>`).join('')}</tbody>
     </table>
     <div style="text-align:right">
       <div style="display:flex;justify-content:flex-end;gap:2rem;padding:.3rem 0;color:var(--text2);font-size:13.5px"><span>Subtotal</span><span>${fmt(inv.subtotal)}</span></div>
@@ -1578,6 +1585,15 @@ async function deleteAccount(id) {
 }
 
 // ====== REPORTS ======
+function toggleReports() {
+  const body = document.getElementById('reports-body');
+  const chev = document.getElementById('reports-chevron');
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+  if (!open) renderReport(currentReport); // render fresh when opening
+}
+
 function showReport(r,el) { currentReport=r; document.querySelectorAll('#report-tabs .tab').forEach(t=>t.classList.remove('active')); if(el)el.classList.add('active'); renderReport(r); }
 
 function renderReport(r) {
@@ -1587,39 +1603,39 @@ function renderReport(r) {
     const revenue=cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getFullYear()===yr).reduce((s,i)=>s+parseFloat(i.total||0),0);
     const totalExp=cache.expenses.filter(e=>new Date(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const cats={};cache.expenses.filter(e=>new Date(e.date).getFullYear()===yr).forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
-    el.innerHTML=`<div class="card"><div class="card-header"><h3>Profit & Loss — ${yr}</h3><button class="btn btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Print</button></div>
+    el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .25rem"><div style="font-size:12.5px;font-weight:700;color:var(--text)">Profit & Loss — ${yr}</div><button class="btn btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Print</button></div>
     <div style="padding:1.25rem;max-width:560px">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:.5rem">Income</div>
-      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border)"><span>Revenue (paid invoices)</span><span class="green" style="font-family:'DM Mono',monospace">${fmt(revenue)}</span></div>
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'DM Mono',monospace;margin:.75rem 0 .5rem">Expenses</div>
-      ${Object.entries(cats).map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${k}</span><span class="red" style="font-family:'DM Mono',monospace">${fmt(v)}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);font-weight:500"><span>Total Expenses</span><span class="red" style="font-family:'DM Mono',monospace">${fmt(totalExp)}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:.75rem 0;font-weight:600;font-size:17px;font-family:'Fraunces',serif"><span>Net Profit</span><span class="${revenue-totalExp>=0?'green':'red'}">${fmt(revenue-totalExp)}</span></div>
-    </div></div>`;
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-bottom:.5rem">Income</div>
+      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border)"><span>Revenue (paid invoices)</span><span class="green" style="font-family:'JetBrains Mono',monospace">${fmt(revenue)}</span></div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin:.75rem 0 .5rem">Expenses</div>
+      ${Object.entries(cats).map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${k}</span><span class="red" style="font-family:'JetBrains Mono',monospace">${fmt(v)}</span></div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);font-weight:500"><span>Total Expenses</span><span class="red" style="font-family:'JetBrains Mono',monospace">${fmt(totalExp)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:.75rem 0;font-weight:600;font-size:17px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700"><span>Net Profit</span><span class="${revenue-totalExp>=0?'green':'red'}">${fmt(revenue-totalExp)}</span></div>
+    </div>`;
   } else if (r==='bs') {
     const assets=cache.accounts.filter(a=>['Bank','Accounts Receivable','Other Asset'].includes(a.type)).reduce((s,a)=>s+parseFloat(a.balance||0),0);
     const liabs=cache.accounts.filter(a=>['Accounts Payable','Credit Card','Other Liability'].includes(a.type)).reduce((s,a)=>s+parseFloat(a.balance||0),0);
     const equity=cache.accounts.filter(a=>a.type==='Equity').reduce((s,a)=>s+parseFloat(a.balance||0),0);
-    el.innerHTML=`<div class="card"><div class="card-header"><h3>Balance Sheet — ${yr}</h3><button class="btn btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Print</button></div>
+    el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .25rem"><div style="font-size:12.5px;font-weight:700;color:var(--text)">Balance Sheet — ${yr}</div><button class="btn btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Print</button></div>
     <div style="padding:1.25rem;max-width:560px">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:.5rem">Assets</div>
-      ${cache.accounts.filter(a=>['Bank','Accounts Receivable','Other Asset'].includes(a.type)).map(a=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${a.name}</span><span style="font-family:'DM Mono',monospace">${fmt(a.balance)}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:2px solid var(--border);font-weight:500"><span>Total Assets</span><span class="green" style="font-family:'DM Mono',monospace">${fmt(assets)}</span></div>
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'DM Mono',monospace;margin:.75rem 0 .5rem">Liabilities</div>
-      ${cache.accounts.filter(a=>['Accounts Payable','Credit Card','Other Liability'].includes(a.type)).map(a=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${a.name}</span><span class="red" style="font-family:'DM Mono',monospace">${fmt(a.balance)}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);font-weight:500"><span>Total Liabilities</span><span class="red" style="font-family:'DM Mono',monospace">${fmt(liabs)}</span></div>
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'DM Mono',monospace;margin:.75rem 0 .5rem">Equity</div>
-      ${cache.accounts.filter(a=>a.type==='Equity').map(a=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${a.name}</span><span style="font-family:'DM Mono',monospace">${fmt(a.balance)}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:.75rem 0;font-weight:600;font-size:17px;font-family:'Fraunces',serif"><span>Liabilities + Equity</span><span style="font-family:'DM Mono',monospace">${fmt(liabs+equity)}</span></div>
-    </div></div>`;
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-bottom:.5rem">Assets</div>
+      ${cache.accounts.filter(a=>['Bank','Accounts Receivable','Other Asset'].includes(a.type)).map(a=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${a.name}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</span></div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:2px solid var(--border);font-weight:500"><span>Total Assets</span><span class="green" style="font-family:'JetBrains Mono',monospace">${fmt(assets)}</span></div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin:.75rem 0 .5rem">Liabilities</div>
+      ${cache.accounts.filter(a=>['Accounts Payable','Credit Card','Other Liability'].includes(a.type)).map(a=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${a.name}</span><span class="red" style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</span></div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);font-weight:500"><span>Total Liabilities</span><span class="red" style="font-family:'JetBrains Mono',monospace">${fmt(liabs)}</span></div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin:.75rem 0 .5rem">Equity</div>
+      ${cache.accounts.filter(a=>a.type==='Equity').map(a=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${a.name}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</span></div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:.75rem 0;font-weight:600;font-size:17px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700"><span>Liabilities + Equity</span><span style="font-family:'JetBrains Mono',monospace">${fmt(liabs+equity)}</span></div>
+    </div>`;
   } else if (r==='ar') {
     const unpaid=cache.invoices.filter(i=>i.status!=='paid');
-    el.innerHTML=`<div class="card"><div class="card-header"><h3>Accounts Receivable</h3></div>${unpaid.length?`<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th></tr></thead><tbody>${unpaid.map(i=>`<tr><td style="font-family:'DM Mono',monospace;font-size:12px">${i.number}</td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}</td><td>${statusBadge(i.status)}</td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Outstanding: <span class="amber">${fmt(unpaid.reduce((s,i)=>s+parseFloat(i.total||0),0))}</span></div>`:`<div class="empty"><i class="ti ti-check"></i><p>All invoices are paid!</p></div>`}</div>`;
+    el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .5rem"><div style="font-size:12.5px;font-weight:700;color:var(--text)">Accounts Receivable</div></div>${unpaid.length?`<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th></tr></thead><tbody>${unpaid.map(i=>`<tr><td style="font-family:'JetBrains Mono',monospace;font-size:12px">${i.number}</td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}</td><td>${statusBadge(i.status)}</td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Outstanding: <span class="amber">${fmt(unpaid.reduce((s,i)=>s+parseFloat(i.total||0),0))}</span></div>`:`<div class="empty"><i class="ti ti-check"></i><p>All invoices are paid!</p></div>`}`;
   } else if (r==='exp') {
     const cats={};cache.expenses.forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
     const sorted=Object.entries(cats).sort((a,b)=>b[1]-a[1]);
     const total=cache.expenses.reduce((s,e)=>s+parseFloat(e.amount||0),0);
-    el.innerHTML=`<div class="card"><div class="card-header"><h3>Expense Summary — All Time</h3></div>${sorted.length?`<table><thead><tr><th>Category</th><th>Amount</th><th>% of Total</th></tr></thead><tbody>${sorted.map(([k,v])=>`<tr><td><span class="badge badge-gray">${k}</span></td><td class="red" style="font-family:'DM Mono',monospace">${fmt(v)}</td><td><div style="display:flex;align-items:center;gap:8px"><div style="height:6px;width:${Math.round((v/total)*130)}px;background:#FCEBEB;border-radius:3px;border:1px solid #F7C1C1;min-width:2px"></div><span style="font-size:12px;color:var(--text2)">${Math.round((v/total)*100)}%</span></div></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Total: <span class="red">${fmt(total)}</span></div>`:`<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`}</div>`;
+    el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .5rem"><div style="font-size:12.5px;font-weight:700;color:var(--text)">Expense Summary — All Time</div></div>${sorted.length?`<table><thead><tr><th>Category</th><th>Amount</th><th>% of Total</th></tr></thead><tbody>${sorted.map(([k,v])=>`<tr><td><span class="badge badge-gray">${k}</span></td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(v)}</td><td><div style="display:flex;align-items:center;gap:8px"><div style="height:6px;width:${Math.round((v/total)*130)}px;background:var(--red-bg);border-radius:3px;min-width:2px"></div><span style="font-size:12px;color:var(--text2)">${Math.round((v/total)*100)}%</span></div></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Total: <span class="red">${fmt(total)}</span></div>`:`<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`}`;
   }
 }
 
