@@ -1,4 +1,4 @@
 {
-  "version": 29,
-  "note": "Tapping a recent invoice opens it in the Invoices tab"
+  "version": 30,
+  "note": "Fixed column alignment on dashboard recent lists"
 }
