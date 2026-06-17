@@ -902,7 +902,7 @@ body.modal-open .main{overflow:hidden}
     <div class="modal-header"><h2>Invoice Preview</h2>
       <div style="display:flex;gap:.5rem">
         <button class="btn btn-sm btn-primary" id="inv-share-btn" onclick="shareInvoicePDF()"><i class="ti ti-share"></i> Share PDF</button>
-        <button class="btn btn-sm" onclick="printInvoice()"><i class="ti ti-printer"></i> Print</button>
+        <button class="btn btn-sm" id="inv-print-btn" onclick="printInvoice()"><i class="ti ti-printer"></i> Print</button>
         <button class="btn btn-sm" onclick="closeModal('modal-view-invoice')"><i class="ti ti-x"></i></button>
       </div>
     </div>
@@ -1413,23 +1413,37 @@ async function shareInvoicePDF() {
   }
 }
 
-function printInvoice() {
-  if (!lastInvoiceHTML) return;
-  const doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + lastInvoiceTitle + '</title>'
+async function printInvoice() {
+  // Generate the same PDF as Share, then open it directly so iOS goes straight to
+  // its PDF viewer (Print / Save to Files) — no intermediate HTML page.
+  const btn = document.getElementById('inv-print-btn');
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
+  try {
+    const pdf = await buildInvoicePDF();
+    if (pdf) {
+      const blob = pdf.output('blob');
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url, '_blank');
+      if (!w) {
+        const a = document.createElement('a');
+        a.href = url; a.target = '_blank'; a.rel = 'noopener';
+        document.body.appendChild(a); a.click(); a.remove();
+      }
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+      return;
+    }
+  } catch(e) { console.error(e); }
+  finally { if (btn) { btn.innerHTML = orig; btn.disabled = false; } }
+  // Fallback if PDF libs unavailable: open printable HTML that auto-prints
+  const doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + lastInvoiceTitle + '</title>'
     + '<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">'
-    + '<style>*{box-sizing:border-box}body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}@media print{@page{margin:0.5in}}'
-    + '.print-bar{position:sticky;top:0;left:0;right:0;background:#3b82f6;color:#fff;padding:15px;text-align:center;font-weight:700;font-size:15px;border:none;width:100%;font-family:inherit;cursor:pointer}'
-    + '.doc{max-width:760px;margin:0 auto;padding:24px}@media print{.print-bar{display:none}.doc{padding:0;max-width:none}}</style></head><body>'
-    + '<button class="print-bar" onclick="window.print()">Tap to Print / Save as PDF</button>'
-    + '<div class="doc">' + lastInvoiceHTML + '</div></body></html>';
+    + '<style>*{box-sizing:border-box}body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}.doc{max-width:760px;margin:0 auto;padding:24px}</style></head><body>'
+    + '<div class="doc">' + lastInvoiceHTML + '</div><scr'+'ipt>setTimeout(function(){try{window.print()}catch(e){}},500)</scr'+'ipt></body></html>';
   const blob = new Blob([doc], {type:'text/html'});
   const url = URL.createObjectURL(blob);
   const w = window.open(url, '_blank');
-  if (!w) {
-    const a = document.createElement('a');
-    a.href = url; a.target = '_blank'; a.rel = 'noopener';
-    document.body.appendChild(a); a.click(); a.remove();
-  }
+  if (!w) { const a=document.createElement('a'); a.href=url; a.target='_blank'; document.body.appendChild(a); a.click(); a.remove(); }
   setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
 }
 
