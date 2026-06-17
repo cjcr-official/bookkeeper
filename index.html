@@ -1414,37 +1414,49 @@ async function shareInvoicePDF() {
 }
 
 async function printInvoice() {
-  // Generate the same PDF as Share, then open it directly so iOS goes straight to
-  // its PDF viewer (Print / Save to Files) — no intermediate HTML page.
-  const btn = document.getElementById('inv-print-btn');
-  const orig = btn ? btn.innerHTML : '';
-  if (btn) { btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
+  // Print via a hidden iframe so iOS shows the native print dialog directly.
+  if (!lastInvoiceHTML) return;
+  // remove any prior print frame
+  const old = document.getElementById('print-frame');
+  if (old) old.remove();
+  const iframe = document.createElement('iframe');
+  iframe.id = 'print-frame';
+  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(iframe);
+  const docHTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + lastInvoiceTitle + '</title>'
+    + '<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">'
+    + '<style>*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}'
+    + '@page{margin:0.5in}.doc{padding:0;width:100%}'
+    + '#inv-print-area table,#inv-print-area thead,#inv-print-area tbody,#inv-print-area tr,#inv-print-area th,#inv-print-area td{display:revert}'
+    + '#inv-print-area tr{display:table-row}#inv-print-area th,#inv-print-area td{display:table-cell}'
+    + '</style></head><body><div class="doc">' + lastInvoiceHTML + '</div></body></html>';
+  const idoc = iframe.contentWindow.document;
+  idoc.open(); idoc.write(docHTML); idoc.close();
+  // wait for fonts/layout, then print the iframe
+  const doPrint = () => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch(e) {
+      // fallback: open the PDF if iframe printing is blocked
+      printInvoiceFallback();
+    }
+    setTimeout(()=>{ const f=document.getElementById('print-frame'); if(f) f.remove(); }, 1000);
+  };
+  // give the iframe a moment to render
+  setTimeout(doPrint, 700);
+}
+
+async function printInvoiceFallback() {
   try {
     const pdf = await buildInvoicePDF();
     if (pdf) {
-      const blob = pdf.output('blob');
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(pdf.output('blob'));
       const w = window.open(url, '_blank');
-      if (!w) {
-        const a = document.createElement('a');
-        a.href = url; a.target = '_blank'; a.rel = 'noopener';
-        document.body.appendChild(a); a.click(); a.remove();
-      }
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
-      return;
+      if (!w) { const a=document.createElement('a'); a.href=url; a.target='_blank'; document.body.appendChild(a); a.click(); a.remove(); }
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
     }
   } catch(e) { console.error(e); }
-  finally { if (btn) { btn.innerHTML = orig; btn.disabled = false; } }
-  // Fallback if PDF libs unavailable: open printable HTML that auto-prints
-  const doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + lastInvoiceTitle + '</title>'
-    + '<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">'
-    + '<style>*{box-sizing:border-box}body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}.doc{max-width:760px;margin:0 auto;padding:24px}</style></head><body>'
-    + '<div class="doc">' + lastInvoiceHTML + '</div><scr'+'ipt>setTimeout(function(){try{window.print()}catch(e){}},500)</scr'+'ipt></body></html>';
-  const blob = new Blob([doc], {type:'text/html'});
-  const url = URL.createObjectURL(blob);
-  const w = window.open(url, '_blank');
-  if (!w) { const a=document.createElement('a'); a.href=url; a.target='_blank'; document.body.appendChild(a); a.click(); a.remove(); }
-  setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
 }
 
 function viewInvoice(id) {
