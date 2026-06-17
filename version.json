@@ -1,4 +1,4 @@
 {
-  "version": 39,
-  "note": "Invoice: formatted phone/email, removed hours column, centered footer"
+  "version": 40,
+  "note": "Cleaner invoice line-item table"
 }
