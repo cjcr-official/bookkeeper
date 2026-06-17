@@ -1,4 +1,4 @@
 {
-  "version": 30,
-  "note": "Fixed column alignment on dashboard recent lists"
+  "version": 31,
+  "note": "Recent list rows now align with section headers"
 }
