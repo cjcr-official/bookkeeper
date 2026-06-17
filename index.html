@@ -331,26 +331,31 @@ body.modal-open .main{overflow:hidden}
   /* ── GRIDS ── */
   .two-col,.form-row{grid-template-columns:1fr}
 
-  /* ── TABLES → CARDS ── */
-  table thead{display:none}
-  table,table tbody,table tr,table td{display:block;width:100%}
-  table tr{
+  /* ── TABLES → CARDS (scoped so the invoice print area is never stacked) ── */
+  .page table thead{display:none}
+  .page table,.page table tbody,.page table tr,.page table td{display:block;width:100%}
+  .page table tr{
     background:var(--surface);border:1px solid var(--border);
     border-radius:var(--radius-sm);margin-bottom:.5rem;
     padding:.6rem .75rem;position:relative;
   }
-  table tr:hover{background:var(--surface2)}
-  table td{
+  .page table tr:hover{background:var(--surface2)}
+  .page table td{
     border:none;padding:.15rem 0;font-size:13px;
     display:flex;align-items:center;justify-content:space-between;
   }
-  table td::before{
+  .page table td::before{
     content:attr(data-label);font-size:10px;font-weight:700;
     color:var(--text3);text-transform:uppercase;letter-spacing:.6px;
     font-family:'JetBrains Mono',monospace;margin-right:.5rem;flex-shrink:0;
   }
-  table td:first-child{font-weight:600;color:var(--text);font-size:13.5px}
-  table td:first-child::before,table td:last-child::before{display:none}
+  .page table td:first-child{font-weight:600;color:var(--text);font-size:13.5px}
+  .page table td:first-child::before,.page table td:last-child::before{display:none}
+  /* invoice print area always keeps real table columns */
+  #inv-print-area table,#inv-print-area thead,#inv-print-area tbody,#inv-print-area tr,#inv-print-area th,#inv-print-area td{display:revert!important}
+  #inv-print-area tr{display:table-row!important}
+  #inv-print-area th,#inv-print-area td{display:table-cell!important}
+  #inv-print-area td::before{display:none!important}
 
   /* dashboard recent lists: keep flat rows inside their card (no inner card per row) */
   .dash-table{display:table!important;width:calc(100% - 2rem);table-layout:fixed;margin:0 1rem}
@@ -1337,10 +1342,20 @@ let lastInvoiceHTML = '';
 let lastInvoiceTitle = 'Invoice';
 
 async function buildInvoicePDF() {
-  // render the invoice preview node to a canvas, then into a PDF
-  const node = document.getElementById('inv-print-area');
-  if (!node || !window.html2canvas || !window.jspdf) return null;
-  const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+  if (!lastInvoiceHTML || !window.html2canvas || !window.jspdf) return null;
+  // Render from an OFF-SCREEN clone forced to a fixed desktop width (760px) so the
+  // invoice table stays in proper columns instead of the squeezed mobile/stacked layout.
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:780px;background:#fff;z-index:-1';
+  holder.innerHTML = '<div style="width:780px;background:#fff;padding:24px">' + lastInvoiceHTML + '</div>';
+  document.body.appendChild(holder);
+  const node = holder.querySelector('#inv-print-area') || holder.firstChild;
+  let canvas;
+  try {
+    canvas = await html2canvas(node, { scale: 2, backgroundColor: '#ffffff', useCORS: true, width: 760, windowWidth: 760 });
+  } finally {
+    document.body.removeChild(holder);
+  }
   const imgData = canvas.toDataURL('image/jpeg', 0.95);
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
