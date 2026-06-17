@@ -894,7 +894,7 @@ body.modal-open .main{overflow:hidden}
   <div class="modal" style="width:620px">
     <div class="modal-header"><h2>Invoice Preview</h2>
       <div style="display:flex;gap:.5rem">
-        <button class="btn btn-sm btn-primary" onclick="window.print()"><i class="ti ti-printer"></i> Print / PDF</button>
+        <button class="btn btn-sm btn-primary" onclick="printInvoice()"><i class="ti ti-printer"></i> Print / PDF</button>
         <button class="btn btn-sm" onclick="closeModal('modal-view-invoice')"><i class="ti ti-x"></i></button>
       </div>
     </div>
@@ -1192,13 +1192,14 @@ function renderInvoices() {
         <div style="text-align:right;flex-shrink:0">
           <div style="font-size:15px;font-weight:700;color:var(--text)">${fmt(i.total)}</div>
           <div style="display:flex;gap:.35rem;margin-top:.4rem;justify-content:flex-end">
+            <button class="btn btn-sm" onclick="event.stopPropagation();viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button>
             <button class="btn btn-sm" onclick="event.stopPropagation();editInvoice('${i.id}')"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button>
           </div>
         </div>
       </div>`).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="editInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}</td><td>${statusBadge(i.status)}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="editInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}</td><td>${statusBadge(i.status)}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
@@ -1329,6 +1330,29 @@ async function deleteInvoice(id) {
   showToast('Invoice deleted'); renderInvoices();
 }
 
+let lastInvoiceHTML = '';
+let lastInvoiceTitle = 'Invoice';
+
+function printInvoice() {
+  if (!lastInvoiceHTML) return;
+  const doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + lastInvoiceTitle + '</title>'
+    + '<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">'
+    + '<style>*{box-sizing:border-box}body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}@media print{@page{margin:0.5in}}'
+    + '.print-bar{position:sticky;top:0;left:0;right:0;background:#3b82f6;color:#fff;padding:15px;text-align:center;font-weight:700;font-size:15px;border:none;width:100%;font-family:inherit;cursor:pointer}'
+    + '.doc{max-width:760px;margin:0 auto;padding:24px}@media print{.print-bar{display:none}.doc{padding:0;max-width:none}}</style></head><body>'
+    + '<button class="print-bar" onclick="window.print()">Tap to Print / Save as PDF</button>'
+    + '<div class="doc">' + lastInvoiceHTML + '</div></body></html>';
+  const blob = new Blob([doc], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  if (!w) {
+    const a = document.createElement('a');
+    a.href = url; a.target = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+}
+
 function viewInvoice(id) {
   const inv = cache.invoices.find(i=>i.id===id); if(!inv) return;
   const p = profile || {};
@@ -1341,7 +1365,7 @@ function viewInvoice(id) {
   const bizAddr = (p.address||'').replace(/\n/g,'<br>');
   const esc = s => (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;');
 
-  document.getElementById('invoice-preview-content').innerHTML = `
+  const _invHTML = `
   <div id="inv-print-area" style="background:#fff;color:#1a1a1a;padding:2.25rem 2rem;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;line-height:1.5">
     <!-- HEADER: business left, INVOICE right -->
     <div style="display:flex;justify-content:space-between;gap:1.5rem;border-bottom:2px solid #1a1a1a;padding-bottom:1rem;margin-bottom:1.25rem">
@@ -1420,6 +1444,9 @@ function viewInvoice(id) {
       <div style="margin-top:.75rem;font-weight:700;text-align:center;letter-spacing:.5px">THANK YOU FOR YOUR BUSINESS!</div>
     </div>
   </div>`;
+  document.getElementById('invoice-preview-content').innerHTML = _invHTML;
+  lastInvoiceHTML = _invHTML;
+  lastInvoiceTitle = 'Invoice ' + (inv.number || '');
   openModal('modal-view-invoice');
 }
 
