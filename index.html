@@ -409,7 +409,8 @@ body.modal-open .main{overflow:hidden}
   .cust-name{font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cust-line{font-size:12.5px;color:var(--text2);margin-top:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cust-amount{font-size:17px;font-weight:700;color:var(--text);flex-shrink:0;white-space:nowrap}
-  .cust-actions{display:grid;grid-template-columns:repeat(5,1fr);gap:.4rem}
+  .cust-actions{display:flex;flex-wrap:wrap;gap:.4rem}
+  .cust-actions .cust-btn{flex:1 1 calc(20% - .4rem);min-width:60px}
   .cust-btn{
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
     padding:.55rem .2rem;border-radius:var(--radius-sm);
@@ -421,6 +422,7 @@ body.modal-open .main{overflow:hidden}
   .cust-btn:active{transform:scale(.96);background:var(--surface2)}
   .cust-btn-call{color:var(--green);border-color:rgba(34,197,94,.3);background:var(--green-bg)}
   .cust-btn-email{color:var(--accent-text);border-color:rgba(59,130,246,.3);background:var(--accent-bg)}
+  .cust-btn-map{color:var(--cyan);border-color:rgba(6,182,212,.3);background:var(--cyan-bg)}
   .cust-btn-del{color:var(--red);border-color:rgba(239,68,68,.3);background:var(--red-bg)}
 
   .m-card{
@@ -1380,6 +1382,7 @@ function renderCustomers() {
         '<div class="cust-actions">' +
           (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + phoneHref + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
           (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + c.email + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
+          (c.address ? '<a class="cust-btn cust-btn-map" href="https://maps.apple.com/?q=' + encodeURIComponent(c.address) + '" target="_blank" rel="noopener"><i class="ti ti-map-pin"></i><span>Map</span></a>' : '') +
           '<button class="cust-btn" onclick="viewCustomerInvoices(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
           '<button class="cust-btn" onclick="editCustomer(\'' + c.id + '\')"><i class="ti ti-edit"></i><span>Edit</span></button>' +
           '<button class="cust-btn cust-btn-del" onclick="deleteCustomer(\'' + c.id + '\')"><i class="ti ti-trash"></i><span>Delete</span></button>' +
@@ -1387,7 +1390,7 @@ function renderCustomers() {
       '</div>';
     }).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?fmtPhone(c.phone):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${(c.phone||'').replace(/[^\d+]/g,'')}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${c.email}" title="Email"><i class="ti ti-mail"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?fmtPhone(c.phone):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${(c.phone||'').replace(/[^\d+]/g,'')}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${c.email}" title="Email"><i class="ti ti-mail"></i></a>`:''}${c.address?`<a class="btn btn-sm" style="margin-right:4px" href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}" target="_blank" rel="noopener" title="Open in Maps"><i class="ti ti-map-pin"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
