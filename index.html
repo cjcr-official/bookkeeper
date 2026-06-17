@@ -1362,7 +1362,7 @@ function viewInvoice(id) {
   const rates = [...new Set(lines.map(l=>parseFloat(l.rate||0)).filter(r=>r>0))];
   const hourly = rates.length===1 ? rates[0] : null;
   const bizName = p.company || 'My Business';
-  const bizAddr = (p.address||'').replace(/\n/g,'<br>');
+  const bizAddr = fmtAddress(p.address);
   const esc = s => (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;');
 
   const _invHTML = `
@@ -1388,7 +1388,7 @@ function viewInvoice(id) {
         <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#666">CLIENT:</div>
         <div style="margin-top:.25rem;line-height:1.6">
           <div style="font-weight:600">${esc(cust.name||inv.customer_name||'—')}</div>
-          ${cust.address?`<div style="color:#444">${esc(cust.address).replace(/\n/g,'<br>')}</div>`:''}
+          ${cust.address?`<div style="color:#444">${fmtAddress(cust.address)}</div>`:''}
           ${cust.phone?`<div style="color:#444">Phone: ${esc(fmtPhone(cust.phone))}</div>`:''}
         </div>
       </div>
@@ -1444,6 +1444,44 @@ function viewInvoice(id) {
 }
 
 // ====== CUSTOMERS ======
+function fmtAddress(addr) {
+  if (!addr) return '';
+  const esc = s => (''+(s||'')).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const raw = (''+addr).trim();
+  // If the user already used line breaks, respect them.
+  if (/[\n\r]/.test(raw)) {
+    return raw.split(/[\n\r]+/).map(s=>s.trim()).filter(Boolean).map(esc).join('<br>');
+  }
+  // Single line: split into "street" + "city, ST zip".
+  // Strategy: find a trailing ZIP and/or 2-letter state, and a street-type word marks the
+  // end of the street portion; everything after the street suffix is the city/state/zip.
+  const zipMatch = raw.match(/\b(\d{5}(?:-\d{4})?)\s*$/);
+  const zip = zipMatch ? zipMatch[1] : '';
+  let rest = zip ? raw.slice(0, zipMatch.index).trim() : raw;
+  // trailing 2-letter state (e.g. MT)
+  const stMatch = rest.match(/[,\s]+([A-Za-z]{2})\.?\s*$/);
+  const state = stMatch ? stMatch[1].toUpperCase() : '';
+  if (stMatch) rest = rest.slice(0, stMatch.index).trim();
+  // Now `rest` = street + city. Split at the street-type suffix.
+  const streetTypes = '(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Ct|Court|Way|Pl|Place|Pkwy|Parkway|Cir|Circle|Ter|Terrace|Hwy|Highway|Loop|Trl|Trail|Sq|Square)';
+  const stp = new RegExp('^(.*?\\b' + streetTypes + '\\.?)\\s+(.*)$', 'i');
+  let street = rest, city = '';
+  const sm = rest.match(stp);
+  if (sm) { street = sm[1].trim(); city = sm[2].trim(); }
+  else {
+    // No street type found; if there's a comma, split on the last comma
+    const ci = rest.lastIndexOf(',');
+    if (ci > -1) { street = rest.slice(0,ci).trim(); city = rest.slice(ci+1).trim(); }
+  }
+  // Assemble city/state/zip line
+  let cityLine = esc(city);
+  if (state) cityLine += (cityLine?', ':'') + state;
+  if (zip) cityLine += (cityLine?' ':'') + zip;
+  const out = [esc(street)];
+  if (cityLine.trim()) out.push(cityLine.trim());
+  return out.filter(Boolean).join('<br>');
+}
+
 function fmtPhone(p) {
   if (!p) return '';
   const d = (''+p).replace(/\D/g,'');
