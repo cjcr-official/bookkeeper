@@ -1,4 +1,4 @@
 {
-  "version": 36,
-  "note": "Invoice print/PDF now matches your professional format"
+  "version": 37,
+  "note": "Added View/Print button on invoices; reliable PDF export"
 }
