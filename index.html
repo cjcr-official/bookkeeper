@@ -246,7 +246,25 @@ textarea{resize:vertical;min-height:70px}
 /* lock background scroll when a modal is open */
 body.modal-open .main{overflow:hidden}
 
-@media print{.sidebar,.topbar,.modal-overlay{display:none!important}.main{overflow:visible}}
+@media print{
+  /* hide everything by default */
+  body * { visibility:hidden!important; }
+  /* show only the invoice print area and its children */
+  #inv-print-area, #inv-print-area * { visibility:visible!important; }
+  /* position the invoice at the top of the page, full width */
+  #inv-print-area{
+    position:absolute!important;left:0;top:0;width:100%!important;
+    margin:0!important;padding:1.5rem!important;border:none!important;
+    box-shadow:none!important;background:#fff!important;color:#000!important;
+  }
+  /* neutralize app chrome */
+  .sidebar,.topbar,.bottom-nav,#install-hint,#update-overlay{display:none!important}
+  .modal-overlay{position:static!important;background:none!important;padding:0!important;display:block!important}
+  .modal{max-height:none!important;box-shadow:none!important;border:none!important;border-radius:0!important;background:#fff!important}
+  .modal-header,.modal-footer{display:none!important}
+  html,body,.app,.main{overflow:visible!important;height:auto!important;background:#fff!important}
+  @page{margin:0.5in}
+}
 
 /* ════════════════════════════
    MOBILE / iPHONE STYLES
@@ -425,7 +443,7 @@ body.modal-open .main{overflow:hidden}
   .cust-btn-map{color:var(--cyan);border-color:rgba(6,182,212,.3);background:var(--cyan-bg)}
   .cust-btn-edit-big{
     flex-direction:row!important;gap:8px!important;width:100%;
-    padding:.7rem!important;margin-bottom:.45rem;min-height:0;
+    padding:.7rem!important;margin-top:.45rem;min-height:0;
     background:var(--accent)!important;color:#fff!important;border:none!important;
     font-size:14px!important;font-weight:700;
   }
@@ -488,7 +506,7 @@ body.modal-open .main{overflow:hidden}
   <div style="display:flex;align-items:center;gap:16px">
     <svg width="52" height="52" viewBox="0 0 92 94" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ls1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#ls1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></svg>
     <div>
-      <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:28px;color:#e8eaf0;letter-spacing:-0.5px;line-height:1">Bookkeeper</div>
+      <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:28px;color:var(--text);letter-spacing:-0.5px;line-height:1">Bookkeeper</div>
       <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:4px;letter-spacing:2px">LOADING...</div>
     </div>
   </div>
@@ -1313,40 +1331,94 @@ async function deleteInvoice(id) {
 
 function viewInvoice(id) {
   const inv = cache.invoices.find(i=>i.id===id); if(!inv) return;
-  const p = profile;
-  document.getElementById('invoice-preview-content').innerHTML=`
-  <div style="background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:2rem">
-    <div style="display:flex;justify-content:space-between;margin-bottom:2rem">
-      <div>
-        <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:22px;font-weight:600">${p.company||'My Business'}</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:.5rem;line-height:1.8">${p.address?p.address+'<br>':''}${p.email?p.email+'<br>':''}${p.phone||''}</div>
+  const p = profile || {};
+  const cust = cache.customers.find(x=>x.id===inv.customer_id) || {};
+  const lines = inv.lines || [];
+  // derive an hourly rate to show (if all line rates match, show that; else blank)
+  const rates = [...new Set(lines.map(l=>parseFloat(l.rate||0)).filter(r=>r>0))];
+  const hourly = rates.length===1 ? rates[0] : null;
+  const bizName = p.company || 'My Business';
+  const bizAddr = (p.address||'').replace(/\n/g,'<br>');
+  const esc = s => (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;');
+
+  document.getElementById('invoice-preview-content').innerHTML = `
+  <div id="inv-print-area" style="background:#fff;color:#1a1a1a;padding:2.25rem 2rem;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;line-height:1.5">
+    <!-- HEADER: business left, INVOICE right -->
+    <div style="display:flex;justify-content:space-between;gap:1.5rem;border-bottom:2px solid #1a1a1a;padding-bottom:1rem;margin-bottom:1.25rem">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:16px;line-height:1.3">${esc(bizName)}</div>
+        <div style="font-size:12px;color:#444;margin-top:.35rem;line-height:1.6">${bizAddr?bizAddr+'<br>':''}${p.phone?'Phone: '+esc(p.phone):''}</div>
       </div>
-      <div style="text-align:right">
-        <div style="font-size:28px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;color:var(--text3)">INVOICE</div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2);margin-top:.25rem">${inv.number}</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.8">Date: ${fmtDate(inv.date)}<br>Due: ${fmtDate(inv.due)}</div>
-        <div style="margin-top:.4rem">${statusBadge(inv.status)}</div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:24px;font-weight:800;letter-spacing:1px">INVOICE</div>
+        <div style="font-size:12px;color:#444;margin-top:.35rem;line-height:1.7">
+          <div>INVOICE # <strong style="font-family:'JetBrains Mono',monospace">${esc(inv.number)}</strong></div>
+          <div>DATE: ${fmtDate(inv.date)}</div>
+        </div>
       </div>
     </div>
-    <div style="margin-bottom:1.5rem;padding:1rem;background:#F7F6F3;border-radius:var(--radius-sm)">
-      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.25rem;font-family:'JetBrains Mono',monospace">Bill To</div>
-      <div style="font-weight:500;font-size:15px">${inv.customer_name||'—'}</div>
+
+    <!-- CLIENT + CONTACT -->
+    <div style="display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1rem">
+      <div style="min-width:0">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#666">CLIENT:</div>
+        <div style="margin-top:.25rem;line-height:1.6">
+          <div style="font-weight:600">${esc(cust.name||inv.customer_name||'—')}</div>
+          ${cust.address?`<div style="color:#444">${esc(cust.address).replace(/\n/g,'<br>')}</div>`:''}
+          ${cust.phone?`<div style="color:#444">Phone: ${esc(fmtPhone(cust.phone))}</div>`:''}
+        </div>
+      </div>
+      ${cust.contact?`<div style="min-width:0">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#666">CONTACT:</div>
+        <div style="margin-top:.25rem;line-height:1.6">
+          <div style="font-weight:600">${esc(cust.contact)}</div>
+        </div>
+      </div>`:''}
     </div>
-    <table style="width:100%;border-collapse:collapse;margin-bottom:1rem">
-      <thead><tr>
-        <th style="text-align:left;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border)">Description</th>
-        <th style="text-align:center;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border);width:60px">Qty</th>
-        <th style="text-align:right;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border);width:100px">Rate</th>
-        <th style="text-align:right;padding:.6rem .75rem;background:#F7F6F3;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3);border-bottom:1px solid var(--border);width:100px">Amount</th>
+
+    ${hourly!==null?`<div style="margin-bottom:1rem"><div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#666">HOURLY RATE</div><div style="margin-top:.2rem">${fmt(hourly)} per hour</div></div>`:''}
+
+    <!-- LINE ITEMS -->
+    <table style="width:100%;border-collapse:collapse;margin-bottom:1rem;font-size:12.5px">
+      <thead><tr style="background:#f0f0f0">
+        <th style="text-align:left;padding:.5rem .6rem;border:1px solid #ddd;font-weight:700">DATE</th>
+        <th style="text-align:left;padding:.5rem .6rem;border:1px solid #ddd;font-weight:700">DESCRIPTION</th>
+        <th style="text-align:center;padding:.5rem .6rem;border:1px solid #ddd;font-weight:700;width:60px">HOURS</th>
+        <th style="text-align:right;padding:.5rem .6rem;border:1px solid #ddd;font-weight:700;width:90px">TOTAL</th>
       </tr></thead>
-      <tbody>${(inv.lines||[]).map(l=>`<tr><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border)">${l.desc||'—'}</td><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:center">${l.qty}</td><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:right;font-family:'JetBrains Mono',monospace">${fmt(l.rate)}</td><td style="padding:.65rem .75rem;border-bottom:1px solid var(--border);text-align:right;font-family:'JetBrains Mono',monospace;font-weight:500">${fmt(l.amount)}</td></tr>`).join('')}</tbody>
+      <tbody>
+        ${lines.map(l=>`<tr>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd">${fmtDate(inv.date)}</td>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd">${esc(l.desc)||'—'}</td>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd;text-align:center">${l.qty}</td>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd;text-align:right;font-family:'JetBrains Mono',monospace">${fmt(l.amount)}</td>
+        </tr>`).join('')}
+        <tr>
+          <td colspan="2" style="border:none"></td>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd;text-align:right;font-weight:700;background:#f0f0f0">SUBTOTAL</td>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd;text-align:right;font-weight:700;background:#f0f0f0;font-family:'JetBrains Mono',monospace">${fmt(inv.subtotal)}</td>
+        </tr>
+        ${(inv.tax&&parseFloat(inv.tax)>0)?`<tr>
+          <td colspan="2" style="border:none"></td>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd;text-align:right">Tax (${p.tax||0}%)</td>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd;text-align:right;font-family:'JetBrains Mono',monospace">${fmt(inv.tax)}</td>
+        </tr>`:''}
+        <tr>
+          <td colspan="2" style="border:none"></td>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd;text-align:right;font-weight:800">TOTAL</td>
+          <td style="padding:.5rem .6rem;border:1px solid #ddd;text-align:right;font-weight:800;font-family:'JetBrains Mono',monospace">${fmt(inv.total)}</td>
+        </tr>
+      </tbody>
     </table>
-    <div style="text-align:right">
-      <div style="display:flex;justify-content:flex-end;gap:2rem;padding:.3rem 0;color:var(--text2);font-size:13.5px"><span>Subtotal</span><span>${fmt(inv.subtotal)}</span></div>
-      <div style="display:flex;justify-content:flex-end;gap:2rem;padding:.3rem 0;color:var(--text2);font-size:13.5px"><span>Tax (${p.tax||0}%)</span><span>${fmt(inv.tax)}</span></div>
-      <div style="display:flex;justify-content:flex-end;gap:2rem;padding:.6rem 0;font-weight:600;font-size:16px;border-top:2px solid var(--border);margin-top:.25rem"><span>Total Due</span><span>${fmt(inv.total)}</span></div>
+
+    ${inv.notes?`<div style="margin:1rem 0;font-size:12px;color:#444">${esc(inv.notes)}</div>`:''}
+
+    <!-- FOOTER -->
+    <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid #ddd;font-size:12px;color:#333;line-height:1.7">
+      <div>Make all checks payable to <strong>${esc(bizName)}</strong></div>
+      <div style="margin-top:.35rem">If you have any questions concerning this invoice, contact ${esc((p.company||'').split(',')[0]||bizName)}${p.phone?', '+esc(p.phone):''}${p.email?', '+esc(p.email):''}</div>
+      <div style="margin-top:.75rem;font-weight:700;text-align:center;letter-spacing:.5px">THANK YOU FOR YOUR BUSINESS!</div>
     </div>
-    ${inv.notes?`<div style="margin-top:1.5rem;padding:1rem;background:#F7F6F3;border-radius:var(--radius-sm);font-size:12px;color:var(--text2)">${inv.notes}</div>`:''}
   </div>`;
   openModal('modal-view-invoice');
 }
@@ -1387,7 +1459,6 @@ function renderCustomers() {
           '</div>' +
           '<div class="cust-amount">' + fmt(totalOf(c)) + '</div>' +
         '</div>' +
-        '<button class="cust-btn cust-btn-edit-big" onclick="editCustomer(\'' + c.id + '\')"><i class="ti ti-edit"></i><span>Edit Customer</span></button>' +
         '<div class="cust-actions">' +
           (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + phoneHref + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
           (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + c.email + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
@@ -1395,6 +1466,7 @@ function renderCustomers() {
           '<button class="cust-btn" onclick="viewCustomerInvoices(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
           '<button class="cust-btn cust-btn-del" onclick="deleteCustomer(\'' + c.id + '\')"><i class="ti ti-trash"></i><span>Delete</span></button>' +
         '</div>' +
+        '<button class="cust-btn cust-btn-edit-big" onclick="editCustomer(\'' + c.id + '\')"><i class="ti ti-edit"></i><span>Edit Customer</span></button>' +
       '</div>';
     }).join('');
   } else {
