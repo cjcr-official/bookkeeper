@@ -1,4 +1,1 @@
-{
-  "version": 46,
-  "note": "Fixed dashboard rows overflowing off the right edge"
-}
+{"version":47,"note":"Dashboard amounts no longer overflow right edge"}
