@@ -1,4 +1,4 @@
 {
-  "version": 42,
-  "note": "Share invoice as a real PDF file (not a link)"
+  "version": 43,
+  "note": "Shared PDF now fits on one page with proper table columns"
 }
