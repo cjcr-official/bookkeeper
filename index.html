@@ -333,13 +333,18 @@ body.modal-open .main{overflow:hidden}
   table td:first-child::before,table td:last-child::before{display:none}
 
   /* dashboard recent lists: keep flat rows inside their card (no inner card per row) */
-  .dash-table{display:table!important}
+  .dash-table{display:table!important;width:100%;table-layout:fixed}
   .dash-table thead{display:none}
   .dash-table tbody,.dash-table tr,.dash-table td{display:revert!important}
   .dash-table tr{display:table-row!important;background:transparent!important;border:none!important;border-radius:0!important;margin:0!important;padding:0!important}
-  .dash-table td{display:table-cell!important;padding:.6rem .5rem!important;border:none!important;border-bottom:1px solid var(--border)!important;font-size:13px;width:auto!important}
+  .dash-table td{display:table-cell!important;padding:.6rem .4rem!important;border:none!important;border-bottom:1px solid var(--border)!important;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
   .dash-table td::before{display:none!important}
   .dash-table tr:last-child td{border-bottom:none!important}
+  /* column alignment: # left, name left (flex-grow), amount right, status right */
+  .dash-table td:nth-child(1){width:54px;text-align:left}
+  .dash-table td:nth-child(2){text-align:left}
+  .dash-table td:nth-child(3){text-align:right;font-family:'JetBrains Mono',monospace}
+  .dash-table td:nth-child(4){width:64px;text-align:right}
   table td:last-child{justify-content:flex-end;margin-top:.25rem}
 
   /* ── MODALS → BOTTOM SHEET ── */
