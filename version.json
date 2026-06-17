@@ -1,4 +1,4 @@
 {
-  "version": 41,
-  "note": "Addresses now format into street / city-state-zip lines"
+  "version": 42,
+  "note": "Share invoice as a real PDF file (not a link)"
 }
