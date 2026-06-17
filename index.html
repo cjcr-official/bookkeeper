@@ -423,6 +423,14 @@ body.modal-open .main{overflow:hidden}
   .cust-btn-call{color:var(--green);border-color:rgba(34,197,94,.3);background:var(--green-bg)}
   .cust-btn-email{color:var(--accent-text);border-color:rgba(59,130,246,.3);background:var(--accent-bg)}
   .cust-btn-map{color:var(--cyan);border-color:rgba(6,182,212,.3);background:var(--cyan-bg)}
+  .cust-btn-edit-big{
+    flex-direction:row!important;gap:8px!important;width:100%;
+    padding:.7rem!important;margin-bottom:.45rem;min-height:0;
+    background:var(--accent)!important;color:#fff!important;border:none!important;
+    font-size:14px!important;font-weight:700;
+  }
+  .cust-btn-edit-big i{font-size:18px}
+  .cust-btn-edit-big:active{transform:scale(.98);filter:brightness(.95)}
   .cust-btn-del{color:var(--red);border-color:rgba(239,68,68,.3);background:var(--red-bg)}
 
   .m-card{
@@ -1379,12 +1387,12 @@ function renderCustomers() {
           '</div>' +
           '<div class="cust-amount">' + fmt(totalOf(c)) + '</div>' +
         '</div>' +
+        '<button class="cust-btn cust-btn-edit-big" onclick="editCustomer(\'' + c.id + '\')"><i class="ti ti-edit"></i><span>Edit Customer</span></button>' +
         '<div class="cust-actions">' +
           (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + phoneHref + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
           (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + c.email + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
           (c.address ? '<a class="cust-btn cust-btn-map" href="https://maps.apple.com/?q=' + encodeURIComponent(c.address) + '" target="_blank" rel="noopener"><i class="ti ti-map-pin"></i><span>Map</span></a>' : '') +
           '<button class="cust-btn" onclick="viewCustomerInvoices(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
-          '<button class="cust-btn" onclick="editCustomer(\'' + c.id + '\')"><i class="ti ti-edit"></i><span>Edit</span></button>' +
           '<button class="cust-btn cust-btn-del" onclick="deleteCustomer(\'' + c.id + '\')"><i class="ti ti-trash"></i><span>Delete</span></button>' +
         '</div>' +
       '</div>';
