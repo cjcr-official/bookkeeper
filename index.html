@@ -331,6 +331,15 @@ body.modal-open .main{overflow:hidden}
   }
   table td:first-child{font-weight:600;color:var(--text);font-size:13.5px}
   table td:first-child::before,table td:last-child::before{display:none}
+
+  /* dashboard recent lists: keep flat rows inside their card (no inner card per row) */
+  .dash-table{display:table!important}
+  .dash-table thead{display:none}
+  .dash-table tbody,.dash-table tr,.dash-table td{display:revert!important}
+  .dash-table tr{display:table-row!important;background:transparent!important;border:none!important;border-radius:0!important;margin:0!important;padding:0!important}
+  .dash-table td{display:table-cell!important;padding:.6rem .5rem!important;border:none!important;border-bottom:1px solid var(--border)!important;font-size:13px;width:auto!important}
+  .dash-table td::before{display:none!important}
+  .dash-table tr:last-child td{border-bottom:none!important}
   table td:last-child{justify-content:flex-end;margin-top:.25rem}
 
   /* ── MODALS → BOTTOM SHEET ── */
@@ -1067,19 +1076,37 @@ function renderDashboard() {
   const ri = document.getElementById('dash-invoices');
   const recent = cache.invoices.slice(0,5);
   ri.innerHTML = recent.length
-    ? `<table><thead><tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead><tbody>${recent.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="viewInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmt(i.total)}</td><td>${statusBadge(i.status)}</td></tr>`).join('')}</tbody></table>`
+    ? `<table class="dash-table"><thead><tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead><tbody>${recent.map(i=>`<tr style="cursor:pointer" onclick="openInvoiceInTab('${(i.number||'').replace(/'/g,"\\'")}')"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmt(i.total)}</td><td>${statusBadge(i.status)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices yet</p></div>`;
 
   const re = document.getElementById('dash-expenses');
   const rexp = cache.expenses.slice(0,5);
   re.innerHTML = rexp.length
-    ? `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Amount</th></tr></thead><tbody>${rexp.map(e=>`<tr><td>${fmtDate(e.date)}</td><td>${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td class="red">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table>`
+    ? `<table class="dash-table"><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Amount</th></tr></thead><tbody>${rexp.map(e=>`<tr><td>${fmtDate(e.date)}</td><td>${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td class="red">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`;
 
   // Reports render on demand when the collapsible card is opened (see toggleReports)
 }
 
 // ====== INVOICES ======
+function openInvoiceInTab(number) {
+  invFilter = 'all';
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const invPage = document.getElementById('page-invoices');
+  if (invPage) invPage.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const navInv = Array.from(document.querySelectorAll('.nav-item')).find(n=>/invoices/i.test(n.textContent));
+  if (navInv) navInv.classList.add('active');
+  const pt = document.getElementById('page-title'); if (pt) pt.textContent = 'Invoices';
+  const tabs = document.querySelectorAll('#page-invoices .tab');
+  tabs.forEach(t=>t.classList.remove('active'));
+  if (tabs[0]) tabs[0].classList.add('active');
+  const box = document.getElementById('inv-search');
+  if (box) box.value = number;
+  renderInvoices();
+  const main = document.querySelector('.main'); if (main) main.scrollTop = 0;
+}
+
 function viewCustomerInvoices(name) {
   // jump to Invoices tab, reset status filter to All, and search by this customer's name
   invFilter = 'all';
