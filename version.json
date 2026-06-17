@@ -1,4 +1,4 @@
 {
-  "version": 40,
-  "note": "Cleaner invoice line-item table"
+  "version": 41,
+  "note": "Addresses now format into street / city-state-zip lines"
 }
