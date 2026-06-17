@@ -959,13 +959,6 @@ function showToast(msg, type='') {
   setTimeout(()=>t.className='toast', 3000);
 }
 
-function setLoading(id, loading) {
-  const btn = document.getElementById(id);
-  if (!btn) return;
-  btn.disabled = loading;
-  if (loading) btn.innerHTML = `<span class="spinner"></span> Loading...`;
-}
-
 // ====== AUTH ======
 function switchAuthTab(tab) {
   document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));
@@ -1478,7 +1471,7 @@ function viewInvoice(id) {
   const hourly = rates.length===1 ? rates[0] : null;
   const bizName = p.company || 'My Business';
   const bizAddr = fmtAddress(p.address);
-  const esc = s => (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const esc = escHtml;
 
   const _invHTML = `
   <div id="inv-print-area" style="background:#fff;color:#1a1a1a;padding:2.25rem 2rem;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;line-height:1.5">
@@ -1559,9 +1552,11 @@ function viewInvoice(id) {
 }
 
 // ====== CUSTOMERS ======
+function escHtml(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+
 function fmtAddress(addr) {
   if (!addr) return '';
-  const esc = s => (''+(s||'')).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  const esc = escHtml;
   const raw = (''+addr).trim();
   // If the user already used line breaks, respect them.
   if (/[\n\r]/.test(raw)) {
