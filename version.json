@@ -1,4 +1,4 @@
 {
-  "version": 38,
-  "note": "Cleaner invoice layout, single total when no tax"
+  "version": 39,
+  "note": "Invoice: formatted phone/email, removed hours column, centered footer"
 }
