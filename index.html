@@ -383,6 +383,9 @@ body.modal-open .main{overflow:hidden}
   .bar-label{font-size:9px}
 
   /* ── SHARED COMPACT LIST CARDS ── */
+  /* list containers shouldn't be a card on mobile — each row is its own card */
+  .list-card{background:transparent;border:none;border-radius:0;overflow:visible}
+
   /* ── CUSTOMER CARD (richer layout with action buttons) ── */
   .cust-card{
     background:var(--surface);border:1px solid var(--border);
@@ -609,7 +612,7 @@ body.modal-open .main{overflow:hidden}
           <i class="ti ti-search" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;pointer-events:none"></i>
           <input type="text" id="inv-search" placeholder="Search by invoice # or customer..." oninput="renderInvoices()" style="padding-left:2.2rem">
         </div>
-        <div class="card"><div id="invoices-table"></div></div>
+        <div class="card list-card"><div id="invoices-table"></div></div>
       </div>
 
       <!-- CUSTOMERS -->
@@ -618,17 +621,17 @@ body.modal-open .main{overflow:hidden}
           <i class="ti ti-search" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;pointer-events:none"></i>
           <input type="text" id="cust-search" placeholder="Search customers by name..." oninput="renderCustomers()" style="padding-left:2.2rem">
         </div>
-        <div class="card"><div id="customers-table"></div></div>
+        <div class="card list-card"><div id="customers-table"></div></div>
       </div>
 
       <!-- EXPENSES -->
       <div id="page-expenses" class="page">
-        <div class="card"><div id="expenses-table"></div></div>
+        <div class="card list-card"><div id="expenses-table"></div></div>
       </div>
 
       <!-- ACCOUNTS -->
       <div id="page-accounts" class="page">
-        <div class="card"><div id="accounts-table"></div></div>
+        <div class="card list-card"><div id="accounts-table"></div></div>
       </div>
 
       <!-- SETTINGS -->
