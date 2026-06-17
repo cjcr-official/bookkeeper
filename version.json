@@ -1,4 +1,4 @@
 {
-  "version": 37,
-  "note": "Added View/Print button on invoices; reliable PDF export"
+  "version": 38,
+  "note": "Cleaner invoice layout, single total when no tax"
 }
