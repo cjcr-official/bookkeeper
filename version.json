@@ -1,4 +1,4 @@
 {
-  "version": 27,
-  "note": "Removed double card layering on list pages"
+  "version": 29,
+  "note": "Tapping a recent invoice opens it in the Invoices tab"
 }
