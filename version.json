@@ -1,4 +1,4 @@
 {
-  "version": 45,
-  "note": "Print now opens the native print dialog directly"
+  "version": 46,
+  "note": "Fixed dashboard rows overflowing off the right edge"
 }
