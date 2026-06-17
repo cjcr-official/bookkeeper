@@ -358,7 +358,7 @@ body.modal-open .main{overflow:hidden}
   #inv-print-area td::before{display:none!important}
 
   /* dashboard recent lists: keep flat rows inside their card (no inner card per row) */
-  .dash-table{display:table!important;width:calc(100% - 2rem);table-layout:fixed;margin:0 1rem}
+  .dash-table{display:table!important;width:100%;table-layout:fixed;margin:0;padding:0 1rem;box-sizing:border-box}
   .dash-table thead{display:none}
   .dash-table tbody,.dash-table tr,.dash-table td{display:revert!important}
   .dash-table tr{display:table-row!important;background:transparent!important;border:none!important;border-radius:0!important;margin:0!important;padding:0!important}
@@ -366,10 +366,18 @@ body.modal-open .main{overflow:hidden}
   .dash-table td::before{display:none!important}
   .dash-table tr:last-child td{border-bottom:none!important}
   /* column alignment: # left, name left (flex-grow), amount right, status right */
-  .dash-table td:nth-child(1){width:54px;text-align:left;padding-left:0!important}
-  .dash-table td:nth-child(2){text-align:left}
-  .dash-table td:nth-child(3){text-align:right;font-family:'JetBrains Mono',monospace}
-  .dash-table td:nth-child(4){width:60px;text-align:right;padding-right:0!important}
+  /* 3-column dashboard tables that always fit */
+  .dash-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dash-table td:first-child{padding-left:0!important}
+  .dash-table td:last-child{padding-right:0!important;text-align:right}
+  /* invoices: # | customer (flex) | amount */
+  .dash-inv td:nth-child(1){width:50px;text-align:left}
+  .dash-inv td:nth-child(2){text-align:left}
+  .dash-inv td:nth-child(3){width:84px}
+  /* expenses: date | vendor (flex) | amount */
+  .dash-exp td:nth-child(1){width:74px;text-align:left}
+  .dash-exp td:nth-child(2){text-align:left}
+  .dash-exp td:nth-child(3){width:84px}
   table td:last-child{justify-content:flex-end;margin-top:.25rem}
 
   /* ── MODALS → BOTTOM SHEET ── */
@@ -1117,13 +1125,13 @@ function renderDashboard() {
   const ri = document.getElementById('dash-invoices');
   const recent = cache.invoices.slice(0,5);
   ri.innerHTML = recent.length
-    ? `<table class="dash-table"><thead><tr><th>Invoice</th><th>Customer</th><th>Amount</th><th>Status</th></tr></thead><tbody>${recent.map(i=>`<tr style="cursor:pointer" onclick="openInvoiceInTab('${(i.number||'').replace(/'/g,"\\'")}')"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmt(i.total)}</td><td>${statusBadge(i.status)}</td></tr>`).join('')}</tbody></table>`
+    ? `<table class="dash-table dash-inv"><tbody>${recent.map(i=>`<tr style="cursor:pointer" onclick="openInvoiceInTab('${(i.number||'').replace(/'/g,"\\'")}')"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${i.number}</span></td><td>${i.customer_name||'—'}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(i.total)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices yet</p></div>`;
 
   const re = document.getElementById('dash-expenses');
   const rexp = cache.expenses.slice(0,5);
   re.innerHTML = rexp.length
-    ? `<table class="dash-table"><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Amount</th></tr></thead><tbody>${rexp.map(e=>`<tr><td>${fmtDate(e.date)}</td><td>${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td class="red">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table>`
+    ? `<table class="dash-table dash-exp"><tbody>${rexp.map(e=>`<tr><td style="white-space:nowrap;font-size:11.5px;color:#888">${fmtDate(e.date)}</td><td>${e.vendor}</td><td class="red" style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table>`
     : `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`;
 
   // Reports render on demand when the collapsible card is opened (see toggleReports)
