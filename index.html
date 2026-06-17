@@ -14,6 +14,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 
@@ -894,7 +896,8 @@ body.modal-open .main{overflow:hidden}
   <div class="modal" style="width:620px">
     <div class="modal-header"><h2>Invoice Preview</h2>
       <div style="display:flex;gap:.5rem">
-        <button class="btn btn-sm btn-primary" onclick="printInvoice()"><i class="ti ti-printer"></i> Print / PDF</button>
+        <button class="btn btn-sm btn-primary" id="inv-share-btn" onclick="shareInvoicePDF()"><i class="ti ti-share"></i> Share PDF</button>
+        <button class="btn btn-sm" onclick="printInvoice()"><i class="ti ti-printer"></i> Print</button>
         <button class="btn btn-sm" onclick="closeModal('modal-view-invoice')"><i class="ti ti-x"></i></button>
       </div>
     </div>
@@ -1332,6 +1335,68 @@ async function deleteInvoice(id) {
 
 let lastInvoiceHTML = '';
 let lastInvoiceTitle = 'Invoice';
+
+async function buildInvoicePDF() {
+  // render the invoice preview node to a canvas, then into a PDF
+  const node = document.getElementById('inv-print-area');
+  if (!node || !window.html2canvas || !window.jspdf) return null;
+  const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const margin = 36;
+  const usableW = pageW - margin*2;
+  const imgH = canvas.height * (usableW / canvas.width);
+  // paginate if the invoice is taller than one page
+  let remaining = imgH, position = margin, sliceY = 0;
+  if (imgH <= pageH - margin*2) {
+    pdf.addImage(imgData, 'JPEG', margin, margin, usableW, imgH);
+  } else {
+    // simple multi-page: add the whole image shifted up per page
+    let y = margin;
+    let heightLeft = imgH;
+    pdf.addImage(imgData, 'JPEG', margin, y, usableW, imgH);
+    heightLeft -= (pageH - margin*2);
+    while (heightLeft > 0) {
+      y = margin - (imgH - heightLeft);
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', margin, y, usableW, imgH);
+      heightLeft -= (pageH - margin*2);
+    }
+  }
+  return pdf;
+}
+
+async function shareInvoicePDF() {
+  const btn = document.getElementById('inv-share-btn');
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
+  try {
+    const pdf = await buildInvoicePDF();
+    if (!pdf) { alert('Could not generate PDF. Try the Print button instead.'); return; }
+    const fname = (lastInvoiceTitle || 'Invoice').replace(/[^a-z0-9]+/gi,'_') + '.pdf';
+    const blob = pdf.output('blob');
+    const file = new File([blob], fname, { type: 'application/pdf' });
+    // Preferred: native share sheet with the actual file (iOS supports this)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: lastInvoiceTitle });
+    } else {
+      // Fallback: trigger a download of the real PDF file
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fname;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 30000);
+    }
+  } catch(e) {
+    if (e && e.name === 'AbortError') { /* user cancelled share — ignore */ }
+    else { console.error(e); alert('Sharing failed. You can use the Print button to Save as PDF.'); }
+  } finally {
+    if (btn) { btn.innerHTML = orig; btn.disabled = false; }
+  }
+}
 
 function printInvoice() {
   if (!lastInvoiceHTML) return;
