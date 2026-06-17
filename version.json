@@ -1,4 +1,4 @@
 {
-  "version": 44,
-  "note": "Print opens PDF directly (same as Share), no extra page"
+  "version": 45,
+  "note": "Print now opens the native print dialog directly"
 }
