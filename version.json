@@ -1,4 +1,4 @@
 {
-  "version": 43,
-  "note": "Shared PDF now fits on one page with proper table columns"
+  "version": 44,
+  "note": "Print opens PDF directly (same as Share), no extra page"
 }
