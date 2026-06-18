@@ -1,1 +1,1 @@
-{"version":66,"note":"Toast notification no longer overlaps the bottom nav bar"}
+{"version":67,"note":"Install hint sits above nav; hidden unless in iOS Safari tab; faster standalone detection"}
