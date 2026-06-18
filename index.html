@@ -1457,7 +1457,7 @@ async function syncInvoiceExpenses(invId, inv, cust) {
       if (!r.error) { const idx=cache.expenses.findIndex(e=>e.id===item.id); if(idx>-1)cache.expenses[idx]={...cache.expenses[idx],...erow,id:item.id}; keepIds.push(item.id); }
     } else {
       const r = await sb.from('expenses').insert(erow).select().single();
-      if (!r.error && r.data) { cache.expenses.unshift(r.data); keepIds.push(r.data.id); }
+      if (!r.error && r.data) { cache.expenses.unshift(r.data); item.id = r.data.id; keepIds.push(r.data.id); }
     }
   }
   // delete linked expenses that were removed from the invoice
