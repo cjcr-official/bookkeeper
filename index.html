@@ -1343,17 +1343,17 @@ function renderInvExpenses() {
   wrap.innerHTML = editingInvExpenses.map((e,i)=>`
     <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
       <input type="text" value="${(e.vendor||'').replace(/"/g,'&quot;')}" oninput="editingInvExpenses[${i}].vendor=this.value" placeholder="Vendor / item" style="flex:1;font-size:13.5px;padding:.4rem .55rem">
-      <input type="number" value="${e.amount||''}" min="0" step="0.01" inputmode="decimal" oninput="editingInvExpenses[${i}].amount=+this.value" placeholder="0.00" style="width:90px;font-size:13.5px;padding:.4rem;text-align:right">
+      <input type="number" value="${e.amount||''}" min="0" step="0.01" inputmode="decimal" oninput="editingInvExpenses[${i}].amount=+this.value;calcInvTotals()" placeholder="0.00" style="width:90px;font-size:13.5px;padding:.4rem;text-align:right">
       <button class="btn btn-sm btn-danger" onclick="removeInvExpense(${i})"><i class="ti ti-x"></i></button>
     </div>`).join('');
 }
-function addInvExpense() { editingInvExpenses.push({vendor:'',amount:0,category:'Other'}); renderInvExpenses(); }
-function removeInvExpense(i) { editingInvExpenses.splice(i,1); renderInvExpenses(); }
+function addInvExpense() { editingInvExpenses.push({vendor:'',amount:0,category:'Other'}); renderInvExpenses(); calcInvTotals(); }
+function removeInvExpense(i) { editingInvExpenses.splice(i,1); renderInvExpenses(); calcInvTotals(); }
 
 function addInvLine() { editingInvLines.push({desc:'',qty:1,rate:0,amount:0}); renderInvLines(); }
 function removeInvLine(i) { editingInvLines.splice(i,1); renderInvLines(); }
 function calcInvTotals() {
-  const sub=editingInvLines.reduce((s,l)=>s+(l.amount||0),0);
+  const sub=editingInvLines.reduce((s,l)=>s+(l.amount||0),0)+editingInvExpenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
   const taxR=parseFloat(profile.tax||0)/100;
   document.getElementById('inv-subtotal').textContent=fmt(sub);
   document.getElementById('inv-tax-amt').textContent=fmt(sub*taxR);
@@ -1364,7 +1364,7 @@ async function saveInvoice() {
   const id = document.getElementById('inv-id').value;
   const custId = document.getElementById('inv-customer').value;
   const cust = cache.customers.find(c=>c.id===custId);
-  const sub = editingInvLines.reduce((s,l)=>s+(l.amount||0),0);
+  const sub = editingInvLines.reduce((s,l)=>s+(l.amount||0),0)+editingInvExpenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
   const taxR = parseFloat(profile.tax||0)/100;
   const milesPer = parseFloat(document.getElementById('inv-miles').value)||0;
   const tripCount = parseInt(document.getElementById('inv-trips').value)||1;
@@ -1593,6 +1593,7 @@ function viewInvoice(id) {
   // derive an hourly rate to show (if all line rates match, show that; else blank)
   const rates = [...new Set(lines.map(l=>parseFloat(l.rate||0)).filter(r=>r>0))];
   const hourly = rates.length===1 ? rates[0] : null;
+  const custExpenses = (cache.expenses||[]).filter(e=>e.invoice_id===inv.id);
   const bizName = p.company || 'My Business';
   const bizAddr = fmtAddress(p.address);
   const esc = escHtml;
@@ -1646,6 +1647,11 @@ function viewInvoice(id) {
           <td style="padding:.7rem .5rem .7rem 0;border-bottom:1px solid #eee;white-space:nowrap;font-size:12px;color:#666;vertical-align:top">${fmtDate(inv.date)}</td>
           <td style="padding:.7rem .5rem;border-bottom:1px solid #eee;word-break:break-word;vertical-align:top">${esc(l.desc)||'—'}</td>
           <td style="padding:.7rem 0 .7rem .5rem;border-bottom:1px solid #eee;text-align:right;font-family:'JetBrains Mono',monospace;vertical-align:top">${fmt(l.amount)}</td>
+        </tr>`).join('')}
+        ${custExpenses.map(e=>`<tr>
+          <td style="padding:.7rem .5rem .7rem 0;border-bottom:1px solid #eee;white-space:nowrap;font-size:12px;color:#666;vertical-align:top">${fmtDate(e.date||inv.date)}</td>
+          <td style="padding:.7rem .5rem;border-bottom:1px solid #eee;word-break:break-word;vertical-align:top">${esc(e.vendor)||'Expense'}</td>
+          <td style="padding:.7rem 0 .7rem .5rem;border-bottom:1px solid #eee;text-align:right;font-family:'JetBrains Mono',monospace;vertical-align:top">${fmt(e.amount)}</td>
         </tr>`).join('')}
       </tbody>
     </table>
