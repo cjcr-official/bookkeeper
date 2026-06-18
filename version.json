@@ -1,1 +1,1 @@
-{"version":48,"note":"Internal refactor; no visual or behavior changes"}
+{"version":49,"note":"Per-invoice mileage tracking (not billed); mileage totals include invoice miles; fixed Trip Log date filter"}
