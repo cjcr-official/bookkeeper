@@ -1,1 +1,1 @@
-{"version":61,"note":"Invoice numbers use 2-digit year + sequence (2601, 2602...)"}
+{"version":62,"note":"Deleting a linked expense removes it from the invoice and updates totals"}
