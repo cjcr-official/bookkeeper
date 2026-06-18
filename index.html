@@ -645,10 +645,8 @@ body.modal-open .main{overflow:hidden}
           </div>
           <div id="reports-body" style="display:none">
             <div style="padding:.85rem 1rem 0">
-              <div class="tabs" id="report-tabs">
+              <div class="tabs tabs-full" id="report-tabs">
                 <div class="tab active" onclick="showReport('pl',this)">Profit & Loss</div>
-                <div class="tab" onclick="showReport('bs',this)">Balance Sheet</div>
-                <div class="tab" onclick="showReport('ar',this)">Accounts Receivable</div>
                 <div class="tab" onclick="showReport('exp',this)">Expense Summary</div>
               </div>
             </div>
@@ -1383,6 +1381,8 @@ async function deleteInvoice(id) {
 
 let lastInvoiceHTML = '';
 let lastInvoiceTitle = 'Invoice';
+let lastReportHTML = '';
+let lastReportTitle = 'Report';
 
 async function buildInvoicePDF() {
   if (!lastInvoiceHTML || !window.html2canvas || !window.jspdf) return null;
@@ -2053,44 +2053,120 @@ function showReport(r,el) { currentReport=r; document.querySelectorAll('#report-
 function renderReport(r) {
   const el=document.getElementById('report-content');
   const yr=new Date().getFullYear();
+  const p = profile || {};
+  const esc = escHtml;
+  const bizName = esc(p.company||'My Business');
+  const bizAddr = fmtAddress(p.address);
+  const bizMeta = (bizAddr?bizAddr+'<br>':'') + (p.phone?'Phone: '+esc(fmtPhone(p.phone)):'') + (p.email?(p.phone?' · ':'')+esc((p.email||'').trim().toLowerCase()):'');
+
   if (r==='pl') {
     const revenue=cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getFullYear()===yr).reduce((s,i)=>s+parseFloat(i.total||0),0);
     const totalExp=cache.expenses.filter(e=>new Date(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const cats={};cache.expenses.filter(e=>new Date(e.date).getFullYear()===yr).forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
-    el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .25rem"><div style="font-size:12.5px;font-weight:700;color:var(--text)">Profit & Loss — ${yr}</div><button class="btn btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Print</button></div>
-    <div style="padding:1.25rem;max-width:560px">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-bottom:.5rem">Income</div>
-      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border)"><span>Revenue (paid invoices)</span><span class="green" style="font-family:'JetBrains Mono',monospace">${fmt(revenue)}</span></div>
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin:.75rem 0 .5rem">Expenses</div>
-      ${Object.entries(cats).map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${k}</span><span class="red" style="font-family:'JetBrains Mono',monospace">${fmt(v)}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);font-weight:500"><span>Total Expenses</span><span class="red" style="font-family:'JetBrains Mono',monospace">${fmt(totalExp)}</span></div>
-      <div style="display:flex;justify-content:space-between;padding:.75rem 0;font-weight:600;font-size:17px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700"><span>Net Profit</span><span class="${revenue-totalExp>=0?'green':'red'}">${fmt(revenue-totalExp)}</span></div>
-    </div>`;
-  } else if (r==='bs') {
-    const assets=cache.accounts.filter(a=>['Bank','Accounts Receivable','Other Asset'].includes(a.type)).reduce((s,a)=>s+parseFloat(a.balance||0),0);
-    const liabs=cache.accounts.filter(a=>['Accounts Payable','Credit Card','Other Liability'].includes(a.type)).reduce((s,a)=>s+parseFloat(a.balance||0),0);
-    const equity=cache.accounts.filter(a=>a.type==='Equity').reduce((s,a)=>s+parseFloat(a.balance||0),0);
-    el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .25rem"><div style="font-size:12.5px;font-weight:700;color:var(--text)">Balance Sheet — ${yr}</div><button class="btn btn-sm" onclick="window.print()"><i class="ti ti-printer"></i> Print</button></div>
-    <div style="padding:1.25rem;max-width:560px">
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-bottom:.5rem">Assets</div>
-      ${cache.accounts.filter(a=>['Bank','Accounts Receivable','Other Asset'].includes(a.type)).map(a=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${a.name}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:2px solid var(--border);font-weight:500"><span>Total Assets</span><span class="green" style="font-family:'JetBrains Mono',monospace">${fmt(assets)}</span></div>
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin:.75rem 0 .5rem">Liabilities</div>
-      ${cache.accounts.filter(a=>['Accounts Payable','Credit Card','Other Liability'].includes(a.type)).map(a=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${a.name}</span><span class="red" style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:.5rem 0;border-bottom:1px solid var(--border);font-weight:500"><span>Total Liabilities</span><span class="red" style="font-family:'JetBrains Mono',monospace">${fmt(liabs)}</span></div>
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin:.75rem 0 .5rem">Equity</div>
-      ${cache.accounts.filter(a=>a.type==='Equity').map(a=>`<div style="display:flex;justify-content:space-between;padding:.4rem 0;border-bottom:1px solid var(--border);color:var(--text2)"><span style="padding-left:1rem">${a.name}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</span></div>`).join('')}
-      <div style="display:flex;justify-content:space-between;padding:.75rem 0;font-weight:600;font-size:17px;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700"><span>Liabilities + Equity</span><span style="font-family:'JetBrains Mono',monospace">${fmt(liabs+equity)}</span></div>
-    </div>`;
-  } else if (r==='ar') {
-    const unpaid=cache.invoices.filter(i=>i.status!=='paid');
-    el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .5rem"><div style="font-size:12.5px;font-weight:700;color:var(--text)">Accounts Receivable</div></div>${unpaid.length?`<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th></tr></thead><tbody>${unpaid.map(i=>`<tr><td style="font-family:'JetBrains Mono',monospace;font-size:12px">${i.number}</td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}</td><td>${statusBadge(i.status)}</td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Outstanding: <span class="amber">${fmt(unpaid.reduce((s,i)=>s+parseFloat(i.total||0),0))}</span></div>`:`<div class="empty"><i class="ti ti-check"></i><p>All invoices are paid!</p></div>`}`;
+    const net=revenue-totalExp;
+    lastReportHTML = reportDoc(bizName, bizMeta, 'Profit &amp; Loss Statement', String(yr), `
+      <div class="rsec">INCOME</div>
+      <div class="rrow"><span>Revenue (paid invoices)</span><span class="mono">${fmt(revenue)}</span></div>
+      <div class="rsec">EXPENSES</div>
+      ${Object.entries(cats).map(([k,v])=>`<div class="rrow sub"><span>${esc(k)}</span><span class="mono">${fmt(v)}</span></div>`).join('')||'<div class="rrow sub"><span>No expenses</span><span class="mono">$0.00</span></div>'}
+      <div class="rrow bold"><span>Total Expenses</span><span class="mono">${fmt(totalExp)}</span></div>
+      <div class="rtotal"><span>NET PROFIT</span><span class="mono">${fmt(net)}</span></div>
+    `);
+    lastReportTitle = 'Profit and Loss '+yr;
+    el.innerHTML = reportScreen('Profit & Loss — '+yr);
   } else if (r==='exp') {
     const cats={};cache.expenses.forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
     const sorted=Object.entries(cats).sort((a,b)=>b[1]-a[1]);
-    const total=cache.expenses.reduce((s,e)=>s+parseFloat(e.amount||0),0);
-    el.innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .5rem"><div style="font-size:12.5px;font-weight:700;color:var(--text)">Expense Summary — All Time</div></div>${sorted.length?`<table><thead><tr><th>Category</th><th>Amount</th><th>% of Total</th></tr></thead><tbody>${sorted.map(([k,v])=>`<tr><td><span class="badge badge-gray">${k}</span></td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(v)}</td><td><div style="display:flex;align-items:center;gap:8px"><div style="height:6px;width:${Math.round((v/total)*130)}px;background:var(--red-bg);border-radius:3px;min-width:2px"></div><span style="font-size:12px;color:var(--text2)">${Math.round((v/total)*100)}%</span></div></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Total: <span class="red">${fmt(total)}</span></div>`:`<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`}`;
+    const total=cache.expenses.reduce((s,e)=>s+parseFloat(e.amount||0),0)||1;
+    lastReportHTML = reportDoc(bizName, bizMeta, 'Expense Summary', 'All Time', `
+      <table class="rtable"><thead><tr><th style="text-align:left">CATEGORY</th><th style="text-align:right">AMOUNT</th><th style="text-align:right;width:64px">%</th></tr></thead><tbody>
+      ${sorted.map(([k,v])=>`<tr><td>${esc(k)}</td><td class="mono" style="text-align:right">${fmt(v)}</td><td class="mono" style="text-align:right">${Math.round((v/total)*100)}%</td></tr>`).join('')||'<tr><td>No expenses</td><td class="mono" style="text-align:right">$0.00</td><td style="text-align:right">0%</td></tr>'}
+      </tbody></table>
+      <div class="rtotal"><span>TOTAL</span><span class="mono">${fmt(cache.expenses.reduce((s,e)=>s+parseFloat(e.amount||0),0))}</span></div>
+    `);
+    lastReportTitle = 'Expense Summary';
+    el.innerHTML = reportScreen('Expense Summary — All Time');
   }
+}
+
+// On-screen wrapper for a report (header bar with Print button + the printable body shown inline)
+function reportScreen(title) {
+  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .25rem;gap:.5rem">
+      <div style="font-size:12.5px;font-weight:700;color:var(--text)">${title}</div>
+      <button class="btn btn-sm btn-primary" id="report-print-btn" onclick="printReport()"><i class="ti ti-printer"></i> Print</button>
+    </div>
+    <div style="padding:0 1rem 1rem">${lastReportHTML}</div>`;
+}
+
+// Build the printable report document body (same visual language as the invoice)
+function reportDoc(bizName, bizMeta, title, period, bodyHTML) {
+  return `<div id="report-print-area" style="background:#fff;color:#1a1a1a;padding:1.25rem;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;line-height:1.5">
+    <div style="display:flex;justify-content:space-between;gap:1.5rem;border-bottom:2px solid #1a1a1a;padding-bottom:1rem;margin-bottom:1.25rem">
+      <div style="min-width:0">
+        <div style="font-weight:700;font-size:16px;line-height:1.3">${bizName}</div>
+        <div style="font-size:12px;color:#444;margin-top:.35rem;line-height:1.6">${bizMeta}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:20px;font-weight:800;letter-spacing:.5px">${title}</div>
+        <div style="font-size:12px;color:#444;margin-top:.35rem">${period}</div>
+      </div>
+    </div>
+    <style>
+      #report-print-area .rsec{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:#888;margin:1rem 0 .35rem}
+      #report-print-area .rrow{display:flex;justify-content:space-between;padding:.45rem 0;border-bottom:1px solid #eee}
+      #report-print-area .rrow.sub span:first-child{padding-left:1rem;color:#555}
+      #report-print-area .rrow.bold{font-weight:700;border-bottom:2px solid #1a1a1a}
+      #report-print-area .rtotal{display:flex;justify-content:space-between;padding:.7rem .85rem;margin-top:.85rem;background:#1a1a1a;color:#fff;border-radius:6px;font-weight:800;font-size:15px;letter-spacing:.3px}
+      #report-print-area .mono{font-family:'JetBrains Mono',monospace}
+      #report-print-area .rtable{width:100%;border-collapse:collapse;font-size:12.5px}
+      #report-print-area .rtable th{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:#888;padding:0 0 .5rem;border-bottom:2px solid #1a1a1a}
+      #report-print-area .rtable td{padding:.6rem 0;border-bottom:1px solid #eee}
+    </style>
+    ${bodyHTML}
+    <div style="margin-top:1.5rem;padding-top:.85rem;border-top:1px solid #ddd;font-size:11px;color:#888;text-align:center">Generated ${fmtDate(today())} · ${bizName}</div>
+  </div>`;
+}
+
+async function buildReportPDF() {
+  if (!lastReportHTML || !window.html2canvas || !window.jspdf) return null;
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:780px;background:#fff;z-index:-1';
+  holder.innerHTML = '<div style="width:780px;background:#fff;padding:24px">' + lastReportHTML + '</div>';
+  document.body.appendChild(holder);
+  const node = holder.querySelector('#report-print-area') || holder.firstChild;
+  let canvas;
+  try { canvas = await html2canvas(node, { scale:2, backgroundColor:'#ffffff', useCORS:true, width:780, windowWidth:780 }); }
+  finally { document.body.removeChild(holder); }
+  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit:'pt', format:'letter' });
+  const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight(), margin=36;
+  const usableW = pageW - margin*2;
+  const imgH = canvas.height * (usableW / canvas.width);
+  if (imgH <= pageH - margin*2) { pdf.addImage(imgData,'JPEG',margin,margin,usableW,imgH); }
+  else { let y=margin, left=imgH; pdf.addImage(imgData,'JPEG',margin,y,usableW,imgH); left-=(pageH-margin*2);
+    while(left>0){ y=margin-(imgH-left); pdf.addPage(); pdf.addImage(imgData,'JPEG',margin,y,usableW,imgH); left-=(pageH-margin*2); } }
+  return pdf;
+}
+
+async function printReport() {
+  if (!lastReportHTML) return;
+  const old=document.getElementById('print-frame'); if(old) old.remove();
+  const iframe=document.createElement('iframe');
+  iframe.id='print-frame';
+  iframe.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(iframe);
+  const docHTML='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+lastReportTitle+'</title>'
+    +'<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">'
+    +'<style>*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}@page{margin:0.5in}.doc{width:100%}</style></head><body>'
+    +'<div class="doc">'+lastReportHTML+'</div></body></html>';
+  const idoc=iframe.contentWindow.document; idoc.open(); idoc.write(docHTML); idoc.close();
+  setTimeout(()=>{ try{ iframe.contentWindow.focus(); iframe.contentWindow.print(); }catch(e){ printReportFallback(); }
+    setTimeout(()=>{const f=document.getElementById('print-frame');if(f)f.remove();},1000); }, 700);
+}
+
+async function printReportFallback() {
+  try { const pdf=await buildReportPDF(); if(pdf){ const url=URL.createObjectURL(pdf.output('blob')); const w=window.open(url,'_blank'); if(!w){const a=document.createElement('a');a.href=url;a.target='_blank';document.body.appendChild(a);a.click();a.remove();} setTimeout(()=>URL.revokeObjectURL(url),60000); } } catch(e){ console.error(e); }
 }
 
 // ====== SETTINGS ======
