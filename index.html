@@ -771,6 +771,12 @@ body.modal-open .main{overflow:hidden}
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Tax (<span id="inv-tax-pct">0</span>%):</span><span id="inv-tax-amt">$0.00</span></div>
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.4rem 0;font-weight:600;font-size:15px;border-top:1px solid var(--border);margin-top:.25rem"><span>Total:</span><span id="inv-total">$0.00</span></div>
       </div>
+      <div style="margin-top:1.25rem;border-top:1px solid var(--border);padding-top:1rem">
+        <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.15rem">Customer Expenses</label>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:.6rem">Parts/items the customer reimburses. Logged as reimbursed expenses, not added to the invoice total or shown on it.</div>
+        <div id="inv-exp-wrap"></div>
+        <button class="btn btn-sm" onclick="addInvExpense()"><i class="ti ti-plus"></i> Add Customer Expense</button>
+      </div>
       <div class="form-group" style="margin-top:.75rem"><label>Notes</label><textarea id="inv-notes" rows="2"></textarea></div>
     </div>
     <div class="modal-footer">
@@ -854,6 +860,7 @@ body.modal-open .main{overflow:hidden}
         </div>
         <div class="form-group"><label>Account</label><select id="exp-account"></select></div>
       </div>
+      <div class="form-group"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
       <div class="form-group"><label>Description</label><textarea id="exp-desc" rows="2"></textarea></div>
       <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.5rem 0;font-weight:500">
         <input type="checkbox" id="exp-reimbursed" style="width:18px;height:18px;flex-shrink:0">
@@ -959,6 +966,7 @@ let currentPage = 'dashboard';
 let invFilter = 'all';
 let currentReport = 'pl';
 let editingInvLines = [];
+let editingInvExpenses = [];
 
 // ====== HELPERS ======
 function fmt(n) {
@@ -1254,6 +1262,7 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-trips').value = inv.trips||1;
     calcInvMiles();
     editingInvLines = JSON.parse(JSON.stringify(inv.lines||[]));
+    editingInvExpenses = (cache.expenses||[]).filter(e=>e.invoice_id===inv.id).map(e=>({id:e.id,vendor:e.vendor||'',amount:parseFloat(e.amount||0),category:e.category||'Other'}));
   } else {
     document.getElementById('inv-modal-title').textContent = 'New Invoice';
     document.getElementById('inv-id').value = '';
@@ -1266,6 +1275,7 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-trips').value = 1;
     document.getElementById('inv-total-miles').value = '';
     editingInvLines = [{desc:'',qty:1,rate:0,amount:0}];
+    editingInvExpenses = [];
   }
   renderInvLines();
   openModal('modal-invoice');
@@ -1326,6 +1336,20 @@ function addMileageLine() {
 }
 
 function calcLine(i) { editingInvLines[i].amount=(editingInvLines[i].qty||0)*(editingInvLines[i].rate||0); renderInvLines(); }
+function renderInvExpenses() {
+  const wrap = document.getElementById('inv-exp-wrap');
+  if (!wrap) return;
+  if (!editingInvExpenses.length) { wrap.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:.25rem 0 .6rem">None added.</div>'; return; }
+  wrap.innerHTML = editingInvExpenses.map((e,i)=>`
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
+      <input type="text" value="${(e.vendor||'').replace(/"/g,'&quot;')}" oninput="editingInvExpenses[${i}].vendor=this.value" placeholder="Vendor / item" style="flex:1;font-size:13.5px;padding:.4rem .55rem">
+      <input type="number" value="${e.amount||''}" min="0" step="0.01" inputmode="decimal" oninput="editingInvExpenses[${i}].amount=+this.value" placeholder="0.00" style="width:90px;font-size:13.5px;padding:.4rem;text-align:right">
+      <button class="btn btn-sm btn-danger" onclick="removeInvExpense(${i})"><i class="ti ti-x"></i></button>
+    </div>`).join('');
+}
+function addInvExpense() { editingInvExpenses.push({vendor:'',amount:0,category:'Other'}); renderInvExpenses(); }
+function removeInvExpense(i) { editingInvExpenses.splice(i,1); renderInvExpenses(); }
+
 function addInvLine() { editingInvLines.push({desc:'',qty:1,rate:0,amount:0}); renderInvLines(); }
 function removeInvLine(i) { editingInvLines.splice(i,1); renderInvLines(); }
 function calcInvTotals() {
@@ -1362,7 +1386,7 @@ async function saveInvoice() {
   if (id) { const r=await sb.from('invoices').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.invoices.findIndex(i=>i.id===id);cache.invoices[idx]={...cache.invoices[idx],...row,id};} }
   else { const r=await sb.from('invoices').insert(row).select().single(); err=r.error; if(!err){cache.invoices.unshift(r.data); invId=r.data.id;} }
   // Sync a linked trip in the mileage log (created/updated/removed based on invoice miles)
-  if (!err && invId) { await syncInvoiceTrip(invId, row, totalMiles, milesPer, tripCount, cust); }
+  if (!err && invId) { await syncInvoiceTrip(invId, row, totalMiles, milesPer, tripCount, cust); await syncInvoiceExpenses(invId, row, cust); }
   btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save Invoice';
   if (err) { showToast(err.message,'error'); return; }
   showToast('Invoice saved','success'); closeModal('modal-invoice'); renderInvoices();
@@ -1389,6 +1413,40 @@ async function syncInvoiceTrip(invId, inv, totalMiles, milesPer, tripCount, cust
   }
 }
 
+async function syncInvoiceExpenses(invId, inv, cust) {
+  const existing = (cache.expenses||[]).filter(e=>e.invoice_id===invId);
+  const keepIds = [];
+  for (const item of editingInvExpenses) {
+    const amt = parseFloat(item.amount||0);
+    if (!item.vendor && !amt) continue;
+    const erow = {
+      user_id: currentUser.id,
+      date: inv.date,
+      vendor: item.vendor||'',
+      category: item.category||'Other',
+      amount: amt,
+      method: '', account_id: null,
+      description: 'Customer expense — Invoice #' + (inv.number||''),
+      reimbursed: true,
+      invoice_id: invId
+    };
+    if (item.id) {
+      const r = await sb.from('expenses').update(erow).eq('id', item.id);
+      if (!r.error) { const idx=cache.expenses.findIndex(e=>e.id===item.id); if(idx>-1)cache.expenses[idx]={...cache.expenses[idx],...erow,id:item.id}; keepIds.push(item.id); }
+    } else {
+      const r = await sb.from('expenses').insert(erow).select().single();
+      if (!r.error && r.data) { cache.expenses.unshift(r.data); keepIds.push(r.data.id); }
+    }
+  }
+  // delete linked expenses that were removed from the invoice
+  for (const e of existing) {
+    if (!keepIds.includes(e.id)) {
+      const r = await sb.from('expenses').delete().eq('id', e.id);
+      if (!r.error) cache.expenses = cache.expenses.filter(x=>x.id!==e.id);
+    }
+  }
+}
+
 async function deleteInvoice(id) {
   if (!confirm('Delete this invoice?')) return;
   const {error} = await sb.from('invoices').delete().eq('id',id);
@@ -1397,6 +1455,10 @@ async function deleteInvoice(id) {
   // remove the linked mileage trip, if any
   const linked = (cache.trips||[]).find(t=>t.invoice_id===id);
   if (linked) { await sb.from('trips').delete().eq('id',linked.id); cache.trips = cache.trips.filter(t=>t.id!==linked.id); }
+  // remove linked customer expenses
+  const linkedExp = (cache.expenses||[]).filter(e=>e.invoice_id===id);
+  for (const e of linkedExp) { await sb.from('expenses').delete().eq('id',e.id); }
+  if (linkedExp.length) cache.expenses = cache.expenses.filter(e=>e.invoice_id!==id);
   showToast('Invoice deleted'); renderInvoices();
 }
 
@@ -1917,6 +1979,16 @@ function renderCategoryOptions(selected) {
   sel.innerHTML = cats.map(c=>`<option${c===cur?' selected':''}>${escHtml(c)}</option>`).join('');
 }
 
+function renderExpInvoiceOptions(selectedId) {
+  const sel = document.getElementById('exp-invoice');
+  if (!sel) return;
+  const opts = ['<option value="">— None —</option>'].concat(
+    (cache.invoices||[]).map(i=>`<option value="${i.id}"${i.id===selectedId?' selected':''}>#${escHtml(i.number||'')} · ${escHtml(i.customer_name||'')}</option>`)
+  );
+  sel.innerHTML = opts.join('');
+  if (selectedId) sel.value = selectedId;
+}
+
 function openCatManager() {
   renderCatList();
   openModal('modal-categories');
@@ -1947,6 +2019,7 @@ function openExpenseModal(exp) {
   document.getElementById('exp-date').value = exp?exp.date:today();
   document.getElementById('exp-vendor').value = exp?exp.vendor:'';
   renderCategoryOptions(exp?exp.category:'');
+  renderExpInvoiceOptions(exp?exp.invoice_id:'');
   document.getElementById('exp-category').value = exp?exp.category:(getCategories()[0]||'Other');
   document.getElementById('exp-amount').value = exp?exp.amount:'';
   document.getElementById('exp-method').value = exp?exp.method:'Credit Card';
@@ -1960,7 +2033,8 @@ function editExpense(id) { openExpenseModal(cache.expenses.find(e=>e.id===id)); 
 
 async function saveExpense() {
   const id = document.getElementById('exp-id').value;
-  const row = {user_id:currentUser.id,date:document.getElementById('exp-date').value,vendor:document.getElementById('exp-vendor').value,category:document.getElementById('exp-category').value,amount:parseFloat(document.getElementById('exp-amount').value)||0,method:document.getElementById('exp-method').value,account_id:document.getElementById('exp-account').value||null,description:document.getElementById('exp-desc').value,reimbursed:document.getElementById('exp-reimbursed').checked};
+  const invLink = document.getElementById('exp-invoice').value||null;
+  const row = {user_id:currentUser.id,date:document.getElementById('exp-date').value,vendor:document.getElementById('exp-vendor').value,category:document.getElementById('exp-category').value,amount:parseFloat(document.getElementById('exp-amount').value)||0,method:document.getElementById('exp-method').value,account_id:document.getElementById('exp-account').value||null,description:document.getElementById('exp-desc').value,reimbursed:document.getElementById('exp-reimbursed').checked,invoice_id:invLink};
   if (!row.vendor) { showToast('Vendor is required','error'); return; }
   let err;
   if (id) { const r=await sb.from('expenses').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.expenses.findIndex(e=>e.id===id);cache.expenses[idx]={...cache.expenses[idx],...row};} }
