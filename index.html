@@ -730,13 +730,11 @@ body.modal-open .main{overflow:hidden}
           <div class="stat-card"><div class="stat-label">This Year</div><div class="stat-value" id="mi-year-miles">0</div><div class="stat-sub">miles</div></div>
         </div>
         <div class="card">
-          <div class="card-header">
-            <h3>Trip Log</h3>
-            <div style="display:flex;gap:.5rem;align-items:center">
-              <input type="date" id="mi-from" onchange="renderMileage()" style="width:auto;padding:.35rem .5rem;font-size:12px">
-              <span style="color:var(--text3);font-size:12px">to</span>
-              <input type="date" id="mi-to" onchange="renderMileage()" style="width:auto;padding:.35rem .5rem;font-size:12px">
-            </div>
+          <div class="card-header"><h3>Trip Log</h3></div>
+          <div style="display:flex;gap:.5rem;align-items:center;padding:.6rem 1rem;border-bottom:1px solid var(--border)">
+            <input type="date" id="mi-from" onchange="renderMileage()" style="flex:1;min-width:0;padding:.4rem .5rem;font-size:12px">
+            <span style="color:var(--text3);font-size:12px;flex-shrink:0">to</span>
+            <input type="date" id="mi-to" onchange="renderMileage()" style="flex:1;min-width:0;padding:.4rem .5rem;font-size:12px">
           </div>
           <div id="mileage-table"></div>
         </div>
@@ -763,6 +761,8 @@ body.modal-open .main{overflow:hidden}
       <div class="form-group"><label>Status</label>
         <select id="inv-status"><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select>
       </div>
+      <div class="form-group"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(tracked only, not billed or shown on invoice)</span></label>
+        <input id="inv-miles" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0"></div>
       <div id="inv-lines-wrap" style="margin-bottom:1rem"></div>
       <button class="btn btn-sm" onclick="addInvLine()"><i class="ti ti-plus"></i> Add Line</button>
       <button class="btn btn-sm" onclick="addMileageLine()" style="margin-left:.5rem"><i class="ti ti-car"></i> Add Mileage</button>
@@ -1226,6 +1226,7 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-due').value = inv.due;
     document.getElementById('inv-status').value = inv.status;
     document.getElementById('inv-notes').value = inv.notes||'';
+    document.getElementById('inv-miles').value = inv.miles||'';
     editingInvLines = JSON.parse(JSON.stringify(inv.lines||[]));
   } else {
     document.getElementById('inv-modal-title').textContent = 'New Invoice';
@@ -1235,6 +1236,7 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-due').value = in30();
     document.getElementById('inv-status').value = 'draft';
     document.getElementById('inv-notes').value = profile.terms||'';
+    document.getElementById('inv-miles').value = '';
     editingInvLines = [{desc:'',qty:1,rate:0,amount:0}];
   }
   renderInvLines();
@@ -1320,7 +1322,8 @@ async function saveInvoice() {
     due: document.getElementById('inv-due').value,
     status: document.getElementById('inv-status').value,
     lines: editingInvLines, subtotal: sub, tax: sub*taxR, total: sub+sub*taxR,
-    notes: document.getElementById('inv-notes').value
+    notes: document.getElementById('inv-notes').value,
+    miles: parseFloat(document.getElementById('inv-miles').value)||0
   };
   const btn = document.getElementById('save-inv-btn');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Saving...';
@@ -1689,11 +1692,18 @@ function renderMileage() {
   const now = new Date();
   const ym = now.toISOString().slice(0,7);
   const yr = now.toISOString().slice(0,4);
-  const monthMiles = all.filter(t=>(t.date||'').slice(0,7)===ym).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
-  const yearMiles = all.filter(t=>(t.date||'').slice(0,4)===yr).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
-  const totalMiles = all.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+  const invs = cache.invoices || [];
+  // miles tracked on invoices (not billed) are included in the totals
+  const invMonth = invs.filter(i=>(i.date||'').slice(0,7)===ym).reduce((s,i)=>s+parseFloat(i.miles||0),0);
+  const invYear = invs.filter(i=>(i.date||'').slice(0,4)===yr).reduce((s,i)=>s+parseFloat(i.miles||0),0);
+  const invTotal = invs.reduce((s,i)=>s+parseFloat(i.miles||0),0);
+  const monthMiles = all.filter(t=>(t.date||'').slice(0,7)===ym).reduce((s,t)=>s+parseFloat(t.total_miles||0),0) + invMonth;
+  const yearMiles = all.filter(t=>(t.date||'').slice(0,4)===yr).reduce((s,t)=>s+parseFloat(t.total_miles||0),0) + invYear;
+  const totalMiles = all.reduce((s,t)=>s+parseFloat(t.total_miles||0),0) + invTotal;
+  const invWithMiles = invs.filter(i=>parseFloat(i.miles||0)>0).length;
+  const totalEntries = all.length + invWithMiles;
   document.getElementById('mi-total-miles').textContent = totalMiles.toLocaleString(undefined,{maximumFractionDigits:1});
-  document.getElementById('mi-total-trips').textContent = all.length+' trip'+(all.length===1?'':'s');
+  document.getElementById('mi-total-trips').textContent = totalEntries+' entr'+(totalEntries===1?'y':'ies');
   document.getElementById('mi-month-miles').textContent = monthMiles.toLocaleString(undefined,{maximumFractionDigits:1});
   document.getElementById('mi-year-miles').textContent = yearMiles.toLocaleString(undefined,{maximumFractionDigits:1});
 
