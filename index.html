@@ -843,8 +843,8 @@ body.modal-open .main{overflow:hidden}
         <div class="form-group"><label>Vendor</label><input id="exp-vendor" type="text" placeholder="Amazon..."></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Category</label>
-          <select id="exp-category"><option>Advertising</option><option>Bank Fees</option><option>Contract Labor</option><option>Equipment</option><option>Insurance</option><option>Meals & Entertainment</option><option>Office Supplies</option><option>Professional Services</option><option>Rent</option><option>Software & Subscriptions</option><option>Travel</option><option>Utilities</option><option>Other</option></select>
+        <div class="form-group"><label>Category <span onclick="openCatManager()" style="float:right;font-weight:600;font-size:11px;color:var(--accent);cursor:pointer">Manage</span></label>
+          <select id="exp-category"></select>
         </div>
         <div class="form-group"><label>Amount</label><input id="exp-amount" type="number" step="0.01" min="0"></div>
       </div>
@@ -859,6 +859,23 @@ body.modal-open .main{overflow:hidden}
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-expense')">Cancel</button>
       <button class="btn btn-primary" onclick="saveExpense()"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- CATEGORY MANAGER MODAL -->
+<div class="modal-overlay" id="modal-categories">
+  <div class="modal">
+    <div class="modal-header"><h2>Expense Categories</h2><button class="btn btn-sm" onclick="closeModal('modal-categories')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div style="display:flex;gap:.5rem;margin-bottom:.85rem">
+        <input id="new-cat" type="text" placeholder="New category name" style="flex:1" onkeydown="if(event.key==='Enter')addCategory()">
+        <button class="btn btn-primary" onclick="addCategory()"><i class="ti ti-plus"></i> Add</button>
+      </div>
+      <div id="cat-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="closeModal('modal-categories')"><i class="ti ti-check"></i> Done</button>
     </div>
   </div>
 </div>
@@ -1881,12 +1898,52 @@ function renderExpenses() {
   }
 }
 
+function getCategories() {
+  const DEFAULT_CATS = ['Advertising','Bank Fees','Contract Labor','Equipment','Insurance','Meals & Entertainment','Office Supplies','Professional Services','Rent','Software & Subscriptions','Travel','Utilities','Other'];
+  try { const s = localStorage.getItem('bk-expense-cats'); if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch(e){}
+  return DEFAULT_CATS.slice();
+}
+function saveCategories(arr) { try { localStorage.setItem('bk-expense-cats', JSON.stringify(arr)); } catch(e){} }
+
+function renderCategoryOptions(selected) {
+  const sel = document.getElementById('exp-category');
+  if (!sel) return;
+  const cats = getCategories();
+  const cur = selected || sel.value;
+  sel.innerHTML = cats.map(c=>`<option${c===cur?' selected':''}>${escHtml(c)}</option>`).join('');
+}
+
+function openCatManager() {
+  renderCatList();
+  openModal('modal-categories');
+}
+function renderCatList() {
+  const cats = getCategories();
+  const el = document.getElementById('cat-list');
+  el.innerHTML = cats.map((c,i)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem .15rem;border-bottom:1px solid var(--border)"><span>${escHtml(c)}</span><button class="btn btn-sm btn-danger" onclick="removeCategory(${i})"><i class="ti ti-trash"></i></button></div>`).join('') || '<div style="color:var(--text3);padding:.6rem 0">No categories</div>';
+}
+function addCategory() {
+  const inp = document.getElementById('new-cat');
+  const name = (inp.value||'').trim();
+  if (!name) return;
+  const cats = getCategories();
+  if (cats.some(c=>c.toLowerCase()===name.toLowerCase())) { showToast('Category already exists','error'); return; }
+  cats.push(name); saveCategories(cats); inp.value='';
+  renderCatList(); renderCategoryOptions();
+}
+function removeCategory(i) {
+  const cats = getCategories();
+  cats.splice(i,1); saveCategories(cats);
+  renderCatList(); renderCategoryOptions();
+}
+
 function openExpenseModal(exp) {
   document.getElementById('exp-title').textContent = exp?'Edit Expense':'New Expense';
   document.getElementById('exp-id').value = exp?exp.id:'';
   document.getElementById('exp-date').value = exp?exp.date:today();
   document.getElementById('exp-vendor').value = exp?exp.vendor:'';
-  document.getElementById('exp-category').value = exp?exp.category:'Office Supplies';
+  renderCategoryOptions(exp?exp.category:'');
+  document.getElementById('exp-category').value = exp?exp.category:(getCategories()[0]||'Other');
   document.getElementById('exp-amount').value = exp?exp.amount:'';
   document.getElementById('exp-method').value = exp?exp.method:'Credit Card';
   document.getElementById('exp-desc').value = exp?exp.description:'';
