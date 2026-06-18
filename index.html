@@ -425,7 +425,7 @@ body.modal-open .main{overflow:hidden}
   .card-header{padding:.75rem 1rem}
   .tabs{overflow-x:auto;scrollbar-width:none;width:100%}
   .tabs::-webkit-scrollbar{display:none}
-  .toast{left:1rem;right:1rem;bottom:74px;text-align:center}
+  .toast{left:1rem;right:1rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 12px);text-align:center}
   .bar-chart{height:140px;gap:6px}
   .bar-pair{height:114px}
   .bar-label{font-size:9px}
