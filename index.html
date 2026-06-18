@@ -725,16 +725,15 @@ body.modal-open .main{overflow:hidden}
 
       <div id="page-mileage" class="page">
         <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
-          <div class="stat-card"><div class="stat-label">Total Miles</div><div class="stat-value" id="mi-total-miles">0</div><div class="stat-sub" id="mi-total-trips">0 trips</div></div>
+          <div class="stat-card"><div class="stat-label">Total Miles</div><div class="stat-value" id="mi-total-miles">0</div><div class="stat-sub">all time</div></div>
           <div class="stat-card"><div class="stat-label">This Month</div><div class="stat-value" id="mi-month-miles">0</div><div class="stat-sub">miles</div></div>
           <div class="stat-card"><div class="stat-label">This Year</div><div class="stat-value" id="mi-year-miles">0</div><div class="stat-sub">miles</div></div>
         </div>
         <div class="card">
           <div class="card-header"><h3>Trip Log</h3></div>
-          <div style="display:flex;gap:.5rem;align-items:center;padding:.6rem 1rem;border-bottom:1px solid var(--border)">
-            <input type="date" id="mi-from" onchange="renderMileage()" style="flex:1;min-width:0;padding:.4rem .5rem;font-size:12px">
-            <span style="color:var(--text3);font-size:12px;flex-shrink:0">to</span>
-            <input type="date" id="mi-to" onchange="renderMileage()" style="flex:1;min-width:0;padding:.4rem .5rem;font-size:12px">
+          <div style="display:flex;gap:.6rem;align-items:flex-end;padding:.6rem 1rem;border-bottom:1px solid var(--border)">
+            <div style="flex:1;min-width:0"><label style="display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.25rem">From</label><input type="date" id="mi-from" onchange="renderMileage()" style="width:100%;padding:.4rem .5rem;font-size:12px"></div>
+            <div style="flex:1;min-width:0"><label style="display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.25rem">To</label><input type="date" id="mi-to" onchange="renderMileage()" style="width:100%;padding:.4rem .5rem;font-size:12px"></div>
           </div>
           <div id="mileage-table"></div>
         </div>
@@ -1736,7 +1735,6 @@ function renderMileage() {
   const yearMiles = all.filter(t=>(t.date||'').slice(0,4)===yr).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
   const totalMiles = all.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
   document.getElementById('mi-total-miles').textContent = totalMiles.toLocaleString(undefined,{maximumFractionDigits:1});
-  document.getElementById('mi-total-trips').textContent = all.length+' trip'+(all.length===1?'':'s');
   document.getElementById('mi-month-miles').textContent = monthMiles.toLocaleString(undefined,{maximumFractionDigits:1});
   document.getElementById('mi-year-miles').textContent = yearMiles.toLocaleString(undefined,{maximumFractionDigits:1});
 
