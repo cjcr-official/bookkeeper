@@ -2071,10 +2071,26 @@ async function saveExpense() {
 
 async function deleteExpense(id) {
   if (!confirm('Delete this expense?')) return;
+  const exp = (cache.expenses||[]).find(e=>e.id===id);
+  const linkedInvId = exp ? exp.invoice_id : null;
   const {error} = await sb.from('expenses').delete().eq('id',id);
   if (error) { showToast(error.message,'error'); return; }
   cache.expenses = cache.expenses.filter(e=>e.id!==id);
-  showToast('Expense deleted'); renderExpenses();
+  // if this expense was billed on an invoice, recompute that invoice's totals
+  if (linkedInvId) { await recomputeInvoiceTotals(linkedInvId); }
+  showToast('Expense deleted'); renderExpenses(); renderInvoices();
+}
+
+async function recomputeInvoiceTotals(invId) {
+  const inv = (cache.invoices||[]).find(i=>i.id===invId);
+  if (!inv) return;
+  const lineSub = (inv.lines||[]).reduce((s,l)=>s+parseFloat(l.amount||0),0);
+  const expSub = (cache.expenses||[]).filter(e=>e.invoice_id===invId).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+  const sub = lineSub + expSub;
+  const taxR = parseFloat(profile.tax||0)/100;
+  const upd = { subtotal: sub, tax: sub*taxR, total: sub+sub*taxR };
+  const r = await sb.from('invoices').update(upd).eq('id',invId);
+  if (!r.error) { const idx=cache.invoices.findIndex(i=>i.id===invId); if(idx>-1) cache.invoices[idx]={...cache.invoices[idx],...upd}; }
 }
 
 // ====== VENDORS ======
