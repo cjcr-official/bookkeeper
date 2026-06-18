@@ -1,1 +1,1 @@
-{"version":65,"note":"Saved customer-expense rows get real IDs so deleting from the log clears them from the invoice form"}
+{"version":66,"note":"Toast notification no longer overlaps the bottom nav bar"}
