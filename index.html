@@ -494,7 +494,7 @@ body.modal-open .main{overflow:hidden}
 <body>
 
 <!-- INSTALL HINT (iOS Safari only, dismissible) -->
-<div id="install-hint" style="display:none;position:fixed;bottom:62px;left:0;right:0;z-index:9000;background:var(--surface2,#232d42);border-top:1px solid var(--border2,#2a3349);padding:.9rem 1rem;padding-bottom:max(.9rem,env(safe-area-inset-bottom,.9rem));font-size:13px;color:var(--text,#e8eaf0);display:flex;align-items:center;gap:.75rem">
+<div id="install-hint" style="display:none;position:fixed;bottom:calc(62px + env(safe-area-inset-bottom,0px));left:0;right:0;z-index:9000;background:var(--surface2,#232d42);border-top:1px solid var(--border2,#2a3349);padding:.9rem 1rem;padding-bottom:max(.9rem,env(safe-area-inset-bottom,.9rem));font-size:13px;color:var(--text,#e8eaf0);display:flex;align-items:center;gap:.75rem">
   <i class="ti ti-device-mobile" style="font-size:22px;color:#3b82f6;flex-shrink:0"></i>
   <div style="flex:1;line-height:1.4">For fullscreen, tap <i class="ti ti-share" style="font-size:15px;vertical-align:-2px"></i> <strong>Share</strong> then <strong>Add to Home Screen</strong>.</div>
   <button onclick="dismissInstallHint()" style="background:none;border:none;color:var(--text3,#8b93a8);font-size:20px;cursor:pointer;flex-shrink:0"><i class="ti ti-x"></i></button>
@@ -2550,9 +2550,12 @@ function evaluateInstallHint() {
     h.style.display = 'none';
   }
 }
-window.addEventListener('load', ()=>{ setTimeout(evaluateInstallHint, 2000); });
-// re-check if the display mode changes (e.g. launched from home screen)
+window.addEventListener('load', ()=>{ evaluateInstallHint(); setTimeout(evaluateInstallHint, 1200); });
+// re-check on display-mode change, focus, visibility and resize (covers PWA launch timing on iOS)
 try { window.matchMedia('(display-mode: standalone)').addEventListener('change', evaluateInstallHint); } catch(e){}
+window.addEventListener('focus', evaluateInstallHint);
+window.addEventListener('resize', evaluateInstallHint);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) evaluateInstallHint(); });
 
 // Check on load, and every 2 minutes while the app is open
 checkForUpdate();
