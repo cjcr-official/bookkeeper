@@ -1251,6 +1251,20 @@ function renderInvoices() {
   }
 }
 
+function nextInvoiceNumber() {
+  const yy = String(new Date().getFullYear()).slice(-2);
+  // find highest sequence among invoices starting with this year prefix
+  let max = 0;
+  (cache.invoices||[]).forEach(i=>{
+    const n = String(i.number||'');
+    if (n.startsWith(yy) && n.length>2) {
+      const seq = parseInt(n.slice(2),10);
+      if (!isNaN(seq) && seq>max) max = seq;
+    }
+  });
+  return yy + String(max+1).padStart(2,'0');
+}
+
 function openInvoiceModal(inv) {
   const sel = document.getElementById('inv-customer');
   sel.innerHTML = '<option value="">Select customer...</option>' + cache.customers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
@@ -1272,7 +1286,7 @@ function openInvoiceModal(inv) {
   } else {
     document.getElementById('inv-modal-title').textContent = 'New Invoice';
     document.getElementById('inv-id').value = '';
-    document.getElementById('inv-number').value = 'INV-'+(cache.invoices.length+1).toString().padStart(3,'0');
+    document.getElementById('inv-number').value = nextInvoiceNumber();
     document.getElementById('inv-date').value = today();
     document.getElementById('inv-due').value = in30();
     document.getElementById('inv-status').value = 'draft';
