@@ -761,8 +761,12 @@ body.modal-open .main{overflow:hidden}
       <div class="form-group"><label>Status</label>
         <select id="inv-status"><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select>
       </div>
-      <div class="form-group"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(tracked only, not billed or shown on invoice)</span></label>
-        <input id="inv-miles" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0"></div>
+      <div class="form-group" style="margin-bottom:.35rem"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(tracked in mileage log, not billed or shown on invoice)</span></label></div>
+      <div class="form-row">
+        <div class="form-group"><label>Miles / trip</label><input id="inv-miles" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0" oninput="calcInvMiles()"></div>
+        <div class="form-group"><label>Round Trips</label><input id="inv-trips" type="number" inputmode="numeric" min="1" step="1" value="1" oninput="calcInvMiles()"></div>
+        <div class="form-group"><label>Total Miles</label><input id="inv-total-miles" type="number" readonly style="background:var(--bg2);font-weight:700"></div>
+      </div>
       <div id="inv-lines-wrap" style="margin-bottom:1rem"></div>
       <button class="btn btn-sm" onclick="addInvLine()"><i class="ti ti-plus"></i> Add Line</button>
       <button class="btn btn-sm" onclick="addMileageLine()" style="margin-left:.5rem"><i class="ti ti-car"></i> Add Mileage</button>
@@ -1227,6 +1231,8 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-status').value = inv.status;
     document.getElementById('inv-notes').value = inv.notes||'';
     document.getElementById('inv-miles').value = inv.miles||'';
+    document.getElementById('inv-trips').value = inv.trips||1;
+    calcInvMiles();
     editingInvLines = JSON.parse(JSON.stringify(inv.lines||[]));
   } else {
     document.getElementById('inv-modal-title').textContent = 'New Invoice';
@@ -1237,6 +1243,8 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-status').value = 'draft';
     document.getElementById('inv-notes').value = profile.terms||'';
     document.getElementById('inv-miles').value = '';
+    document.getElementById('inv-trips').value = 1;
+    document.getElementById('inv-total-miles').value = '';
     editingInvLines = [{desc:'',qty:1,rate:0,amount:0}];
   }
   renderInvLines();
@@ -1314,6 +1322,9 @@ async function saveInvoice() {
   const cust = cache.customers.find(c=>c.id===custId);
   const sub = editingInvLines.reduce((s,l)=>s+(l.amount||0),0);
   const taxR = parseFloat(profile.tax||0)/100;
+  const milesPer = parseFloat(document.getElementById('inv-miles').value)||0;
+  const tripCount = parseInt(document.getElementById('inv-trips').value)||1;
+  const totalMiles = milesPer*tripCount;
   const row = {
     user_id: currentUser.id,
     number: document.getElementById('inv-number').value,
@@ -1323,16 +1334,39 @@ async function saveInvoice() {
     status: document.getElementById('inv-status').value,
     lines: editingInvLines, subtotal: sub, tax: sub*taxR, total: sub+sub*taxR,
     notes: document.getElementById('inv-notes').value,
-    miles: parseFloat(document.getElementById('inv-miles').value)||0
+    miles: milesPer, trips: tripCount, total_miles: totalMiles
   };
   const btn = document.getElementById('save-inv-btn');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Saving...';
-  let err;
+  let err, invId = id;
   if (id) { const r=await sb.from('invoices').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.invoices.findIndex(i=>i.id===id);cache.invoices[idx]={...cache.invoices[idx],...row,id};} }
-  else { const r=await sb.from('invoices').insert(row).select().single(); err=r.error; if(!err)cache.invoices.unshift(r.data); }
+  else { const r=await sb.from('invoices').insert(row).select().single(); err=r.error; if(!err){cache.invoices.unshift(r.data); invId=r.data.id;} }
+  // Sync a linked trip in the mileage log (created/updated/removed based on invoice miles)
+  if (!err && invId) { await syncInvoiceTrip(invId, row, totalMiles, milesPer, tripCount, cust); }
   btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save Invoice';
   if (err) { showToast(err.message,'error'); return; }
   showToast('Invoice saved','success'); closeModal('modal-invoice'); renderInvoices();
+}
+
+async function syncInvoiceTrip(invId, inv, totalMiles, milesPer, tripCount, cust) {
+  const existing = (cache.trips||[]).find(t=>t.invoice_id===invId);
+  if (totalMiles > 0) {
+    const trow = {
+      user_id: currentUser.id,
+      date: inv.date,
+      customer_id: inv.customer_id,
+      client_name: cust ? cust.name : (inv.customer_name||''),
+      miles: milesPer, trips: tripCount, total_miles: totalMiles,
+      purpose: 'Invoice #' + (inv.number||''),
+      invoice_id: invId
+    };
+    if (existing) { const r=await sb.from('trips').update(trow).eq('id',existing.id); if(!r.error){const i=cache.trips.findIndex(t=>t.id===existing.id);cache.trips[i]={...existing,...trow};} }
+    else { const r=await sb.from('trips').insert(trow).select().single(); if(!r.error&&r.data)cache.trips.unshift(r.data); }
+  } else if (existing) {
+    // miles cleared — remove the linked trip
+    const r=await sb.from('trips').delete().eq('id',existing.id);
+    if(!r.error) cache.trips = cache.trips.filter(t=>t.id!==existing.id);
+  }
 }
 
 async function deleteInvoice(id) {
@@ -1340,6 +1374,9 @@ async function deleteInvoice(id) {
   const {error} = await sb.from('invoices').delete().eq('id',id);
   if (error) { showToast(error.message,'error'); return; }
   cache.invoices = cache.invoices.filter(i=>i.id!==id);
+  // remove the linked mileage trip, if any
+  const linked = (cache.trips||[]).find(t=>t.invoice_id===id);
+  if (linked) { await sb.from('trips').delete().eq('id',linked.id); cache.trips = cache.trips.filter(t=>t.id!==linked.id); }
   showToast('Invoice deleted'); renderInvoices();
 }
 
@@ -1692,18 +1729,12 @@ function renderMileage() {
   const now = new Date();
   const ym = now.toISOString().slice(0,7);
   const yr = now.toISOString().slice(0,4);
-  const invs = cache.invoices || [];
-  // miles tracked on invoices (not billed) are included in the totals
-  const invMonth = invs.filter(i=>(i.date||'').slice(0,7)===ym).reduce((s,i)=>s+parseFloat(i.miles||0),0);
-  const invYear = invs.filter(i=>(i.date||'').slice(0,4)===yr).reduce((s,i)=>s+parseFloat(i.miles||0),0);
-  const invTotal = invs.reduce((s,i)=>s+parseFloat(i.miles||0),0);
-  const monthMiles = all.filter(t=>(t.date||'').slice(0,7)===ym).reduce((s,t)=>s+parseFloat(t.total_miles||0),0) + invMonth;
-  const yearMiles = all.filter(t=>(t.date||'').slice(0,4)===yr).reduce((s,t)=>s+parseFloat(t.total_miles||0),0) + invYear;
-  const totalMiles = all.reduce((s,t)=>s+parseFloat(t.total_miles||0),0) + invTotal;
-  const invWithMiles = invs.filter(i=>parseFloat(i.miles||0)>0).length;
-  const totalEntries = all.length + invWithMiles;
+  // invoice mileage now lives as linked trips in the log, so just sum the trips
+  const monthMiles = all.filter(t=>(t.date||'').slice(0,7)===ym).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+  const yearMiles = all.filter(t=>(t.date||'').slice(0,4)===yr).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+  const totalMiles = all.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
   document.getElementById('mi-total-miles').textContent = totalMiles.toLocaleString(undefined,{maximumFractionDigits:1});
-  document.getElementById('mi-total-trips').textContent = totalEntries+' entr'+(totalEntries===1?'y':'ies');
+  document.getElementById('mi-total-trips').textContent = all.length+' trip'+(all.length===1?'':'s');
   document.getElementById('mi-month-miles').textContent = monthMiles.toLocaleString(undefined,{maximumFractionDigits:1});
   document.getElementById('mi-year-miles').textContent = yearMiles.toLocaleString(undefined,{maximumFractionDigits:1});
 
@@ -1779,6 +1810,12 @@ function calcTripMiles() {
   const miles = parseFloat(document.getElementById('trip-miles').value)||0;
   const count = parseInt(document.getElementById('trip-count').value)||1;
   document.getElementById('trip-total').value = (miles*count).toFixed(1);
+}
+
+function calcInvMiles() {
+  const miles = parseFloat(document.getElementById('inv-miles').value)||0;
+  const count = parseInt(document.getElementById('inv-trips').value)||1;
+  document.getElementById('inv-total-miles').value = (miles*count).toFixed(1);
 }
 
 async function saveTrip() {
