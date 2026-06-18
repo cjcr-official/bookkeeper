@@ -1359,6 +1359,8 @@ function calcLine(i) { editingInvLines[i].amount=(editingInvLines[i].qty||0)*(ed
 function renderInvExpenses() {
   const wrap = document.getElementById('inv-exp-wrap');
   if (!wrap) return;
+  // drop any rows that reference an expense deleted from the log (keep unsaved rows with no id)
+  editingInvExpenses = editingInvExpenses.filter(e=>!e.id || (cache.expenses||[]).some(x=>x.id===e.id));
   if (!editingInvExpenses.length) { wrap.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:.25rem 0 .6rem">None added.</div>'; return; }
   wrap.innerHTML = editingInvExpenses.map((e,i)=>`
     <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
@@ -2078,8 +2080,8 @@ async function deleteExpense(id) {
   cache.expenses = cache.expenses.filter(e=>e.id!==id);
   // if this expense was billed on an invoice, recompute that invoice's totals
   if (linkedInvId) { await recomputeInvoiceTotals(linkedInvId); }
-  // if the invoice editor is open showing this expense, drop the stale row + retotal
-  if (typeof editingInvExpenses!=='undefined' && editingInvExpenses.some(e=>e.id===id)) {
+  // if the invoice editor is open, drop the stale row + retotal
+  if (typeof editingInvExpenses!=='undefined') {
     editingInvExpenses = editingInvExpenses.filter(e=>e.id!==id);
     if (typeof renderInvExpenses==='function') renderInvExpenses();
     if (typeof calcInvTotals==='function') calcInvTotals();
