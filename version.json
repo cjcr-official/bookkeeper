@@ -1,4 +1,1 @@
-{
-  "version": 50,
-  "note": "Invoice mileage: miles/trip x round trips, syncs to mileage log as linked trip"
-}
+{"version":51,"note":"Removed Add Mileage button/caption; split Purpose and Invoice # in trip popup and log"}
