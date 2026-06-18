@@ -1,1 +1,1 @@
-{"version":63,"note":"Deleting a linked expense clears its row from the open invoice editor; caption fixed"}
+{"version":64,"note":"Stale customer-expense rows removed from invoice editor when the linked expense is deleted"}
