@@ -1,1 +1,1 @@
-{"version":62,"note":"Deleting a linked expense removes it from the invoice and updates totals"}
+{"version":63,"note":"Deleting a linked expense clears its row from the open invoice editor; caption fixed"}
