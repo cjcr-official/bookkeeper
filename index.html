@@ -761,7 +761,7 @@ body.modal-open .main{overflow:hidden}
       <div class="form-group"><label>Status</label>
         <select id="inv-status"><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select>
       </div>
-      <div class="form-group" style="margin-bottom:.35rem"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(tracked in mileage log, not billed or shown on invoice)</span></label></div>
+      <div class="form-group" style="margin-bottom:.35rem"><label>Mileage</label></div>
       <div class="form-row">
         <div class="form-group"><label>Miles / trip</label><input id="inv-miles" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0" oninput="calcInvMiles()"></div>
         <div class="form-group"><label>Round Trips</label><input id="inv-trips" type="number" inputmode="numeric" min="1" step="1" value="1" oninput="calcInvMiles()"></div>
@@ -769,7 +769,6 @@ body.modal-open .main{overflow:hidden}
       </div>
       <div id="inv-lines-wrap" style="margin-bottom:1rem"></div>
       <button class="btn btn-sm" onclick="addInvLine()"><i class="ti ti-plus"></i> Add Line</button>
-      <button class="btn btn-sm" onclick="addMileageLine()" style="margin-left:.5rem"><i class="ti ti-car"></i> Add Mileage</button>
       <div style="margin-top:1rem;text-align:right;font-size:13.5px">
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Subtotal:</span><span id="inv-subtotal">$0.00</span></div>
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Tax (<span id="inv-tax-pct">0</span>%):</span><span id="inv-tax-amt">$0.00</span></div>
@@ -823,7 +822,10 @@ body.modal-open .main{overflow:hidden}
         <div class="form-group"><label>Miles (per round trip)</label><input id="trip-miles" type="number" min="0" step="0.1" oninput="calcTripMiles()"></div>
         <div class="form-group"><label>Total Miles</label><input id="trip-total" type="number" readonly style="background:var(--bg2);font-weight:700"></div>
       </div>
-      <div class="form-group"><label>Purpose</label><input id="trip-purpose" type="text" placeholder="e.g. On-site repair, pickup, delivery"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Purpose</label><input id="trip-purpose" type="text" placeholder="e.g. On-site repair"></div>
+        <div class="form-group"><label>Invoice #</label><input id="trip-invoice" type="text" placeholder="optional"></div>
+      </div>
       <div id="trip-maps-link" style="font-size:12px"></div>
     </div>
     <div class="modal-footer">
@@ -1357,7 +1359,7 @@ async function syncInvoiceTrip(invId, inv, totalMiles, milesPer, tripCount, cust
       customer_id: inv.customer_id,
       client_name: cust ? cust.name : (inv.customer_name||''),
       miles: milesPer, trips: tripCount, total_miles: totalMiles,
-      purpose: 'Invoice #' + (inv.number||''),
+      purpose: '', invoice_number: (inv.number||''),
       invoice_id: invId
     };
     if (existing) { const r=await sb.from('trips').update(trow).eq('id',existing.id); if(!r.error){const i=cache.trips.findIndex(t=>t.id===existing.id);cache.trips[i]={...existing,...trow};} }
@@ -1749,6 +1751,7 @@ function renderMileage() {
         <div class="m-card-main">
           <div class="m-card-title">${t.client_name||'—'}</div>
           ${t.purpose?`<div class="m-card-sub" style="color:var(--text2);font-size:12px">${t.purpose}</div>`:''}
+          ${t.invoice_number?`<div class="m-card-sub" style="color:var(--accent);font-size:12px">Invoice #${t.invoice_number}</div>`:''}
           <div class="m-card-meta">${fmtDate(t.date)}${t.trips>1?' · '+t.trips+' trips':''}</div>
         </div>
         <div class="m-card-right">
@@ -1761,7 +1764,7 @@ function renderMileage() {
       </div>`).join('') +
       `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;font-weight:700"><span>Range Total</span><span>${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} mi</span></div>`;
   } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>`<tr><td>${fmtDate(t.date)}</td><td style="font-weight:500">${t.client_name||'—'}</td><td style="color:var(--text2)">${t.purpose||'—'}</td><td>${t.trips||1}</td><td style="font-weight:600;font-family:'JetBrains Mono',monospace">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editTrip('${t.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Range Total: ${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} miles</div>`;
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Invoice #</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>`<tr><td>${fmtDate(t.date)}</td><td style="font-weight:500">${t.client_name||'—'}</td><td style="color:var(--text2)">${t.purpose||'—'}</td><td style="color:var(--accent)">${t.invoice_number||'—'}</td><td>${t.trips||1}</td><td style="font-weight:600;font-family:'JetBrains Mono',monospace">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editTrip('${t.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Range Total: ${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} miles</div>`;
   }
 }
 
@@ -1777,6 +1780,7 @@ function openTripModal(trip) {
     document.getElementById('trip-miles').value = trip.miles||'';
     document.getElementById('trip-count').value = trip.trips||1;
     document.getElementById('trip-purpose').value = trip.purpose||'';
+    document.getElementById('trip-invoice').value = trip.invoice_number||'';
   } else {
     document.getElementById('trip-title').textContent = 'Log Trip';
     document.getElementById('trip-id').value = '';
@@ -1785,6 +1789,7 @@ function openTripModal(trip) {
     document.getElementById('trip-miles').value = '';
     document.getElementById('trip-count').value = 1;
     document.getElementById('trip-purpose').value = '';
+    document.getElementById('trip-invoice').value = '';
   }
   calcTripMiles();
   openModal('modal-trip');
@@ -1834,7 +1839,8 @@ async function saveTrip() {
     miles:miles,
     trips:count,
     total_miles:miles*count,
-    purpose:document.getElementById('trip-purpose').value
+    purpose:document.getElementById('trip-purpose').value,
+    invoice_number:document.getElementById('trip-invoice').value
   };
   let err;
   if (id) { const r=await sb.from('trips').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.trips.findIndex(t=>t.id===id);cache.trips[idx]={...cache.trips[idx],...row};} }
