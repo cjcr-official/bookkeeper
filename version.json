@@ -1,1 +1,1 @@
-{"version":64,"note":"Stale customer-expense rows removed from invoice editor when the linked expense is deleted"}
+{"version":65,"note":"Saved customer-expense rows get real IDs so deleting from the log clears them from the invoice form"}
