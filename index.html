@@ -969,6 +969,12 @@ let editingInvLines = [];
 let editingInvExpenses = [];
 
 // ====== HELPERS ======
+function invoiceRevenue(inv) {
+  // revenue excludes reimbursed customer expenses billed on this invoice (pass-through)
+  const reimb = (cache.expenses||[]).filter(e=>e.invoice_id===inv.id&&e.reimbursed).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+  return parseFloat(inv.total||0) - reimb;
+}
+
 function fmt(n) {
   const syms = {USD:'$',EUR:'€',GBP:'£',CAD:'CA$',AUD:'A$'};
   const sym = syms[profile.currency||'USD']||'$';
@@ -1110,7 +1116,7 @@ function renderPage(page) {
 // ====== DASHBOARD ======
 function renderDashboard() {
   const now = new Date(); const yr = now.getFullYear();
-  const revenue = cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getFullYear()===yr).reduce((s,i)=>s+parseFloat(i.total||0),0);
+  const revenue = cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
   const expenses = cache.expenses.filter(e=>!e.reimbursed&&new Date(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
   const profit = revenue - expenses;
   const outstanding = cache.invoices.filter(i=>i.status==='sent'||i.status==='overdue').reduce((s,i)=>s+parseFloat(i.total||0),0);
@@ -1125,7 +1131,7 @@ function renderDashboard() {
   for (let i=5;i>=0;i--) { const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({y:d.getFullYear(),m:d.getMonth(),label:d.toLocaleDateString('en-US',{month:'short'})}); }
   const data = months.map(mo=>({
     label: mo.label,
-    inc: cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getMonth()===mo.m&&new Date(i.date).getFullYear()===mo.y).reduce((s,i)=>s+parseFloat(i.total||0),0),
+    inc: cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getMonth()===mo.m&&new Date(i.date).getFullYear()===mo.y).reduce((s,i)=>s+invoiceRevenue(i),0),
     exp: cache.expenses.filter(e=>!e.reimbursed&&new Date(e.date).getMonth()===mo.m&&new Date(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0)
   }));
   const maxVal = Math.max(1, ...data.map(d=>Math.max(d.inc,d.exp)));
@@ -2202,7 +2208,7 @@ function renderReport(r) {
   const bizMeta = (bizAddr?bizAddr+'<br>':'') + (p.phone?'Phone: '+esc(fmtPhone(p.phone)):'') + (p.email?(p.phone?' · ':'')+esc((p.email||'').trim().toLowerCase()):'');
 
   if (r==='pl') {
-    const revenue=cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getFullYear()===yr).reduce((s,i)=>s+parseFloat(i.total||0),0);
+    const revenue=cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
     const totalExp=cache.expenses.filter(e=>!e.reimbursed&&new Date(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const cats={};cache.expenses.filter(e=>!e.reimbursed&&new Date(e.date).getFullYear()===yr).forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
     const net=revenue-totalExp;
