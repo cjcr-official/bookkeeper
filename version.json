@@ -1,1 +1,1 @@
-{"version":58,"note":"Link invoices and expenses both ways; invoice customer-expenses sync as reimbursed expenses"}
+{"version":59,"note":"Customer expenses appear as invoice rows and add to total"}
