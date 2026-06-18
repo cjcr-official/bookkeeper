@@ -1,1 +1,4 @@
-{"version":49,"note":"Per-invoice mileage tracking (not billed); mileage totals include invoice miles; fixed Trip Log date filter"}
+{
+  "version": 50,
+  "note": "Invoice mileage: miles/trip x round trips, syncs to mileage log as linked trip"
+}
