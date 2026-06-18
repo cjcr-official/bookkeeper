@@ -773,7 +773,7 @@ body.modal-open .main{overflow:hidden}
       </div>
       <div style="margin-top:1.25rem;border-top:1px solid var(--border);padding-top:1rem">
         <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.15rem">Customer Expenses</label>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:.6rem">Parts/items the customer reimburses. Logged as reimbursed expenses, not added to the invoice total or shown on it.</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:.6rem">Parts/items the customer reimburses. Added to the invoice and logged as reimbursed expenses (excluded from profit).</div>
         <div id="inv-exp-wrap"></div>
         <button class="btn btn-sm" onclick="addInvExpense()"><i class="ti ti-plus"></i> Add Customer Expense</button>
       </div>
@@ -2078,6 +2078,12 @@ async function deleteExpense(id) {
   cache.expenses = cache.expenses.filter(e=>e.id!==id);
   // if this expense was billed on an invoice, recompute that invoice's totals
   if (linkedInvId) { await recomputeInvoiceTotals(linkedInvId); }
+  // if the invoice editor is open showing this expense, drop the stale row + retotal
+  if (typeof editingInvExpenses!=='undefined' && editingInvExpenses.some(e=>e.id===id)) {
+    editingInvExpenses = editingInvExpenses.filter(e=>e.id!==id);
+    if (typeof renderInvExpenses==='function') renderInvExpenses();
+    if (typeof calcInvTotals==='function') calcInvTotals();
+  }
   showToast('Expense deleted'); renderExpenses(); renderInvoices();
 }
 
