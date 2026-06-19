@@ -1,1 +1,1 @@
-{"version":67,"note":"Install hint sits above nav; hidden unless in iOS Safari tab; faster standalone detection"}
+{"version":68,"note":"Customer driving-distance via OpenRouteService; invoice mileage = trips x customer round-trip miles"}
