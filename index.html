@@ -708,6 +708,7 @@ body.modal-open .main{overflow:hidden}
               </div>
             </div>
             <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
+            <div class="form-group"><label>OpenRouteService API Key <span style="color:var(--text3);font-weight:400;font-size:11px">(free, for driving-distance mileage)</span></label><input id="s-ors-key" type="text" placeholder="Paste your free key from openrouteservice.org" autocomplete="off"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">Stored only on this device. Get a free key at openrouteservice.org → Dashboard → Tokens.</div></div>
             <div class="form-group"><label>Invoice Terms / Notes</label><textarea id="s-terms" rows="2" placeholder="Payment due within 30 days."></textarea></div>
             <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button>
           </div>
@@ -748,7 +749,7 @@ body.modal-open .main{overflow:hidden}
     <div class="modal-body">
       <input type="hidden" id="inv-id">
       <div class="form-row">
-        <div class="form-group"><label>Customer</label><select id="inv-customer"><option value="">Select customer...</option></select></div>
+        <div class="form-group"><label>Customer</label><select id="inv-customer" onchange="calcInvMiles()"><option value="">Select customer...</option></select></div>
         <div class="form-group"><label>Invoice #</label><input id="inv-number" type="text"></div>
       </div>
       <div class="form-row">
@@ -758,10 +759,10 @@ body.modal-open .main{overflow:hidden}
       <div class="form-group"><label>Status</label>
         <select id="inv-status"><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select>
       </div>
-      <div class="form-group" style="margin-bottom:.35rem"><label>Mileage</label></div>
+      <div class="form-group" style="margin-bottom:.35rem"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(round-trip distance comes from the customer)</span></label></div>
       <div class="form-row">
-        <div class="form-group"><label>Miles / trip</label><input id="inv-miles" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0" oninput="calcInvMiles()"></div>
-        <div class="form-group"><label>Round Trips</label><input id="inv-trips" type="number" inputmode="numeric" min="1" step="1" value="1" oninput="calcInvMiles()"></div>
+        <div class="form-group"><label>Trips Made</label><input id="inv-trips" type="number" inputmode="numeric" min="0" step="1" value="1" oninput="calcInvMiles()"></div>
+        <div class="form-group"><label>Per Trip</label><input id="inv-miles" type="number" readonly style="background:var(--bg2)" placeholder="—"></div>
         <div class="form-group"><label>Total Miles</label><input id="inv-total-miles" type="number" readonly style="background:var(--bg2);font-weight:700"></div>
       </div>
       <div id="inv-lines-wrap" style="margin-bottom:1rem"></div>
@@ -801,7 +802,12 @@ body.modal-open .main{overflow:hidden}
         <div class="form-group"><label>Phone</label><input id="cust-phone" type="tel"></div>
       </div>
       <div class="form-group"><label>Address</label><textarea id="cust-address" rows="2"></textarea></div>
-      <div class="form-group"><label>Round-Trip Miles (from your base)</label><input id="cust-miles" type="number" min="0" step="0.1" placeholder="e.g. 24"><div style="font-size:11px;color:var(--text3);margin-top:.35rem">Set once — trips to this client auto-fill this distance. Check Google Maps for the round-trip figure.</div></div>
+      <div class="form-group"><label>Round-Trip Miles (from your base)</label>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <input id="cust-miles" type="number" min="0" step="0.1" placeholder="e.g. 24" style="flex:1">
+          <button class="btn btn-sm" id="cust-calc-btn" onclick="calcCustomerMiles()" type="button"><i class="ti ti-route"></i> Calculate</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Tap Calculate to get round-trip driving miles from your base address (Settings) to this customer. You can also type it manually.</div></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-customer')">Cancel</button>
@@ -1278,8 +1284,7 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-due').value = inv.due;
     document.getElementById('inv-status').value = inv.status;
     document.getElementById('inv-notes').value = inv.notes||'';
-    document.getElementById('inv-miles').value = inv.miles||'';
-    document.getElementById('inv-trips').value = inv.trips||1;
+    document.getElementById('inv-trips').value = (inv.trips!=null?inv.trips:1);
     calcInvMiles();
     editingInvLines = JSON.parse(JSON.stringify(inv.lines||[]));
     editingInvExpenses = (cache.expenses||[]).filter(e=>e.invoice_id===inv.id).map(e=>({id:e.id,vendor:e.vendor||'',amount:parseFloat(e.amount||0),category:e.category||'Other'}));
@@ -1294,6 +1299,7 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-miles').value = '';
     document.getElementById('inv-trips').value = 1;
     document.getElementById('inv-total-miles').value = '';
+    calcInvMiles();
     editingInvLines = [{desc:'',qty:1,rate:0,amount:0}];
     editingInvExpenses = [];
   }
@@ -1807,6 +1813,44 @@ function openCustomerModal(c) {
 }
 function editCustomer(id) { openCustomerModal(cache.customers.find(c=>c.id===id)); }
 
+async function geocodeORS(address, key) {
+  const url = 'https://api.openrouteservice.org/geocode/search?api_key=' + encodeURIComponent(key) + '&text=' + encodeURIComponent(address) + '&size=1';
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('Geocoding failed ('+r.status+')');
+  const j = await r.json();
+  if (!j.features || !j.features.length) throw new Error('Address not found: '+address);
+  return j.features[0].geometry.coordinates; // [lon, lat]
+}
+
+async function calcCustomerMiles() {
+  const key = (()=>{ try { return localStorage.getItem('bk-ors-key')||''; } catch(e){ return ''; } })().trim();
+  if (!key) { showToast('Add your OpenRouteService key in Settings first','error'); return; }
+  const base = (profile.base_address||'').trim();
+  if (!base) { showToast('Set your base address in Settings first','error'); return; }
+  const dest = (document.getElementById('cust-address').value||'').trim();
+  if (!dest) { showToast('Enter the customer address first','error'); return; }
+  const btn = document.getElementById('cust-calc-btn');
+  const orig = btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  try {
+    const a = await geocodeORS(base, key);
+    const b = await geocodeORS(dest, key);
+    const url = 'https://api.openrouteservice.org/v2/directions/driving-car?api_key='+encodeURIComponent(key)
+      +'&start='+a[0]+','+a[1]+'&end='+b[0]+','+b[1];
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('Routing failed ('+r.status+')');
+    const j = await r.json();
+    const meters = j.features[0].properties.summary.distance;
+    const oneWayMiles = meters / 1609.344;
+    const roundTrip = Math.round(oneWayMiles * 2 * 10) / 10;
+    document.getElementById('cust-miles').value = roundTrip;
+    showToast('Round trip: '+roundTrip+' mi','success');
+  } catch(e) {
+    showToast(e.message||'Could not calculate distance','error');
+  } finally {
+    btn.disabled=false; btn.innerHTML=orig;
+  }
+}
+
 async function saveCustomer() {
   const id = document.getElementById('cust-id').value;
   const row = {user_id:currentUser.id,name:document.getElementById('cust-name').value,contact:document.getElementById('cust-contact').value,email:document.getElementById('cust-email').value,phone:document.getElementById('cust-phone').value,address:document.getElementById('cust-address').value,miles:parseFloat(document.getElementById('cust-miles').value)||null};
@@ -1927,9 +1971,12 @@ function calcTripMiles() {
 }
 
 function calcInvMiles() {
-  const miles = parseFloat(document.getElementById('inv-miles').value)||0;
-  const count = parseInt(document.getElementById('inv-trips').value)||1;
-  document.getElementById('inv-total-miles').value = (miles*count).toFixed(1);
+  const cid = document.getElementById('inv-customer').value;
+  const cust = (cache.customers||[]).find(x=>x.id===cid);
+  const perTrip = cust ? (parseFloat(cust.miles)||0) : 0;
+  const count = parseInt(document.getElementById('inv-trips').value)||0;
+  document.getElementById('inv-miles').value = perTrip ? perTrip : '';
+  document.getElementById('inv-total-miles').value = (perTrip*count).toFixed(1);
 }
 
 async function saveTrip() {
@@ -2365,6 +2412,7 @@ function loadSettingsForm() {
   document.getElementById('s-currency').value=profile.currency||'USD';
   document.getElementById('s-terms').value=profile.terms||'';
   document.getElementById('s-base-address').value=profile.base_address||'';
+  try { document.getElementById('s-ors-key').value=localStorage.getItem('bk-ors-key')||''; } catch(e){}
   document.getElementById('user-email-display').textContent=currentUser.email;
 }
 
@@ -2373,6 +2421,7 @@ async function saveSettings() {
   const {error}=await sb.from('profiles').upsert({id:currentUser.id,...row});
   if (error) { showToast(error.message,'error'); return; }
   profile={...profile,...row};
+  try { localStorage.setItem('bk-ors-key', document.getElementById('s-ors-key').value.trim()); } catch(e){}
   document.getElementById('user-company-name').textContent=row.company||'My Business';
   showToast('Settings saved','success');
 }
