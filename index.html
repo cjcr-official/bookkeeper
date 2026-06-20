@@ -2385,11 +2385,13 @@ function renderReport(r) {
 
 // On-screen wrapper for a report (header bar with Print button + the printable body shown inline)
 function reportScreen(title) {
-  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .25rem;gap:.5rem">
+  return `<div style="max-width:840px;margin:0 auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .25rem;gap:.5rem">
       <div style="font-size:12.5px;font-weight:700;color:var(--text)">${title}</div>
       <button class="btn btn-sm btn-primary" id="report-print-btn" onclick="printReport()"><i class="ti ti-printer"></i> Print</button>
     </div>
-    <div style="padding:0 1rem 1rem">${lastReportHTML}</div>`;
+    <div style="padding:0 1rem 1rem">${lastReportHTML}</div>
+  </div>`;
 }
 
 // Build the printable report document body (same visual language as the invoice)
