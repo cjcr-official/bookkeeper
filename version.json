@@ -1,1 +1,1 @@
-{"version":68,"note":"Customer driving-distance via OpenRouteService; invoice mileage = trips x customer round-trip miles"}
+{"version":69,"note":"Mileage now works with no API key: keyless geocoding (Nominatim) + routing (OSRM) with ORS fallback; clearer error messages instead of 'failed to fetch'"}
