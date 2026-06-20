@@ -1,1 +1,1 @@
-{"version":79,"note":"Recurring invoices (generate as drafts) and recurring expenses (auto-post); templates auto-generate on app open, catching up missed periods; manager + editor UI on Invoices/Expenses pages"}
+{"version":80,"note":"Receipt photos on expenses: attach/replace/remove an image (Supabase Storage, private per-user), view via signed URL, paperclip indicator in the expense list; files cleaned up on delete"}
