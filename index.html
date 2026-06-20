@@ -897,28 +897,6 @@ body.modal-open .main{overflow:hidden}
   </div>
 </div>
 
-<!-- VENDOR MODAL -->
-<div class="modal-overlay" id="modal-vendor">
-  <div class="modal">
-    <div class="modal-header"><h2>New Vendor</h2><button class="btn btn-sm" onclick="closeModal('modal-vendor')"><i class="ti ti-x"></i></button></div>
-    <div class="modal-body">
-      <input type="hidden" id="vend-id">
-      <div class="form-row">
-        <div class="form-group"><label>Company / Name</label><input id="vend-name" type="text"></div>
-        <div class="form-group"><label>Contact</label><input id="vend-contact" type="text"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Email</label><input id="vend-email" type="email"></div>
-        <div class="form-group"><label>Phone</label><input id="vend-phone" type="tel"></div>
-      </div>
-      <div class="form-group"><label>Category</label><input id="vend-category" type="text" placeholder="Supplies, Services..."></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal('modal-vendor')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveVendor()"><i class="ti ti-check"></i> Save</button>
-    </div>
-  </div>
-</div>
 
 <!-- ACCOUNT MODAL -->
 <div class="modal-overlay" id="modal-account">
@@ -967,7 +945,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // ====== STATE ======
 let currentUser = null;
 let profile = {};
-let cache = {customers:[],invoices:[],expenses:[],vendors:[],accounts:[],trips:[]};
+let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[]};
 let currentPage = 'dashboard';
 let invFilter = 'all';
 let currentReport = 'pl';
@@ -992,15 +970,24 @@ function fmtDate(d) {
 }
 function today() { return new Date().toISOString().slice(0,10); }
 function in30() { const d=new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); }
+// Parse a date-only 'YYYY-MM-DD' string at LOCAL noon so getFullYear()/getMonth()
+// never roll back a day in negative-UTC timezones (e.g. Montana). new Date('2026-01-01')
+// is UTC midnight = the prior evening locally, which mis-buckets month/year totals.
+function parseDate(d) { return d ? new Date(d+'T12:00:00') : new Date(NaN); }
+// Safe localStorage access (no-ops if storage is unavailable, e.g. private mode).
+function lsGet(k, d=null) { try { const v=localStorage.getItem(k); return v===null?d:v; } catch(e){ return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch(e){} }
 function statusBadge(s) {
   const m={draft:'badge-gray',sent:'badge-blue',paid:'badge-green',overdue:'badge-red'};
   return `<span class="badge ${m[s]||'badge-gray'}">${s}</span>`;
 }
 
+let _toastTimer = null;
 function showToast(msg, type='') {
   const t = document.getElementById('toast');
   t.textContent = msg; t.className = 'toast show ' + type;
-  setTimeout(()=>t.className='toast', 3000);
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(()=>{ t.className='toast'; _toastTimer=null; }, 3000);
 }
 
 // ====== AUTH ======
@@ -1083,7 +1070,6 @@ async function loadAllData() {
   cache.customers = customers.data || [];
   cache.invoices = invoices.data || [];
   cache.expenses = expenses.data || [];
-  cache.vendors = [];
   cache.accounts = accounts.data || [];
   cache.trips = trips.data || [];
 }
@@ -1122,8 +1108,8 @@ function renderPage(page) {
 // ====== DASHBOARD ======
 function renderDashboard() {
   const now = new Date(); const yr = now.getFullYear();
-  const revenue = cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
-  const expenses = cache.expenses.filter(e=>!e.reimbursed&&new Date(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+  const revenue = cache.invoices.filter(i=>i.status==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
+  const expenses = cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
   const profit = revenue - expenses;
   const outstanding = cache.invoices.filter(i=>i.status==='sent'||i.status==='overdue').reduce((s,i)=>s+parseFloat(i.total||0),0);
   document.getElementById('stat-revenue').textContent = fmt(revenue);
@@ -1137,8 +1123,8 @@ function renderDashboard() {
   for (let i=5;i>=0;i--) { const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({y:d.getFullYear(),m:d.getMonth(),label:d.toLocaleDateString('en-US',{month:'short'})}); }
   const data = months.map(mo=>({
     label: mo.label,
-    inc: cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getMonth()===mo.m&&new Date(i.date).getFullYear()===mo.y).reduce((s,i)=>s+invoiceRevenue(i),0),
-    exp: cache.expenses.filter(e=>!e.reimbursed&&new Date(e.date).getMonth()===mo.m&&new Date(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0)
+    inc: cache.invoices.filter(i=>i.status==='paid'&&parseDate(i.date).getMonth()===mo.m&&parseDate(i.date).getFullYear()===mo.y).reduce((s,i)=>s+invoiceRevenue(i),0),
+    exp: cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getMonth()===mo.m&&parseDate(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0)
   }));
   const maxVal = Math.max(1, ...data.map(d=>Math.max(d.inc,d.exp)));
   // round max up to a nice gridline number
@@ -1411,7 +1397,7 @@ async function saveInvoice() {
   const btn = document.getElementById('save-inv-btn');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Saving...';
   let err, invId = id;
-  if (id) { const r=await sb.from('invoices').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.invoices.findIndex(i=>i.id===id);cache.invoices[idx]={...cache.invoices[idx],...row,id};} }
+  if (id) { const r=await sb.from('invoices').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.invoices.findIndex(i=>i.id===id);if(idx>-1)cache.invoices[idx]={...cache.invoices[idx],...row,id};} }
   else { const r=await sb.from('invoices').insert(row).select().single(); err=r.error; if(!err){cache.invoices.unshift(r.data); invId=r.data.id;} }
   // Sync a linked trip in the mileage log (created/updated/removed based on invoice miles)
   if (!err && invId) { await syncInvoiceTrip(invId, row, totalMiles, milesPer, tripCount, cust); await syncInvoiceExpenses(invId, row, cust); }
@@ -1710,7 +1696,7 @@ function viewInvoice(id) {
 }
 
 // ====== CUSTOMERS ======
-function escHtml(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function escHtml(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
 function fmtAddress(addr) {
   if (!addr) return '';
@@ -1810,7 +1796,7 @@ function openCustomerModal(c) {
   document.getElementById('cust-address').value = c?c.address:'';
   document.getElementById('cust-miles').value = c&&c.miles?c.miles:'';
   (()=>{ const cb=document.getElementById('cust-calc-btn'); if(!cb) return;
-    let hk=false; try{ hk=!!(localStorage.getItem('bk-ors-key')||'').trim(); }catch(e){}
+    const hk = !!lsGet('bk-ors-key','').trim();
     cb.innerHTML = '<i class="ti ti-route"></i> ' + (hk ? 'Calculate (Google)' : 'Estimate');
   })();
   openModal('modal-customer');
@@ -1945,7 +1931,7 @@ async function googleRouteMeters(base, dest, key) {
 }
 
 async function calcCustomerMiles() {
-  const key = (()=>{ try { return localStorage.getItem('bk-ors-key')||''; } catch(e){ return ''; } })().trim();
+  const key = lsGet('bk-ors-key','').trim();
   const base = (profile.base_address||'').trim();
   if (!base) { showToast('Set your base address in Settings first','error'); return; }
   const dest = (document.getElementById('cust-address').value||'').trim();
@@ -2173,10 +2159,10 @@ function renderExpenses() {
 
 function getCategories() {
   const DEFAULT_CATS = ['Advertising','Bank Fees','Contract Labor','Equipment','Insurance','Meals & Entertainment','Office Supplies','Professional Services','Rent','Software & Subscriptions','Travel','Utilities','Other'];
-  try { const s = localStorage.getItem('bk-expense-cats'); if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch(e){}
+  try { const s = lsGet('bk-expense-cats'); if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch(e){}
   return DEFAULT_CATS.slice();
 }
-function saveCategories(arr) { try { localStorage.setItem('bk-expense-cats', JSON.stringify(arr)); } catch(e){} }
+function saveCategories(arr) { lsSet('bk-expense-cats', JSON.stringify(arr)); }
 
 function renderCategoryOptions(selected) {
   const sel = document.getElementById('exp-category');
@@ -2280,63 +2266,6 @@ async function recomputeInvoiceTotals(invId) {
   if (!r.error) { const idx=cache.invoices.findIndex(i=>i.id===invId); if(idx>-1) cache.invoices[idx]={...cache.invoices[idx],...upd}; }
 }
 
-// ====== VENDORS ======
-function renderVendors() {
-  const el = document.getElementById('vendors-table');
-  if (!cache.vendors.length) { el.innerHTML = `<div class="empty"><i class="ti ti-building-store"></i><p>No vendors yet</p></div>`; return; }
-  const paidOf = v => cache.expenses.filter(e=>e.vendor===v.name).reduce((s,e)=>s+parseFloat(e.amount||0),0);
-  if (window.innerWidth <= 768) {
-    el.innerHTML = cache.vendors.map(v=>`
-      <div class="m-card" onclick="editVendor('${v.id}')">
-        <div class="m-card-main">
-          <div class="m-card-title">${v.name}</div>
-          ${v.contact?`<div class="m-card-sub">${v.contact}</div>`:''}
-          ${v.email?`<div class="m-card-meta" style="color:var(--accent)">${v.email}</div>`:''}
-          ${v.category?`<div class="m-card-meta">${v.category}</div>`:''}
-        </div>
-        <div class="m-card-right">
-          <div class="m-card-amount red">${fmt(paidOf(v))}</div>
-          <div class="m-card-actions">
-            <button class="btn btn-sm" onclick="event.stopPropagation();editVendor('${v.id}')"><i class="ti ti-edit"></i></button>
-            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteVendor('${v.id}')"><i class="ti ti-trash"></i></button>
-          </div>
-        </div>
-      </div>`).join('');
-  } else {
-    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Category</th><th>Total Paid</th><th></th></tr></thead><tbody>${cache.vendors.map(v=>`<tr><td style="font-weight:500">${v.name}</td><td>${v.contact||'—'}</td><td style="color:var(--accent)">${v.email||'—'}</td><td>${v.category||'—'}</td><td class="red">${fmt(paidOf(v))}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editVendor('${v.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteVendor('${v.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
-  }
-}
-
-function openVendorModal(v) {
-  document.getElementById('vend-id').value=v?v.id:'';
-  document.getElementById('vend-name').value=v?v.name:'';
-  document.getElementById('vend-contact').value=v?v.contact:'';
-  document.getElementById('vend-email').value=v?v.email:'';
-  document.getElementById('vend-phone').value=v?v.phone:'';
-  document.getElementById('vend-category').value=v?v.category:'';
-  openModal('modal-vendor');
-}
-function editVendor(id) { openVendorModal(cache.vendors.find(v=>v.id===id)); }
-
-async function saveVendor() {
-  const id=document.getElementById('vend-id').value;
-  const row={user_id:currentUser.id,name:document.getElementById('vend-name').value,contact:document.getElementById('vend-contact').value,email:document.getElementById('vend-email').value,phone:document.getElementById('vend-phone').value,category:document.getElementById('vend-category').value};
-  if (!row.name) { showToast('Name is required','error'); return; }
-  let err;
-  if (id) { const r=await sb.from('vendors').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.vendors.findIndex(v=>v.id===id);cache.vendors[idx]={...cache.vendors[idx],...row};} }
-  else { const r=await sb.from('vendors').insert(row).select().single(); err=r.error; if(!err)cache.vendors.push(r.data); }
-  if (err) { showToast(err.message,'error'); return; }
-  showToast('Vendor saved','success'); closeModal('modal-vendor'); renderVendors();
-}
-
-async function deleteVendor(id) {
-  if (!confirm('Delete this vendor?')) return;
-  const {error}=await sb.from('vendors').delete().eq('id',id);
-  if (error) { showToast(error.message,'error'); return; }
-  cache.vendors=cache.vendors.filter(v=>v.id!==id);
-  showToast('Vendor deleted'); renderVendors();
-}
-
 // ====== ACCOUNTS ======
 function renderAccounts() {
   const el = document.getElementById('accounts-table');
@@ -2425,9 +2354,9 @@ function renderReport(r) {
   const bizMeta = (bizAddr?bizAddr+'<br>':'') + (p.phone?'Phone: '+esc(fmtPhone(p.phone)):'') + (p.email?(p.phone?' · ':'')+esc((p.email||'').trim().toLowerCase()):'');
 
   if (r==='pl') {
-    const revenue=cache.invoices.filter(i=>i.status==='paid'&&new Date(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
-    const totalExp=cache.expenses.filter(e=>!e.reimbursed&&new Date(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
-    const cats={};cache.expenses.filter(e=>!e.reimbursed&&new Date(e.date).getFullYear()===yr).forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
+    const revenue=cache.invoices.filter(i=>i.status==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
+    const totalExp=cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+    const cats={};cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
     const net=revenue-totalExp;
     lastReportHTML = reportDoc(bizName, bizMeta, 'Profit &amp; Loss Statement', String(yr), `
       <div class="rsec">INCOME</div>
@@ -2544,7 +2473,7 @@ function loadSettingsForm() {
   document.getElementById('s-currency').value=profile.currency||'USD';
   document.getElementById('s-terms').value=profile.terms||'';
   document.getElementById('s-base-address').value=profile.base_address||'';
-  try { document.getElementById('s-ors-key').value=localStorage.getItem('bk-ors-key')||''; } catch(e){}
+  document.getElementById('s-ors-key').value = lsGet('bk-ors-key','');
   document.getElementById('user-email-display').textContent=currentUser.email;
 }
 
@@ -2553,7 +2482,7 @@ async function saveSettings() {
   const {error}=await sb.from('profiles').upsert({id:currentUser.id,...row});
   if (error) { showToast(error.message,'error'); return; }
   profile={...profile,...row};
-  try { localStorage.setItem('bk-ors-key', document.getElementById('s-ors-key').value.trim()); } catch(e){}
+  lsSet('bk-ors-key', document.getElementById('s-ors-key').value.trim());
   document.getElementById('user-company-name').textContent=row.company||'My Business';
   showToast('Settings saved','success');
 }
@@ -2625,11 +2554,11 @@ function toggleTheme() {
   if (!isDark) html.removeAttribute('data-theme');
   const icon = document.getElementById('theme-icon');
   icon.className = isDark ? 'ti ti-moon' : 'ti ti-sun';
-  localStorage.setItem('bk-theme', isDark ? 'light' : 'dark');
+  lsSet('bk-theme', isDark ? 'light' : 'dark');
 }
 // Apply saved theme on load
 (function(){
-  const saved = localStorage.getItem('bk-theme');
+  const saved = lsGet('bk-theme');
   if (saved === 'light') {
     document.documentElement.setAttribute('data-theme','light');
     document.addEventListener('DOMContentLoaded', ()=>{
@@ -2670,11 +2599,11 @@ async function checkForUpdate() {
     serverVersion = data.version;
 
     let installed = null;
-    try { installed = localStorage.getItem('bk-installed-version'); } catch(e){}
+    installed = lsGet('bk-installed-version');
 
     // First ever load: record the current live version, don't prompt.
     if (installed === null) {
-      try { localStorage.setItem('bk-installed-version', String(data.version)); } catch(e){}
+      lsSet('bk-installed-version', String(data.version));
       return;
     }
 
@@ -2692,7 +2621,7 @@ function doUpdate() {
   const btn = document.getElementById('update-btn');
   if (btn) btn.innerHTML = '<span class="spinner"></span> Updating...';
   // record the version we're updating to, so we don't prompt again after reload
-  try { if (serverVersion !== null) localStorage.setItem('bk-installed-version', String(serverVersion)); } catch(e){}
+  if (serverVersion !== null) lsSet('bk-installed-version', String(serverVersion));
   const finish = () => {
     const base = window.location.href.split('?')[0].split('#')[0];
     window.location.replace(base + '?v=' + Date.now());
@@ -2711,7 +2640,7 @@ function doUpdate() {
 // ====== INSTALL HINT (iOS, show only in Safari tab, not standalone) ======
 function dismissInstallHint() {
   document.getElementById('install-hint').style.display = 'none';
-  try { localStorage.setItem('bk-hide-install-hint','1'); } catch(e){}
+  lsSet('bk-hide-install-hint','1');
 }
 function isStandalone() {
   return window.navigator.standalone === true
@@ -2723,7 +2652,7 @@ function evaluateInstallHint() {
   if (!h) return;
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   let dismissed = false;
-  try { dismissed = localStorage.getItem('bk-hide-install-hint')==='1'; } catch(e){}
+  dismissed = lsGet('bk-hide-install-hint')==='1';
   // Only show in a real iOS Safari TAB (not standalone / not fullscreen) and not dismissed
   if (isIOS && !isStandalone() && !dismissed) {
     h.style.display = 'flex';
