@@ -1,1 +1,1 @@
-{"version":80,"note":"Receipt photos on expenses: attach/replace/remove an image (Supabase Storage, private per-user), view via signed URL, paperclip indicator in the expense list; files cleaned up on delete"}
+{"version":81,"note":"Business logo in Settings: upload an image (auto-downscaled, stored on profile as data URL so it syncs and renders in PDFs); shows on invoice and report headers; removable"}
