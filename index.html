@@ -708,7 +708,7 @@ body.modal-open .main{overflow:hidden}
               </div>
             </div>
             <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
-            <div class="form-group"><label>OpenRouteService API Key <span style="color:var(--text3);font-weight:400;font-size:11px">(free, for driving-distance mileage)</span></label><input id="s-ors-key" type="text" placeholder="Paste your free key from openrouteservice.org" autocomplete="off"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">Stored only on this device. Get a free key at openrouteservice.org → Dashboard → Tokens.</div></div>
+            <div class="form-group"><label>OpenRouteService API Key <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="s-ors-key" type="text" placeholder="Optional — leave blank to use the built-in free routing" autocomplete="off"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">Mileage now works with no key. Add an OpenRouteService key only if you want to use your own routing account. Stored only on this device.</div></div>
             <div class="form-group"><label>Invoice Terms / Notes</label><textarea id="s-terms" rows="2" placeholder="Payment due within 30 days."></textarea></div>
             <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button>
           </div>
@@ -1813,18 +1813,68 @@ function openCustomerModal(c) {
 }
 function editCustomer(id) { openCustomerModal(cache.customers.find(c=>c.id===id)); }
 
-async function geocodeORS(address, key) {
-  const url = 'https://api.openrouteservice.org/geocode/search?api_key=' + encodeURIComponent(key) + '&text=' + encodeURIComponent(address) + '&size=1';
-  const r = await fetch(url);
-  if (!r.ok) throw new Error('Geocoding failed ('+r.status+')');
-  const j = await r.json();
-  if (!j.features || !j.features.length) throw new Error('Address not found: '+address);
-  return j.features[0].geometry.coordinates; // [lon, lat]
+// Distinguish a network/CORS-level failure ("Failed to fetch" / "Load failed")
+// from a real HTTP error, so the user gets a useful message instead of a vague one.
+function fetchErr(e, what) {
+  const m = (e && e.message) ? e.message : '';
+  if (/failed to fetch|load failed|networkerror|cors/i.test(m)) {
+    return new Error("Couldn't reach the "+what+" service — check your connection and try again.");
+  }
+  return e;
+}
+
+// Geocode an address to [lon, lat]. Uses OpenRouteService if a key is saved,
+// otherwise (or on any ORS failure) falls back to keyless OpenStreetMap Nominatim.
+async function geocodeAddress(address, key) {
+  if (key) {
+    try {
+      const url = 'https://api.openrouteservice.org/geocode/search?api_key=' + encodeURIComponent(key) + '&text=' + encodeURIComponent(address) + '&size=1';
+      const r = await fetch(url);
+      if (r.ok) {
+        const j = await r.json();
+        if (j.features && j.features.length) return j.features[0].geometry.coordinates; // [lon, lat]
+      }
+    } catch(e) { /* fall through to keyless geocoder */ }
+  }
+  // Keyless fallback — Nominatim (OpenStreetMap)
+  const nurl = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(address);
+  let nr;
+  try { nr = await fetch(nurl, { headers: { 'Accept': 'application/json' } }); }
+  catch(e) { throw fetchErr(e, 'address lookup'); }
+  if (!nr.ok) throw new Error('Address lookup failed ('+nr.status+')');
+  const nj = await nr.json();
+  if (!nj.length) throw new Error('Address not found: '+address);
+  return [parseFloat(nj[0].lon), parseFloat(nj[0].lat)]; // [lon, lat]
+}
+
+// Driving distance in meters between two [lon, lat] points. ORS if keyed,
+// otherwise (or on any ORS failure) the keyless OSRM demo router.
+async function routeMeters(a, b, key) {
+  if (key) {
+    try {
+      const url = 'https://api.openrouteservice.org/v2/directions/driving-car?api_key='+encodeURIComponent(key)
+        +'&start='+a[0]+','+a[1]+'&end='+b[0]+','+b[1];
+      const r = await fetch(url);
+      if (r.ok) {
+        const j = await r.json();
+        const d = j.features && j.features[0] && j.features[0].properties.summary.distance;
+        if (typeof d === 'number') return d;
+      }
+    } catch(e) { /* fall through to keyless router */ }
+  }
+  // Keyless fallback — OSRM demo server
+  const ourl = 'https://router.project-osrm.org/route/v1/driving/'+a[0]+','+a[1]+';'+b[0]+','+b[1]+'?overview=false';
+  let r2;
+  try { r2 = await fetch(ourl); }
+  catch(e) { throw fetchErr(e, 'routing'); }
+  if (!r2.ok) throw new Error('Routing failed ('+r2.status+')');
+  const j2 = await r2.json();
+  if (!j2.routes || !j2.routes.length) throw new Error('No driving route found between those addresses');
+  return j2.routes[0].distance; // meters
 }
 
 async function calcCustomerMiles() {
   const key = (()=>{ try { return localStorage.getItem('bk-ors-key')||''; } catch(e){ return ''; } })().trim();
-  if (!key) { showToast('Add your OpenRouteService key in Settings first','error'); return; }
   const base = (profile.base_address||'').trim();
   if (!base) { showToast('Set your base address in Settings first','error'); return; }
   const dest = (document.getElementById('cust-address').value||'').trim();
@@ -1832,14 +1882,9 @@ async function calcCustomerMiles() {
   const btn = document.getElementById('cust-calc-btn');
   const orig = btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   try {
-    const a = await geocodeORS(base, key);
-    const b = await geocodeORS(dest, key);
-    const url = 'https://api.openrouteservice.org/v2/directions/driving-car?api_key='+encodeURIComponent(key)
-      +'&start='+a[0]+','+a[1]+'&end='+b[0]+','+b[1];
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('Routing failed ('+r.status+')');
-    const j = await r.json();
-    const meters = j.features[0].properties.summary.distance;
+    const a = await geocodeAddress(base, key);
+    const b = await geocodeAddress(dest, key);
+    const meters = await routeMeters(a, b, key);
     const oneWayMiles = meters / 1609.344;
     const roundTrip = Math.round(oneWayMiles * 2 * 10) / 10;
     document.getElementById('cust-miles').value = roundTrip;
