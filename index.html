@@ -807,13 +807,7 @@ body.modal-open .main{overflow:hidden}
           <input id="cust-miles" type="number" min="0" step="0.1" placeholder="e.g. 24" style="flex:1">
           <button class="btn btn-sm" id="cust-calc-btn" onclick="calcCustomerMiles()" type="button"><i class="ti ti-route"></i> Estimate</button>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">"Estimate" uses free maps — usually within a few percent. For an exact, Google-matching figure use the buttons below.</div>
-        <div style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem;flex-wrap:wrap">
-          <button class="btn btn-sm" type="button" onclick="openGoogleDirections()"><i class="ti ti-map-pin"></i> Open in Google Maps</button>
-          <input id="cust-oneway" type="number" min="0" step="0.1" placeholder="one-way mi" style="width:104px">
-          <button class="btn btn-sm" type="button" onclick="applyOneWayMiles()">×2 → round trip</button>
-        </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Exact: tap Google Maps, read the driving distance it shows, type that one-way number here, then ×2.</div></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">With a Google key, Calculate returns exact, Google-matching round-trip miles; without one it uses a free estimate. You can also type it manually.</div></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-customer')">Cancel</button>
@@ -1815,7 +1809,6 @@ function openCustomerModal(c) {
   document.getElementById('cust-phone').value = c?c.phone:'';
   document.getElementById('cust-address').value = c?c.address:'';
   document.getElementById('cust-miles').value = c&&c.miles?c.miles:'';
-  document.getElementById('cust-oneway').value = '';
   (()=>{ const cb=document.getElementById('cust-calc-btn'); if(!cb) return;
     let hk=false; try{ hk=!!(localStorage.getItem('bk-ors-key')||'').trim(); }catch(e){}
     cb.innerHTML = '<i class="ti ti-route"></i> ' + (hk ? 'Calculate (Google)' : 'Estimate');
@@ -1919,30 +1912,6 @@ async function routeMeters(a, b, key) {
   const j2 = await r2.json();
   if (!j2.routes || !j2.routes.length) throw new Error('No driving route found between those addresses');
   return j2.routes[0].distance; // meters
-}
-
-// Build a Google Maps driving-directions URL from base -> customer (uses Google's
-// own geocoding + routing, so the distance shown matches Google exactly).
-function buildGoogleDirUrl() {
-  const base = cleanAddr(profile.base_address||'');
-  const dest = cleanAddr(document.getElementById('cust-address').value||'');
-  if (!base) { showToast('Set your base address in Settings first','error'); return null; }
-  if (!dest) { showToast('Enter the customer address first','error'); return null; }
-  return 'https://www.google.com/maps/dir/?api=1&travelmode=driving'
-    + '&origin=' + encodeURIComponent(base)
-    + '&destination=' + encodeURIComponent(dest);
-}
-function openGoogleDirections() {
-  const url = buildGoogleDirUrl();
-  if (url) window.open(url, '_blank');
-}
-// Take the one-way miles read off Google Maps and store the round trip.
-function applyOneWayMiles() {
-  const v = parseFloat(document.getElementById('cust-oneway').value);
-  if (!(v > 0)) { showToast('Enter the one-way miles from Google Maps first','error'); return; }
-  const rt = Math.round(v * 2 * 10) / 10;
-  document.getElementById('cust-miles').value = rt;
-  showToast('Round trip: ' + rt + ' mi','success');
 }
 
 // EXACT distance via Google Routes API. Passes addresses straight to Google, so
