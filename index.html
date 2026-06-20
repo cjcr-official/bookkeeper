@@ -759,6 +759,13 @@ body.modal-open .main{overflow:hidden}
       <div class="form-group"><label>Status</label>
         <select id="inv-status"><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select>
       </div>
+      <div class="form-group" style="margin-bottom:.35rem"><label>Payment <span style="color:var(--text3);font-weight:400;font-size:11px">(amount paid in full marks it Paid)</span></label></div>
+      <div class="form-row">
+        <div class="form-group"><label>Method</label><select id="inv-pay-method"><option value="">—</option><option>Cash</option><option>Check</option><option>Zelle</option><option>Venmo</option><option>Card</option><option>Bank Transfer</option><option>Other</option></select></div>
+        <div class="form-group"><label>Amount Paid</label><input id="inv-amount-paid" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="form-group"><label>Paid Date</label><input id="inv-paid-date" type="date"></div>
+      </div>
+      <button class="btn btn-sm" type="button" onclick="markInvoicePaidFull()" style="margin-bottom:.25rem"><i class="ti ti-cash"></i> Mark Paid in Full</button>
       <div class="form-group" style="margin-bottom:.35rem"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(round-trip distance comes from the customer)</span></label></div>
       <div class="form-row">
         <div class="form-group"><label>Trips Made</label><input id="inv-trips" type="number" inputmode="numeric" min="0" step="1" value="1" oninput="calcInvMiles()"></div>
@@ -959,6 +966,20 @@ function invoiceRevenue(inv) {
   return parseFloat(inv.total||0) - reimb;
 }
 
+// Outstanding balance on an invoice (0 once fully paid). Legacy 'paid' invoices
+// (no amount_paid recorded) are treated as settled for backward compatibility.
+function balanceDue(inv) {
+  if (inv.status==='paid') return 0;
+  return Math.max(0, parseFloat(inv.total||0) - parseFloat(inv.amount_paid||0));
+}
+// Display status: fully paid -> paid; past-due unpaid -> overdue; else the saved status.
+function effectiveStatus(inv) {
+  const total=parseFloat(inv.total||0), paid=parseFloat(inv.amount_paid||0);
+  if (inv.status==='paid' || (total>0 && paid>=total)) return 'paid';
+  if (inv.status!=='draft' && inv.due && inv.due < today()) return 'overdue';
+  return inv.status||'draft';
+}
+
 function fmt(n) {
   const syms = {USD:'$',EUR:'€',GBP:'£',CAD:'CA$',AUD:'A$'};
   const sym = syms[profile.currency||'USD']||'$';
@@ -1108,10 +1129,10 @@ function renderPage(page) {
 // ====== DASHBOARD ======
 function renderDashboard() {
   const now = new Date(); const yr = now.getFullYear();
-  const revenue = cache.invoices.filter(i=>i.status==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
+  const revenue = cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
   const expenses = cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
   const profit = revenue - expenses;
-  const outstanding = cache.invoices.filter(i=>i.status==='sent'||i.status==='overdue').reduce((s,i)=>s+parseFloat(i.total||0),0);
+  const outstanding = cache.invoices.filter(i=>i.status!=='draft').reduce((s,i)=>s+balanceDue(i),0);
   document.getElementById('stat-revenue').textContent = fmt(revenue);
   document.getElementById('stat-expenses').textContent = fmt(expenses);
   const pe = document.getElementById('stat-profit');
@@ -1123,7 +1144,7 @@ function renderDashboard() {
   for (let i=5;i>=0;i--) { const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({y:d.getFullYear(),m:d.getMonth(),label:d.toLocaleDateString('en-US',{month:'short'})}); }
   const data = months.map(mo=>({
     label: mo.label,
-    inc: cache.invoices.filter(i=>i.status==='paid'&&parseDate(i.date).getMonth()===mo.m&&parseDate(i.date).getFullYear()===mo.y).reduce((s,i)=>s+invoiceRevenue(i),0),
+    inc: cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getMonth()===mo.m&&parseDate(i.date).getFullYear()===mo.y).reduce((s,i)=>s+invoiceRevenue(i),0),
     exp: cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getMonth()===mo.m&&parseDate(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0)
   }));
   const maxVal = Math.max(1, ...data.map(d=>Math.max(d.inc,d.exp)));
@@ -1209,7 +1230,7 @@ function filterInvoices(f,el) { invFilter=f; document.querySelectorAll('#page-in
 
 function renderInvoices() {
   let list = cache.invoices.slice();
-  if (invFilter!=='all') list = list.filter(i=>i.status===invFilter);
+  if (invFilter!=='all') list = list.filter(i=>effectiveStatus(i)===invFilter);
   const q = (document.getElementById('inv-search')?.value||'').trim().toLowerCase();
   if (q) list = list.filter(i =>
     (i.number||'').toLowerCase().includes(q) ||
@@ -1224,13 +1245,13 @@ function renderInvoices() {
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem">
             <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);font-weight:700">${i.number}</span>
-            ${statusBadge(i.status)}
+            ${statusBadge(effectiveStatus(i))}
           </div>
           <div style="font-size:13.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.customer_name||'—'}</div>
           <div style="font-size:11px;color:var(--text3);margin-top:.1rem;font-family:'JetBrains Mono',monospace">Due ${fmtDate(i.due)}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:15px;font-weight:700;color:var(--text)">${fmt(i.total)}</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text)">${fmt(i.total)}</div>${(balanceDue(i)>0&&parseFloat(i.amount_paid||0)>0)?`<div style="font-size:10.5px;color:var(--text3);margin-top:.05rem">Owes ${fmt(balanceDue(i))}</div>`:''}
           <div style="display:flex;gap:.35rem;margin-top:.4rem;justify-content:flex-end">
             <button class="btn btn-sm" onclick="event.stopPropagation();viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button>
             <button class="btn btn-sm" onclick="event.stopPropagation();editInvoice('${i.id}')"><i class="ti ti-edit"></i></button>
@@ -1239,7 +1260,7 @@ function renderInvoices() {
         </div>
       </div>`).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="editInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}</td><td>${statusBadge(i.status)}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="editInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}${(balanceDue(i)>0&&parseFloat(i.amount_paid||0)>0)?`<div style="font-size:10.5px;color:var(--text3)">Owes ${fmt(balanceDue(i))}</div>`:''}</td><td>${statusBadge(effectiveStatus(i))}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
@@ -1269,6 +1290,9 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-date').value = inv.date;
     document.getElementById('inv-due').value = inv.due;
     document.getElementById('inv-status').value = inv.status;
+    document.getElementById('inv-pay-method').value = inv.payment_method||'';
+    document.getElementById('inv-amount-paid').value = (inv.amount_paid!=null&&parseFloat(inv.amount_paid)>0)?inv.amount_paid:'';
+    document.getElementById('inv-paid-date').value = inv.paid_date||'';
     document.getElementById('inv-notes').value = inv.notes||'';
     document.getElementById('inv-trips').value = (inv.trips!=null?inv.trips:1);
     calcInvMiles();
@@ -1281,6 +1305,9 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-date').value = today();
     document.getElementById('inv-due').value = in30();
     document.getElementById('inv-status').value = 'draft';
+    document.getElementById('inv-pay-method').value = '';
+    document.getElementById('inv-amount-paid').value = '';
+    document.getElementById('inv-paid-date').value = '';
     document.getElementById('inv-notes').value = profile.terms||'';
     document.getElementById('inv-miles').value = '';
     document.getElementById('inv-trips').value = 1;
@@ -1373,6 +1400,16 @@ function calcInvTotals() {
   document.getElementById('inv-tax-amt').textContent=fmt(sub*taxR);
   document.getElementById('inv-total').textContent=fmt(sub+sub*taxR);
 }
+function currentInvTotal() {
+  const sub=editingInvLines.reduce((s,l)=>s+(l.amount||0),0)+editingInvExpenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  return sub + sub*(parseFloat(profile.tax||0)/100);
+}
+function markInvoicePaidFull() {
+  document.getElementById('inv-amount-paid').value = currentInvTotal().toFixed(2);
+  if (!document.getElementById('inv-paid-date').value) document.getElementById('inv-paid-date').value = today();
+  document.getElementById('inv-status').value = 'paid';
+  showToast('Marked paid in full — save to record','success');
+}
 
 async function saveInvoice() {
   const id = document.getElementById('inv-id').value;
@@ -1383,16 +1420,23 @@ async function saveInvoice() {
   const milesPer = parseFloat(document.getElementById('inv-miles').value)||0;
   const tripCount = parseInt(document.getElementById('inv-trips').value)||1;
   const totalMiles = milesPer*tripCount;
+  const total = sub+sub*taxR;
+  const amountPaid = parseFloat(document.getElementById('inv-amount-paid').value)||0;
+  let status = document.getElementById('inv-status').value;
+  let paidDate = document.getElementById('inv-paid-date').value||null;
+  // fully paid -> force Paid status and stamp a paid date if missing
+  if (total>0 && amountPaid>=total) { status='paid'; if(!paidDate) paidDate=today(); }
   const row = {
     user_id: currentUser.id,
     number: document.getElementById('inv-number').value,
     customer_id: custId||null, customer_name: cust?cust.name:'',
     date: document.getElementById('inv-date').value,
     due: document.getElementById('inv-due').value,
-    status: document.getElementById('inv-status').value,
-    lines: editingInvLines, subtotal: sub, tax: sub*taxR, total: sub+sub*taxR,
+    status: status,
+    lines: editingInvLines, subtotal: sub, tax: sub*taxR, total: total,
     notes: document.getElementById('inv-notes').value,
-    miles: milesPer, trips: tripCount, total_miles: totalMiles
+    miles: milesPer, trips: tripCount, total_miles: totalMiles,
+    amount_paid: amountPaid, paid_date: paidDate, payment_method: document.getElementById('inv-pay-method').value||null
   };
   const btn = document.getElementById('save-inv-btn');
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Saving...';
@@ -1677,6 +1721,9 @@ function viewInvoice(id) {
         <div style="display:flex;justify-content:space-between;padding:.35rem 0;font-size:12.5px;color:#444"><span>Subtotal</span><span style="font-family:'JetBrains Mono',monospace">${fmt(inv.subtotal)}</span></div>
         <div style="display:flex;justify-content:space-between;padding:.35rem 0;font-size:12.5px;color:#444"><span>Tax (${p.tax||0}%)</span><span style="font-family:'JetBrains Mono',monospace">${fmt(inv.tax)}</span></div>`:''}
         <div style="display:flex;justify-content:space-between;padding:.6rem .75rem;margin-top:.35rem;background:#1a1a1a;color:#fff;border-radius:6px;font-weight:800;font-size:15px"><span>TOTAL</span><span style="font-family:'JetBrains Mono',monospace">${fmt(inv.total)}</span></div>
+        ${parseFloat(inv.amount_paid||0)>0?`
+        <div style="display:flex;justify-content:space-between;padding:.35rem .75rem;font-size:12.5px;color:#444"><span>Paid${inv.payment_method?' ('+esc(inv.payment_method)+')':''}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(inv.amount_paid)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:.35rem .75rem;font-weight:700;font-size:13px;${balanceDue(inv)>0?'color:#b91c1c':'color:#15803d'}"><span>${balanceDue(inv)>0?'Balance Due':'Paid in Full'}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(balanceDue(inv))}</span></div>`:''}
       </div>
     </div>
 
@@ -2354,7 +2401,7 @@ function renderReport(r) {
   const bizMeta = (bizAddr?bizAddr+'<br>':'') + (p.phone?'Phone: '+esc(fmtPhone(p.phone)):'') + (p.email?(p.phone?' · ':'')+esc((p.email||'').trim().toLowerCase()):'');
 
   if (r==='pl') {
-    const revenue=cache.invoices.filter(i=>i.status==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
+    const revenue=cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
     const totalExp=cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const cats={};cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
     const net=revenue-totalExp;
