@@ -1,1 +1,1 @@
-{"version":76,"note":"Invoice/report table header no longer inherits app theme — fixed transparent background + clean 1px underline, consistent in light/dark and PDF"}
+{"version":77,"note":"Report preview constrained to page width and centered on desktop (was stretching edge-to-edge); mobile unchanged"}
