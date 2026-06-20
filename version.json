@@ -1,4 +1,4 @@
 {
-  "version": 74,
-  "note": "Removed the manual 'Open in Google Maps / one-way x2' backup row now that Google Routes Calculate is exact; tidied the miles caption"
+  "version": 75,
+  "note": "Code cleanup: fixed timezone date-bucketing bug in dashboard/reports, toast overlap, escHtml escaping, invoice-cache guard; centralized localStorage; removed dead vendors feature"
 }
