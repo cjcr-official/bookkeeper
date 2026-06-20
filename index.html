@@ -1823,28 +1823,49 @@ function fetchErr(e, what) {
   return e;
 }
 
-// Geocode an address to [lon, lat]. Uses OpenRouteService if a key is saved,
-// otherwise (or on any ORS failure) falls back to keyless OpenStreetMap Nominatim.
+// Normalize a free-form / multi-line address into one clean line. The customer
+// address box allows line breaks, which the free geocoders handle poorly — turn
+// them into commas and collapse extra whitespace.
+function cleanAddr(s) {
+  return (s||'').replace(/\r/g,'')
+    .split('\n').map(x=>x.trim()).filter(Boolean).join(', ')
+    .replace(/\s+/g,' ').replace(/\s*,\s*/g,', ').trim();
+}
+
+// Geocode an address to [lon, lat]. Tries, in order: OpenRouteService (only if a
+// key is saved), then keyless Nominatim (precise), then keyless Photon (more
+// forgiving with business names / partial addresses). Only fails if all miss.
 async function geocodeAddress(address, key) {
+  const q = cleanAddr(address);
+  // 1) OpenRouteService — only when a key is present
   if (key) {
     try {
-      const url = 'https://api.openrouteservice.org/geocode/search?api_key=' + encodeURIComponent(key) + '&text=' + encodeURIComponent(address) + '&size=1';
+      const url = 'https://api.openrouteservice.org/geocode/search?api_key=' + encodeURIComponent(key) + '&text=' + encodeURIComponent(q) + '&size=1';
       const r = await fetch(url);
       if (r.ok) {
         const j = await r.json();
         if (j.features && j.features.length) return j.features[0].geometry.coordinates; // [lon, lat]
       }
-    } catch(e) { /* fall through to keyless geocoder */ }
+    } catch(e) { /* fall through */ }
   }
-  // Keyless fallback — Nominatim (OpenStreetMap)
-  const nurl = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(address);
-  let nr;
-  try { nr = await fetch(nurl, { headers: { 'Accept': 'application/json' } }); }
+  // 2) Nominatim (OpenStreetMap) — precise
+  try {
+    const nurl = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q);
+    const nr = await fetch(nurl, { headers: { 'Accept': 'application/json' } });
+    if (nr.ok) {
+      const nj = await nr.json();
+      if (nj.length) return [parseFloat(nj[0].lon), parseFloat(nj[0].lat)]; // [lon, lat]
+    }
+  } catch(e) { /* try Photon before giving up */ }
+  // 3) Photon (komoot) — forgiving fuzzy matching
+  let pr;
+  try { pr = await fetch('https://photon.komoot.io/api?limit=1&lang=en&q=' + encodeURIComponent(q)); }
   catch(e) { throw fetchErr(e, 'address lookup'); }
-  if (!nr.ok) throw new Error('Address lookup failed ('+nr.status+')');
-  const nj = await nr.json();
-  if (!nj.length) throw new Error('Address not found: '+address);
-  return [parseFloat(nj[0].lon), parseFloat(nj[0].lat)]; // [lon, lat]
+  if (pr.ok) {
+    const pj = await pr.json();
+    if (pj.features && pj.features.length) return pj.features[0].geometry.coordinates; // [lon, lat]
+  }
+  throw new Error('Address not found — try adding the city, state, and ZIP (e.g. "123 Main St, Plains, MT 59859").');
 }
 
 // Driving distance in meters between two [lon, lat] points. ORS if keyed,
