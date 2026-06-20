@@ -1,1 +1,1 @@
-{"version":69,"note":"Mileage now works with no API key: keyless geocoding (Nominatim) + routing (OSRM) with ORS fallback; clearer error messages instead of 'failed to fetch'"}
+{"version":70,"note":"Geocoder fallback chain (Nominatim then Photon) + address cleanup so 'address not found' is much rarer for valid addresses"}
