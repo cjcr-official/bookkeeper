@@ -1,1 +1,4 @@
-{"version":73,"note":"Automated exact mileage via Google Routes API (computeRoutes) when a key is set; auto-falls back to free OSM estimate on failure; key field relabeled to Google"}
+{
+  "version": 74,
+  "note": "Removed the manual 'Open in Google Maps / one-way x2' backup row now that Google Routes Calculate is exact; tidied the miles caption"
+}
