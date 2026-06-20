@@ -1,1 +1,1 @@
-{"version":78,"note":"Payment tracking: amount paid + method + paid date, partial payments, Mark Paid in Full, auto-overdue past due date; Outstanding now reflects real balances; invoice shows Paid/Balance Due"}
+{"version":79,"note":"Recurring invoices (generate as drafts) and recurring expenses (auto-post); templates auto-generate on app open, catching up missed periods; manager + editor UI on Invoices/Expenses pages"}
