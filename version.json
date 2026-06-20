@@ -1,1 +1,1 @@
-{"version":77,"note":"Report preview constrained to page width and centered on desktop (was stretching edge-to-edge); mobile unchanged"}
+{"version":78,"note":"Payment tracking: amount paid + method + paid date, partial payments, Mark Paid in Full, auto-overdue past due date; Outstanding now reflects real balances; invoice shows Paid/Balance Due"}
