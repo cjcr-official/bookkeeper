@@ -1,1 +1,1 @@
-{"version":70,"note":"Geocoder fallback chain (Nominatim then Photon) + address cleanup so 'address not found' is much rarer for valid addresses"}
+{"version":73,"note":"Automated exact mileage via Google Routes API (computeRoutes) when a key is set; auto-falls back to free OSM estimate on failure; key field relabeled to Google"}
