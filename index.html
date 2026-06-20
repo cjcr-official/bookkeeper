@@ -794,6 +794,60 @@ body.modal-open .main{overflow:hidden}
   </div>
 </div>
 
+<!-- RECURRING MANAGER MODAL -->
+<div class="modal-overlay" id="modal-recurring">
+  <div class="modal">
+    <div class="modal-header"><h2 id="recur-title">Recurring</h2><button class="btn btn-sm" onclick="closeModal('modal-recurring')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div id="recur-list"></div>
+      <button class="btn btn-primary btn-sm" style="margin-top:.5rem" onclick="openRecurEdit(recurManagerKind)"><i class="ti ti-plus"></i> <span id="recur-add-label">New Recurring</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- RECURRING EDIT MODAL -->
+<div class="modal-overlay" id="modal-recur-edit">
+  <div class="modal">
+    <div class="modal-header"><h2 id="recur-edit-title">New Recurring</h2><button class="btn btn-sm" onclick="closeModal('modal-recur-edit')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <input type="hidden" id="recur-id">
+      <input type="hidden" id="recur-kind">
+      <div class="form-group"><label>Label</label><input id="recur-label" type="text" placeholder="e.g. Monthly maintenance — Acme"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Frequency</label><select id="recur-freq"><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option></select></div>
+        <div class="form-group"><label>Next Date</label><input id="recur-next" type="date"></div>
+      </div>
+      <div id="recur-inv-fields">
+        <div class="form-group"><label>Customer</label><select id="recur-inv-customer"><option value="">Select customer...</option></select></div>
+        <div class="form-row">
+          <div class="form-group"><label>Description</label><input id="recur-inv-desc" type="text" placeholder="Monthly maintenance"></div>
+          <div class="form-group"><label>Amount</label><input id="recur-inv-amount" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        </div>
+        <div class="form-group"><label>Due in (days)</label><input id="recur-inv-due" type="number" min="0" step="1" value="30"></div>
+        <div class="form-group"><label>Notes</label><textarea id="recur-inv-notes" rows="2"></textarea></div>
+        <div style="font-size:11px;color:var(--text3)">Generates a <b>draft</b> invoice each period for you to review and send.</div>
+      </div>
+      <div id="recur-exp-fields">
+        <div class="form-row">
+          <div class="form-group"><label>Vendor</label><input id="recur-exp-vendor" type="text" placeholder="Adobe, Microsoft..."></div>
+          <div class="form-group"><label>Amount</label><input id="recur-exp-amount" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Category</label><select id="recur-exp-category"></select></div>
+          <div class="form-group"><label>Method</label><input id="recur-exp-method" type="text" placeholder="Card..."></div>
+        </div>
+        <div class="form-group"><label>Description</label><input id="recur-exp-desc" type="text"></div>
+        <div style="font-size:11px;color:var(--text3)">Posts an expense automatically each period.</div>
+      </div>
+      <label style="display:flex;align-items:center;gap:.5rem;margin-top:.6rem;font-size:13px"><input type="checkbox" id="recur-active" checked style="width:auto"> Active</label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-recur-edit')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveRecurring()"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- CUSTOMER MODAL -->
 <div class="modal-overlay" id="modal-customer">
   <div class="modal">
@@ -952,7 +1006,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // ====== STATE ======
 let currentUser = null;
 let profile = {};
-let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[]};
+let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[]};
 let currentPage = 'dashboard';
 let invFilter = 'all';
 let currentReport = 'pl';
@@ -1079,13 +1133,14 @@ async function doLogout() {
 async function loadAllData() {
   // Each query wrapped so one missing table (e.g. trips before SQL is run) can't hang the whole load
   const safe = (q) => q.then(r=>r).catch(e=>({data:null,error:e}));
-  const [prof, customers, invoices, expenses, accounts, trips] = await Promise.all([
+  const [prof, customers, invoices, expenses, accounts, trips, recurring] = await Promise.all([
     safe(sb.from('profiles').select('*').eq('id', currentUser.id).single()),
     safe(sb.from('customers').select('*').eq('user_id', currentUser.id).order('name')),
     safe(sb.from('invoices').select('*').eq('user_id', currentUser.id).order('created_at', {ascending:false})),
     safe(sb.from('expenses').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
     safe(sb.from('accounts').select('*').eq('user_id', currentUser.id).order('name')),
     safe(sb.from('trips').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
+    safe(sb.from('recurring').select('*').eq('user_id', currentUser.id).order('next_date')),
   ]);
   profile = prof.data || {};
   cache.customers = customers.data || [];
@@ -1093,6 +1148,7 @@ async function loadAllData() {
   cache.expenses = expenses.data || [];
   cache.accounts = accounts.data || [];
   cache.trips = trips.data || [];
+  cache.recurring = recurring.data || [];
 }
 
 // ====== NAVIGATION ======
@@ -1106,9 +1162,9 @@ function showPage(page, el) {
   const bc = document.getElementById('topbar-breadcrumb-page');
   if (bc) bc.textContent = titles[page]||page;
   const actions = {
-    invoices:`<button class="btn btn-primary" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> New Invoice</button>`,
+    invoices:`<button class="btn" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> Recurring</button> <button class="btn btn-primary" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> New Invoice</button>`,
     customers:`<button class="btn btn-primary" onclick="openCustomerModal()"><i class="ti ti-plus"></i> New Customer</button>`,
-    expenses:`<button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> New Expense</button>`,
+    expenses:`<button class="btn" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> Recurring</button> <button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> New Expense</button>`,
     accounts:`<button class="btn btn-primary" onclick="openAccountModal()"><i class="ti ti-plus"></i> New Account</button>`,
     mileage:`<button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> Log Trip</button>`,
   };
@@ -2313,6 +2369,154 @@ async function recomputeInvoiceTotals(invId) {
   if (!r.error) { const idx=cache.invoices.findIndex(i=>i.id===invId); if(idx>-1) cache.invoices[idx]={...cache.invoices[idx],...upd}; }
 }
 
+// ====== RECURRING (invoices & expenses) ======
+let recurManagerKind = 'invoice';
+
+// Advance a date string by one period of the given frequency.
+function advanceDate(dstr, freq) {
+  const d = parseDate(dstr);
+  if (freq==='weekly') d.setDate(d.getDate()+7);
+  else if (freq==='quarterly') d.setMonth(d.getMonth()+3);
+  else if (freq==='yearly') d.setFullYear(d.getFullYear()+1);
+  else d.setMonth(d.getMonth()+1);
+  return d.toISOString().slice(0,10);
+}
+
+// Create one real invoice/expense from a recurring template, dated dstr.
+async function genOneRecurring(rec, dstr) {
+  const d = rec.data || {};
+  if (rec.kind==='expense') {
+    const row = {user_id:currentUser.id,date:dstr,vendor:d.vendor||rec.label||'Recurring',category:d.category||'Other',amount:parseFloat(d.amount||0),method:d.method||'',account_id:d.account_id||null,description:d.description||('Recurring — '+(rec.label||'')),reimbursed:false,invoice_id:null};
+    const r = await sb.from('expenses').insert(row).select().single();
+    if (!r.error && r.data) cache.expenses.unshift(r.data);
+  } else {
+    const amount = parseFloat(d.amount||0);
+    const taxR = parseFloat(profile.tax||0)/100;
+    const cust = cache.customers.find(c=>c.id===d.customer_id);
+    const dueDate = (()=>{ const dd=parseDate(dstr); dd.setDate(dd.getDate()+(parseInt(d.due_days)||30)); return dd.toISOString().slice(0,10); })();
+    const row = {user_id:currentUser.id,number:nextInvoiceNumber(),customer_id:d.customer_id||null,customer_name:cust?cust.name:'',date:dstr,due:dueDate,status:'draft',lines:[{desc:d.description||rec.label||'Service',qty:1,rate:amount,amount:amount}],subtotal:amount,tax:amount*taxR,total:amount+amount*taxR,notes:d.notes||'',miles:0,trips:1,total_miles:0,amount_paid:0,paid_date:null,payment_method:null};
+    const r = await sb.from('invoices').insert(row).select().single();
+    if (!r.error && r.data) cache.invoices.unshift(r.data); // unshift so nextInvoiceNumber increments on catch-up
+  }
+}
+
+// On launch: generate every active template that's due (catching up missed periods).
+async function processRecurring() {
+  let count = 0;
+  for (const rec of (cache.recurring||[])) {
+    if (!rec.active) continue;
+    let guard = 0;
+    while (rec.next_date && rec.next_date <= today() && guard < 24) {
+      await genOneRecurring(rec, rec.next_date);
+      rec.next_date = advanceDate(rec.next_date, rec.frequency||'monthly');
+      count++; guard++;
+    }
+    if (guard > 0) await sb.from('recurring').update({next_date:rec.next_date}).eq('id',rec.id);
+  }
+  if (count > 0) showToast(count+' recurring item'+(count>1?'s':'')+' generated','success');
+  return count;
+}
+
+async function generateRecurringNow(id) {
+  const rec = (cache.recurring||[]).find(r=>r.id===id);
+  if (!rec) return;
+  await genOneRecurring(rec, today());
+  showToast((rec.kind==='invoice'?'Draft invoice':'Expense')+' generated','success');
+  renderRecurringList(recurManagerKind);
+}
+
+function openRecurringManager(kind) {
+  recurManagerKind = kind;
+  document.getElementById('recur-title').textContent = kind==='invoice'?'Recurring Invoices':'Recurring Expenses';
+  document.getElementById('recur-add-label').textContent = kind==='invoice'?'New Recurring Invoice':'New Recurring Expense';
+  renderRecurringList(kind);
+  openModal('modal-recurring');
+}
+
+function renderRecurringList(kind) {
+  const el = document.getElementById('recur-list');
+  const list = (cache.recurring||[]).filter(r=>r.kind===kind);
+  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-repeat"></i><p>No recurring ${kind==='invoice'?'invoices':'expenses'} yet</p></div>`; return; }
+  el.innerHTML = list.map(r=>{
+    const d = r.data||{};
+    const who = kind==='invoice' ? ((cache.customers.find(c=>c.id===d.customer_id)||{}).name||'—') : (d.vendor||'—');
+    return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:.6rem .75rem;margin-bottom:.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
+        <div style="min-width:0">
+          <div style="font-weight:600;font-size:13.5px">${escHtml(r.label||who)}</div>
+          <div style="font-size:11.5px;color:var(--text3)">${escHtml(who)} · ${fmt(d.amount||0)} · ${escHtml(r.frequency||'monthly')} · next ${fmtDate(r.next_date)}${r.active?'':' · paused'}</div>
+        </div>
+        <div style="display:flex;gap:.3rem;flex-shrink:0">
+          <button class="btn btn-sm" onclick="generateRecurringNow('${r.id}')" title="Generate now"><i class="ti ti-bolt"></i></button>
+          <button class="btn btn-sm" onclick="editRecurring('${r.id}')"><i class="ti ti-edit"></i></button>
+          <button class="btn btn-sm btn-danger" onclick="deleteRecurring('${r.id}')"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openRecurEdit(kind, rec) {
+  document.getElementById('recur-id').value = rec?rec.id:'';
+  document.getElementById('recur-kind').value = kind;
+  document.getElementById('recur-edit-title').textContent = (rec?'Edit ':'New ')+(kind==='invoice'?'Recurring Invoice':'Recurring Expense');
+  document.getElementById('recur-label').value = rec?(rec.label||''):'';
+  document.getElementById('recur-freq').value = rec?(rec.frequency||'monthly'):'monthly';
+  document.getElementById('recur-next').value = rec?(rec.next_date||today()):today();
+  document.getElementById('recur-active').checked = rec?!!rec.active:true;
+  const d = (rec&&rec.data)?rec.data:{};
+  const invF = document.getElementById('recur-inv-fields'), expF = document.getElementById('recur-exp-fields');
+  if (kind==='invoice') {
+    invF.style.display=''; expF.style.display='none';
+    const sel = document.getElementById('recur-inv-customer');
+    sel.innerHTML = '<option value="">Select customer...</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+    sel.value = d.customer_id||'';
+    document.getElementById('recur-inv-desc').value = d.description||'';
+    document.getElementById('recur-inv-amount').value = d.amount!=null?d.amount:'';
+    document.getElementById('recur-inv-due').value = d.due_days!=null?d.due_days:30;
+    document.getElementById('recur-inv-notes').value = d.notes||'';
+  } else {
+    invF.style.display='none'; expF.style.display='';
+    const csel = document.getElementById('recur-exp-category');
+    csel.innerHTML = getCategories().map(c=>`<option>${escHtml(c)}</option>`).join('');
+    csel.value = d.category||'Other';
+    document.getElementById('recur-exp-vendor').value = d.vendor||'';
+    document.getElementById('recur-exp-amount').value = d.amount!=null?d.amount:'';
+    document.getElementById('recur-exp-method').value = d.method||'';
+    document.getElementById('recur-exp-desc').value = d.description||'';
+  }
+  closeModal('modal-recurring');
+  openModal('modal-recur-edit');
+}
+function editRecurring(id) { const r=(cache.recurring||[]).find(x=>x.id===id); if(r) openRecurEdit(r.kind, r); }
+
+async function saveRecurring() {
+  const id = document.getElementById('recur-id').value;
+  const kind = document.getElementById('recur-kind').value;
+  let data;
+  if (kind==='invoice') {
+    data = {customer_id:document.getElementById('recur-inv-customer').value||null,description:document.getElementById('recur-inv-desc').value,amount:parseFloat(document.getElementById('recur-inv-amount').value)||0,due_days:parseInt(document.getElementById('recur-inv-due').value)||30,notes:document.getElementById('recur-inv-notes').value};
+    if (!data.customer_id) { showToast('Customer is required','error'); return; }
+  } else {
+    data = {vendor:document.getElementById('recur-exp-vendor').value,category:document.getElementById('recur-exp-category').value,amount:parseFloat(document.getElementById('recur-exp-amount').value)||0,method:document.getElementById('recur-exp-method').value,description:document.getElementById('recur-exp-desc').value};
+    if (!data.vendor) { showToast('Vendor is required','error'); return; }
+  }
+  const row = {user_id:currentUser.id,kind:kind,label:document.getElementById('recur-label').value,frequency:document.getElementById('recur-freq').value,next_date:document.getElementById('recur-next').value||today(),active:document.getElementById('recur-active').checked,data:data};
+  let err;
+  if (id) { const r=await sb.from('recurring').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.recurring.findIndex(x=>x.id===id); if(idx>-1)cache.recurring[idx]={...cache.recurring[idx],...row,id};} }
+  else { const r=await sb.from('recurring').insert(row).select().single(); err=r.error; if(!err&&r.data)cache.recurring.unshift(r.data); }
+  if (err) { showToast(err.message,'error'); return; }
+  showToast('Recurring saved','success'); closeModal('modal-recur-edit'); openRecurringManager(kind);
+}
+
+async function deleteRecurring(id) {
+  if (!confirm('Delete this recurring schedule? Items already generated are kept.')) return;
+  const {error} = await sb.from('recurring').delete().eq('id',id);
+  if (error) { showToast(error.message,'error'); return; }
+  cache.recurring = cache.recurring.filter(x=>x.id!==id);
+  showToast('Recurring deleted'); renderRecurringList(recurManagerKind);
+}
+
 // ====== ACCOUNTS ======
 function renderAccounts() {
   const el = document.getElementById('accounts-table');
@@ -2564,6 +2768,7 @@ async function boot() {
     if (session) {
       currentUser = session.user;
       await loadAllData();
+      await processRecurring();
       document.getElementById('user-company-name').textContent = profile.company||'My Business';
       hide();
       document.getElementById('app').style.display='flex';
@@ -2584,6 +2789,7 @@ async function boot() {
       document.getElementById('auth-wrap').style.display='none';
       document.getElementById('loading-screen').style.display='flex';
       await loadAllData();
+      await processRecurring();
       document.getElementById('user-company-name').textContent = profile.company||'My Business';
       document.getElementById('loading-screen').style.display='none';
       document.getElementById('app').style.display='flex';
