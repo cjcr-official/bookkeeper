@@ -1652,9 +1652,9 @@ function viewInvoice(id) {
     <!-- LINE ITEMS -->
     <table style="width:100%;border-collapse:collapse;margin-bottom:1.25rem;font-size:13px;table-layout:fixed">
       <thead><tr>
-        <th style="text-align:left;padding:0 .5rem .5rem 0;border-bottom:2px solid #1a1a1a;font-weight:700;font-size:10.5px;letter-spacing:.6px;color:#888;width:92px">DATE</th>
-        <th style="text-align:left;padding:0 .5rem .5rem .5rem;border-bottom:2px solid #1a1a1a;font-weight:700;font-size:10.5px;letter-spacing:.6px;color:#888">DESCRIPTION</th>
-        <th style="text-align:right;padding:0 0 .5rem .5rem;border-bottom:2px solid #1a1a1a;font-weight:700;font-size:10.5px;letter-spacing:.6px;color:#888;width:96px">AMOUNT</th>
+        <th style="text-align:left;padding:0 .5rem .5rem 0;border-bottom:1px solid #1a1a1a;background:transparent;font-weight:700;font-size:10.5px;letter-spacing:.6px;color:#888;width:92px">DATE</th>
+        <th style="text-align:left;padding:0 .5rem .5rem .5rem;border-bottom:1px solid #1a1a1a;background:transparent;font-weight:700;font-size:10.5px;letter-spacing:.6px;color:#888">DESCRIPTION</th>
+        <th style="text-align:right;padding:0 0 .5rem .5rem;border-bottom:1px solid #1a1a1a;background:transparent;font-weight:700;font-size:10.5px;letter-spacing:.6px;color:#888;width:96px">AMOUNT</th>
       </tr></thead>
       <tbody>
         ${lines.map((l,idx)=>`<tr>
@@ -2413,7 +2413,7 @@ function reportDoc(bizName, bizMeta, title, period, bodyHTML) {
       #report-print-area .rtotal{display:flex;justify-content:space-between;padding:.7rem .85rem;margin-top:.85rem;background:#1a1a1a;color:#fff;border-radius:6px;font-weight:800;font-size:15px;letter-spacing:.3px}
       #report-print-area .mono{font-family:'JetBrains Mono',monospace}
       #report-print-area .rtable{width:100%;border-collapse:collapse;font-size:12.5px}
-      #report-print-area .rtable th{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:#888;padding:0 0 .5rem;border-bottom:2px solid #1a1a1a}
+      #report-print-area .rtable th{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:#888;padding:0 0 .5rem;border-bottom:1px solid #1a1a1a;background:transparent}
       #report-print-area .rtable td{padding:.6rem 0;border-bottom:1px solid #eee}
     </style>
     ${bodyHTML}
