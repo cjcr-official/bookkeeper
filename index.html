@@ -929,6 +929,10 @@ body.modal-open .main{overflow:hidden}
       </div>
       <div class="form-group"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
       <div class="form-group"><label>Description</label><textarea id="exp-desc" rows="2"></textarea></div>
+      <div class="form-group"><label>Receipt <span style="color:var(--text3);font-weight:400;font-size:11px">(photo or image)</span></label>
+        <input type="file" id="exp-receipt-file" accept="image/*" onchange="onReceiptPick(event)" style="padding:.4rem">
+        <div id="exp-receipt-state" style="margin-top:.4rem;font-size:12px;color:var(--text3)"></div>
+      </div>
       <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.5rem 0;font-weight:500">
         <input type="checkbox" id="exp-reimbursed" style="width:18px;height:18px;flex-shrink:0">
         <span>Reimbursed by customer <span style="color:var(--text3);font-weight:400;font-size:12px">(excluded from profit)</span></span>
@@ -2245,7 +2249,7 @@ function renderExpenses() {
           <div class="m-card-title">${e.vendor}</div>
           <div class="m-card-sub"><span class="badge badge-gray">${e.category}</span>${e.reimbursed?' <span class="badge badge-green">Reimbursed</span>':''}</div>
           ${e.description?`<div class="m-card-meta">${e.description}</div>`:''}
-          <div class="m-card-meta">${fmtDate(e.date)} · ${e.method||'—'}</div>
+          <div class="m-card-meta">${fmtDate(e.date)} · ${e.method||'—'}${e.receipt_path?` · <span onclick="event.stopPropagation();viewReceipt('${e.receipt_path}')" style="color:var(--accent);cursor:pointer"><i class="ti ti-paperclip"></i> Receipt</span>`:''}</div>
         </div>
         <div class="m-card-right">
           <div class="m-card-amount red">${fmt(e.amount)}</div>
@@ -2256,7 +2260,7 @@ function renderExpenses() {
         </div>
       </div>`).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${cache.expenses.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.description||'—'}</td><td>${e.method||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${cache.expenses.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.description||'—'}</td><td>${e.method||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
@@ -2309,7 +2313,37 @@ function removeCategory(i) {
   renderCatList(); renderCategoryOptions();
 }
 
+let editingExpense = null;
+let pendingReceiptFile = null;
+let pendingReceiptRemove = false;
+
+function renderReceiptState(exp) {
+  const el = document.getElementById('exp-receipt-state');
+  const fileInput = document.getElementById('exp-receipt-file');
+  if (pendingReceiptFile) {
+    el.innerHTML = `Selected: ${escHtml(pendingReceiptFile.name)} <button class="btn btn-sm" type="button" onclick="clearReceiptPick()" style="margin-left:.4rem">Clear</button>`;
+    fileInput.style.display = 'none';
+  } else if (exp && exp.receipt_path && !pendingReceiptRemove) {
+    el.innerHTML = `<span style="color:var(--green)">✓ Receipt attached</span> <button class="btn btn-sm" type="button" onclick="viewReceipt('${exp.receipt_path}')" style="margin-left:.4rem"><i class="ti ti-eye"></i> View</button> <button class="btn btn-sm btn-danger" type="button" onclick="markReceiptRemove()">Remove</button>`;
+    fileInput.style.display = 'none';
+  } else {
+    el.innerHTML = pendingReceiptRemove ? '<span>Receipt will be removed when you save</span>' : '';
+    fileInput.style.display = '';
+    fileInput.value = '';
+  }
+}
+function onReceiptPick(e) { const f = e.target.files && e.target.files[0]; if (!f) return; pendingReceiptFile = f; pendingReceiptRemove = false; renderReceiptState(editingExpense); }
+function clearReceiptPick() { pendingReceiptFile = null; renderReceiptState(editingExpense); }
+function markReceiptRemove() { pendingReceiptRemove = true; pendingReceiptFile = null; renderReceiptState(editingExpense); }
+async function viewReceipt(path) {
+  const { data, error } = await sb.storage.from('receipts').createSignedUrl(path, 3600);
+  if (error || !data) { showToast('Could not open receipt','error'); return; }
+  window.open(data.signedUrl, '_blank');
+}
+
 function openExpenseModal(exp) {
+  editingExpense = exp || null;
+  pendingReceiptFile = null; pendingReceiptRemove = false;
   document.getElementById('exp-title').textContent = exp?'Edit Expense':'New Expense';
   document.getElementById('exp-id').value = exp?exp.id:'';
   document.getElementById('exp-date').value = exp?exp.date:today();
@@ -2323,6 +2357,7 @@ function openExpenseModal(exp) {
   document.getElementById('exp-reimbursed').checked = exp?!!exp.reimbursed:false;
   document.getElementById('exp-account').innerHTML = cache.accounts.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
   if (exp) document.getElementById('exp-account').value = exp.account_id||'';
+  renderReceiptState(exp);
   openModal('modal-expense');
 }
 function editExpense(id) { openExpenseModal(cache.expenses.find(e=>e.id===id)); }
@@ -2332,6 +2367,20 @@ async function saveExpense() {
   const invLink = document.getElementById('exp-invoice').value||null;
   const row = {user_id:currentUser.id,date:document.getElementById('exp-date').value,vendor:document.getElementById('exp-vendor').value,category:document.getElementById('exp-category').value,amount:parseFloat(document.getElementById('exp-amount').value)||0,method:document.getElementById('exp-method').value,account_id:document.getElementById('exp-account').value||null,description:document.getElementById('exp-desc').value,reimbursed:document.getElementById('exp-reimbursed').checked,invoice_id:invLink};
   if (!row.vendor) { showToast('Vendor is required','error'); return; }
+  // Receipt: upload a newly picked file, or clear an existing one. Leaving both
+  // untouched preserves the current receipt_path on update.
+  if (pendingReceiptFile) {
+    const f = pendingReceiptFile;
+    const ext = ((f.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')) || 'jpg';
+    const path = currentUser.id + '/' + crypto.randomUUID() + '.' + ext;
+    const up = await sb.storage.from('receipts').upload(path, f, { upsert:false, contentType:f.type||'image/jpeg' });
+    if (up.error) { showToast('Receipt upload failed: '+up.error.message,'error'); return; }
+    row.receipt_path = path;
+    if (id) { const old=cache.expenses.find(e=>e.id===id); if(old&&old.receipt_path) sb.storage.from('receipts').remove([old.receipt_path]); }
+  } else if (pendingReceiptRemove) {
+    row.receipt_path = null;
+    if (id) { const old=cache.expenses.find(e=>e.id===id); if(old&&old.receipt_path) sb.storage.from('receipts').remove([old.receipt_path]); }
+  }
   let err;
   if (id) { const r=await sb.from('expenses').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.expenses.findIndex(e=>e.id===id);cache.expenses[idx]={...cache.expenses[idx],...row};} }
   else { const r=await sb.from('expenses').insert(row).select().single(); err=r.error; if(!err)cache.expenses.unshift(r.data); }
@@ -2345,6 +2394,7 @@ async function deleteExpense(id) {
   const linkedInvId = exp ? exp.invoice_id : null;
   const {error} = await sb.from('expenses').delete().eq('id',id);
   if (error) { showToast(error.message,'error'); return; }
+  if (exp && exp.receipt_path) sb.storage.from('receipts').remove([exp.receipt_path]);
   cache.expenses = cache.expenses.filter(e=>e.id!==id);
   // if this expense was billed on an invoice, recompute that invoice's totals
   if (linkedInvId) { await recomputeInvoiceTotals(linkedInvId); }
