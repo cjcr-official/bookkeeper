@@ -1,1 +1,1 @@
-{"version":87,"note":"Fixed invoice line Qty/Rate inputs closing the keyboard after each digit (calcLine now updates the amount in place instead of re-rendering the row)"}
+{"version":89,"note":"Design pass: indigo 'ink' accent (both themes), tabular figures app-wide so amounts align, warmer light bg, softened stat bars, keyboard focus rings + reduced-motion support"}
