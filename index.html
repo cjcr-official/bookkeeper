@@ -608,9 +608,10 @@ body.modal-open .main{overflow:hidden}
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
-        <div id="dash-brand" style="display:none;align-items:center;gap:.75rem;margin-bottom:1rem">
-          <img id="dash-logo" alt="logo" style="height:48px;max-width:170px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px">
-          <div id="dash-company" style="font-weight:700;font-size:18px;line-height:1.2"></div>
+        <div id="dash-brand" style="display:none;margin-bottom:1rem">
+          <span style="display:inline-block;background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 10px">
+            <img id="dash-logo" alt="logo" style="height:40px;max-width:200px;object-fit:contain;display:block">
+          </span>
         </div>
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value green" id="stat-revenue">$0.00</div><div class="stat-sub">This year (paid)</div></div>
@@ -1195,10 +1196,8 @@ function renderDashboard() {
   const brand = document.getElementById('dash-brand');
   if (brand) {
     const logo = document.getElementById('dash-logo');
-    const comp = document.getElementById('dash-company');
-    if (profile.logo) { logo.src = profile.logo; logo.style.display = ''; } else { logo.style.display = 'none'; }
-    comp.textContent = profile.company || '';
-    brand.style.display = (profile.logo || profile.company) ? 'flex' : 'none';
+    if (profile.logo) { logo.src = profile.logo; brand.style.display = ''; }
+    else { brand.style.display = 'none'; }
   }
   const now = new Date(); const yr = now.getFullYear();
   const revenue = cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
