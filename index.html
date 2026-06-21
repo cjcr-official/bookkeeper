@@ -2783,51 +2783,62 @@ function loadSettingsForm() {
   document.getElementById('s-terms').value=profile.terms||'';
   document.getElementById('s-base-address').value=profile.base_address||'';
   document.getElementById('s-ors-key').value = lsGet('bk-ors-key','');
-  pendingLogo = undefined; renderLogoState();
+  renderLogoState();
   document.getElementById('user-email-display').textContent=currentUser.email;
 }
 
-// pendingLogo: undefined = unchanged, string = new data URL, null = remove on save
-let pendingLogo = undefined;
 function renderLogoState() {
   const el = document.getElementById('s-logo-state');
   if (!el) return;
-  const cur = (pendingLogo!==undefined) ? pendingLogo : (profile.logo||null);
-  el.innerHTML = cur
-    ? `<img src="${cur}" alt="logo" style="max-height:60px;max-width:180px;border:1px solid var(--border);border-radius:6px;padding:4px;background:#fff;display:block;margin-bottom:.4rem"><button class="btn btn-sm btn-danger" type="button" onclick="removeLogo()">Remove logo</button>`
+  el.innerHTML = profile.logo
+    ? `<img src="${profile.logo}" alt="logo" style="max-height:60px;max-width:180px;border:1px solid var(--border);border-radius:6px;padding:4px;background:#fff;display:block;margin-bottom:.4rem"><button class="btn btn-sm btn-danger" type="button" onclick="removeLogo()">Remove logo</button>`
     : '';
 }
-function onLogoPick(e) {
+// Decode (incl. iPhone HEIC via createImageBitmap), downscale to 320px, return a PNG data URL.
+async function fileToLogoDataURL(f) {
+  const max = 320;
+  let src;
+  try { src = await createImageBitmap(f); }
+  catch(_) {
+    src = await new Promise((res,rej)=>{
+      const r = new FileReader();
+      r.onload = () => { const img = new Image(); img.onload = ()=>res(img); img.onerror = rej; img.src = r.result; };
+      r.onerror = rej; r.readAsDataURL(f);
+    });
+  }
+  let w = src.width, h = src.height;
+  if (w > max || h > max) { const s = Math.min(max/w, max/h); w = Math.round(w*s); h = Math.round(h*s); }
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  cv.getContext('2d').drawImage(src, 0, 0, w, h);
+  return cv.toDataURL('image/png');
+}
+async function onLogoPick(e) {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      const max = 320;
-      let w = img.width, h = img.height;
-      if (w > max || h > max) { const s = Math.min(max/w, max/h); w = Math.round(w*s); h = Math.round(h*s); }
-      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-      cv.getContext('2d').drawImage(img, 0, 0, w, h);
-      pendingLogo = cv.toDataURL('image/png'); // PNG keeps logo transparency
-      renderLogoState();
-      showToast('Logo ready — Save Settings to apply','success');
-    };
-    img.onerror = () => showToast('Could not read that image','error');
-    img.src = reader.result;
-  };
-  reader.onerror = () => showToast('Could not read that file','error');
-  reader.readAsDataURL(f);
+  showToast('Processing logo…');
+  let dataUrl;
+  try { dataUrl = await fileToLogoDataURL(f); }
+  catch(err) { showToast('Could not read that image — try a PNG or JPG','error'); return; }
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, logo: dataUrl });
+  if (error) { showToast('Logo save failed: '+error.message,'error'); return; }
+  profile.logo = dataUrl;
+  renderLogoState();
+  showToast('Logo saved','success');
 }
-function removeLogo() { pendingLogo = null; renderLogoState(); }
+async function removeLogo() {
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, logo: null });
+  if (error) { showToast(error.message,'error'); return; }
+  profile.logo = null;
+  document.getElementById('s-logo-file').value = '';
+  renderLogoState();
+  showToast('Logo removed');
+}
 
 async function saveSettings() {
   const row={company:document.getElementById('s-company').value,address:document.getElementById('s-address').value,email:document.getElementById('s-email').value,phone:document.getElementById('s-phone').value,tax:parseFloat(document.getElementById('s-tax').value)||0,currency:document.getElementById('s-currency').value,terms:document.getElementById('s-terms').value,base_address:document.getElementById('s-base-address').value};
-  if (pendingLogo!==undefined) row.logo = pendingLogo;
   const {error}=await sb.from('profiles').upsert({id:currentUser.id,...row});
   if (error) { showToast(error.message,'error'); return; }
   profile={...profile,...row};
-  pendingLogo=undefined;
   lsSet('bk-ors-key', document.getElementById('s-ors-key').value.trim());
   document.getElementById('user-company-name').textContent=row.company||'My Business';
   showToast('Settings saved','success');
