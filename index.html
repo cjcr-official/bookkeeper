@@ -1406,7 +1406,7 @@ function renderInvLines() {
         <div style="display:flex;gap:.5rem;align-items:flex-end">
           <div style="flex:1"><label style="font-size:9px;margin-bottom:.2rem">Qty</label><input type="number" value="${l.qty}" min="0" inputmode="decimal" oninput="editingInvLines[${i}].qty=+this.value;calcLine(${i})" style="font-size:13.5px;padding:.4rem;text-align:center"></div>
           <div style="flex:1.3"><label style="font-size:9px;margin-bottom:.2rem">Rate</label><input type="number" value="${l.rate}" min="0" step="0.01" inputmode="decimal" oninput="editingInvLines[${i}].rate=+this.value;calcLine(${i})" style="font-size:13.5px;padding:.4rem;text-align:right"></div>
-          <div style="flex:1.3;text-align:right"><label style="font-size:9px;margin-bottom:.2rem">Amount</label><div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;padding:.45rem 0">${fmt(l.amount||0)}</div></div>
+          <div style="flex:1.3;text-align:right"><label style="font-size:9px;margin-bottom:.2rem">Amount</label><div id="line-amount-${i}" style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;padding:.45rem 0">${fmt(l.amount||0)}</div></div>
         </div>
       </div>`).join('');
   } else {
@@ -1423,7 +1423,7 @@ function renderInvLines() {
           <td style="padding:4px 6px"><input type="text" value="${(l.desc||'').replace(/"/g,'&quot;')}" oninput="editingInvLines[${i}].desc=this.value" style="font-size:13px;padding:.3rem .5rem" placeholder="Service or item..."></td>
           <td style="padding:4px 4px"><input type="number" value="${l.qty}" min="0" oninput="editingInvLines[${i}].qty=+this.value;calcLine(${i})" style="font-size:13px;padding:.3rem;text-align:center;width:55px"></td>
           <td style="padding:4px 4px"><input type="number" value="${l.rate}" min="0" step="0.01" oninput="editingInvLines[${i}].rate=+this.value;calcLine(${i})" style="font-size:13px;padding:.3rem;text-align:right;width:80px"></td>
-          <td style="padding:4px 6px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px">${fmt(l.amount||0)}</td>
+          <td id="line-amount-${i}" style="padding:4px 6px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px">${fmt(l.amount||0)}</td>
           <td style="text-align:center"><button onclick="removeInvLine(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px"><i class="ti ti-x"></i></button></td>
         </tr>`).join('')}</tbody>
       </table>
@@ -1444,7 +1444,12 @@ function addMileageLine() {
   showToast(`Added ${totalMiles.toFixed(1)} miles — set your rate per mile`,'success');
 }
 
-function calcLine(i) { editingInvLines[i].amount=(editingInvLines[i].qty||0)*(editingInvLines[i].rate||0); renderInvLines(); }
+function calcLine(i) {
+  editingInvLines[i].amount = (editingInvLines[i].qty||0)*(editingInvLines[i].rate||0);
+  const el = document.getElementById('line-amount-'+i);
+  if (el) el.textContent = fmt(editingInvLines[i].amount||0);
+  calcInvTotals();
+}
 function renderInvExpenses() {
   const wrap = document.getElementById('inv-exp-wrap');
   if (!wrap) return;
