@@ -30,10 +30,10 @@
   --text:#e8eaf0;
   --text2:#8b93a8;
   --text3:#55607a;
-  --accent:#3b82f6;
-  --accent-glow:rgba(59,130,246,.25);
-  --accent-bg:rgba(59,130,246,.12);
-  --accent-text:#93c5fd;
+  --accent:#6366f1;
+  --accent-glow:rgba(99,102,241,.30);
+  --accent-bg:rgba(99,102,241,.14);
+  --accent-text:#a5b4fc;
   --green:#22c55e;
   --green-bg:rgba(34,197,94,.12);
   --red:#ef4444;
@@ -51,8 +51,8 @@
 
 /* ── LIGHT THEME ── */
 [data-theme="light"]{
-  --bg:#f0f2f8;
-  --bg2:#e8ebf4;
+  --bg:#f3f4f7;
+  --bg2:#e9ebf1;
   --surface:#ffffff;
   --surface2:#f5f7fc;
   --border:rgba(0,0,0,.08);
@@ -60,10 +60,10 @@
   --text:#0d1117;
   --text2:#4b5568;
   --text3:#9ca3af;
-  --accent:#2563eb;
-  --accent-glow:rgba(37,99,235,.18);
-  --accent-bg:rgba(37,99,235,.08);
-  --accent-text:#1d4ed8;
+  --accent:#4f46e5;
+  --accent-glow:rgba(79,70,229,.16);
+  --accent-bg:rgba(79,70,229,.07);
+  --accent-text:#4338ca;
   --green:#16a34a;
   --green-bg:rgba(22,163,74,.1);
   --red:#dc2626;
@@ -77,7 +77,7 @@
 }
 
 html{height:100%;overflow:hidden}
-body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;height:100%;overflow:hidden;transition:background .2s,color .2s;-webkit-text-size-adjust:100%}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;height:100%;overflow:hidden;transition:background .2s,color .2s;-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 
 /* ── THEME TOGGLE ── */
@@ -106,7 +106,7 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .sidebar-logo span{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;display:block}
 .nav-item{display:flex;align-items:center;gap:9px;padding:.55rem 1rem;cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;border-radius:8px;margin:1px 8px;transition:all .15s}
 .nav-item:hover{background:var(--surface);color:var(--text)}
-.nav-item.active{background:var(--accent-bg);color:var(--accent-text);box-shadow:inset 0 0 0 1px rgba(59,130,246,.2)}
+.nav-item.active{background:var(--accent-bg);color:var(--accent-text);box-shadow:inset 0 0 0 1px rgba(99,102,241,.22)}
 .nav-item i{font-size:17px;flex-shrink:0}
 .nav-section{font-size:10px;font-weight:700;letter-spacing:1.2px;color:var(--text3);padding:.8rem 1.25rem .3rem;text-transform:uppercase;font-family:'JetBrains Mono',monospace}
 .main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
@@ -122,7 +122,7 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .btn:hover{background:var(--surface2);border-color:var(--border2)}
 .btn:disabled{opacity:.4;cursor:not-allowed}
 .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 0 0 0 var(--accent-glow)}
-.btn-primary:hover{background:#2563eb;border-color:#2563eb;box-shadow:0 0 16px var(--accent-glow)}
+.btn-primary:hover{background:var(--accent);filter:brightness(1.08);border-color:var(--accent);box-shadow:0 0 16px var(--accent-glow)}
 .btn-danger{background:var(--red-bg);color:var(--red);border-color:rgba(239,68,68,.3)}
 .btn-sm{padding:.28rem .6rem;font-size:12px}
 .btn-full{width:100%;justify-content:center;padding:.65rem}
@@ -131,13 +131,13 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.25rem;position:relative;overflow:hidden;transition:transform .15s,box-shadow .15s}
 .stat-card:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
-.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;opacity:.7}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;opacity:.5}
 .stat-card:nth-child(1)::before{background:linear-gradient(90deg,var(--accent),var(--cyan))}
 .stat-card:nth-child(2)::before{background:linear-gradient(90deg,var(--red),#f97316)}
 .stat-card:nth-child(3)::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
 .stat-card:nth-child(4)::before{background:linear-gradient(90deg,var(--amber),var(--red))}
 .stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace;margin-bottom:.5rem}
-.stat-value{font-size:26px;font-weight:700;letter-spacing:-1px;line-height:1}
+.stat-value{font-size:26px;font-weight:800;letter-spacing:-1.2px;line-height:1;font-variant-numeric:tabular-nums}
 .stat-sub{font-size:11px;color:var(--text3);margin-top:.4rem;font-family:'JetBrains Mono',monospace}
 
 /* ── CARDS ── */
@@ -185,6 +185,8 @@ input[type="date"]::-webkit-calendar-picker-indicator{margin-left:auto;flex-shri
 input[type="date"]::-webkit-datetime-edit{padding:0}
 
 input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+button:focus-visible,.btn:focus-visible,.nav-item:focus-visible,.theme-toggle:focus-visible,a:focus-visible,[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 select option{background:var(--surface);color:var(--text)}
 textarea{resize:vertical;min-height:70px}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
@@ -1013,6 +1015,27 @@ let currentUser = null;
 let profile = {};
 let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[]};
 let currentPage = 'dashboard';
+
+// Re-render the active list when the viewport crosses the mobile/desktop
+// breakpoint (mainly: rotating the phone), so it uses the matching layout
+// instead of leaving stale mobile-card markup at desktop width.
+let _viewResizeTimer = null;
+let _lastIsMobile = window.innerWidth <= 768;
+function rerenderCurrentView() {
+  const map = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccounts, mileage: renderMileage };
+  const fn = map[currentPage];
+  if (typeof fn === 'function') fn();
+}
+window.addEventListener('resize', () => {
+  clearTimeout(_viewResizeTimer);
+  _viewResizeTimer = setTimeout(() => {
+    const m = window.innerWidth <= 768;
+    if (m !== _lastIsMobile) { _lastIsMobile = m; rerenderCurrentView(); }
+  }, 150);
+});
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => { _lastIsMobile = window.innerWidth <= 768; rerenderCurrentView(); }, 250);
+});
 let invFilter = 'all';
 let currentReport = 'pl';
 let editingInvLines = [];
