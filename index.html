@@ -712,7 +712,7 @@ body.modal-open .main{overflow:hidden}
               </div>
             </div>
             <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
-            <div class="form-group"><label>Google Routes API Key <span style="color:var(--text3);font-weight:400;font-size:11px">(optional — exact Google mileage)</span></label><input id="s-ors-key" type="text" placeholder="Paste your Google Maps Platform API key" autocomplete="off"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">With a key, Calculate uses Google's Routes API for exact, Google-matching distances. Without one, it falls back to free estimates. Enable the "Routes API" on the key and (if you restrict it) allow your app's domain. Stored only on this device.</div></div>
+            <div class="form-group"><label>Google Routes API Key <span style="color:var(--text3);font-weight:400;font-size:11px">(optional — exact Google mileage)</span></label><div style="position:relative"><input id="s-ors-key" type="password" placeholder="Paste your Google Maps Platform API key" autocomplete="off" style="padding-right:40px"><button type="button" onclick="toggleKeyVisibility()" aria-label="Show/hide key" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;display:flex"><i id="s-ors-key-eye" class="ti ti-eye"></i></button></div><div style="font-size:11px;color:var(--text3);margin-top:.3rem">With a key, Calculate uses Google's Routes API for exact, Google-matching distances. Without one, it falls back to free estimates. Enable the "Routes API" on the key and (if you restrict it) allow your app's domain. Stored only on this device.</div></div>
             <div class="form-group"><label>Invoice Terms / Notes</label><textarea id="s-terms" rows="2" placeholder="Payment due within 30 days."></textarea></div>
             <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button>
           </div>
@@ -2783,6 +2783,8 @@ function loadSettingsForm() {
   document.getElementById('s-terms').value=profile.terms||'';
   document.getElementById('s-base-address').value=profile.base_address||'';
   document.getElementById('s-ors-key').value = lsGet('bk-ors-key','');
+  document.getElementById('s-ors-key').type = 'password';
+  document.getElementById('s-ors-key-eye').className = 'ti ti-eye';
   renderLogoState();
   document.getElementById('user-email-display').textContent=currentUser.email;
 }
@@ -2832,6 +2834,13 @@ async function removeLogo() {
   document.getElementById('s-logo-file').value = '';
   renderLogoState();
   showToast('Logo removed');
+}
+
+function toggleKeyVisibility() {
+  const inp = document.getElementById('s-ors-key');
+  const eye = document.getElementById('s-ors-key-eye');
+  if (inp.type === 'password') { inp.type = 'text'; eye.className = 'ti ti-eye-off'; }
+  else { inp.type = 'password'; eye.className = 'ti ti-eye'; }
 }
 
 async function saveSettings() {
