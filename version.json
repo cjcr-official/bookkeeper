@@ -1,1 +1,1 @@
-{"version":82,"note":"Logo now saves immediately on pick (no separate Save step), with clear success/error toast and HEIC decoding via createImageBitmap"}
+{"version":83,"note":"Google API key field masked by default with an eye toggle to show/hide; resets to masked each time Settings opens"}
