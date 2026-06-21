@@ -1,1 +1,1 @@
-{"version":86,"note":"Logo moved into the top bar, left of the page title (small framed chip); removed the separate dashboard brand band"}
+{"version":87,"note":"Fixed invoice line Qty/Rate inputs closing the keyboard after each digit (calcLine now updates the amount in place instead of re-rendering the row)"}
