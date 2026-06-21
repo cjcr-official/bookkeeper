@@ -593,6 +593,7 @@ body.modal-open .main{overflow:hidden}
   <div class="main">
     <div class="topbar">
       <div class="topbar-left">
+        <img id="topbar-logo" alt="logo" style="display:none;height:34px;max-width:120px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px 5px">
         <div>
           <div class="topbar-breadcrumb">Dashboard → <span id="topbar-breadcrumb-page">Overview</span></div>
           <div class="topbar-title" id="page-title">Dashboard</div>
@@ -608,11 +609,6 @@ body.modal-open .main{overflow:hidden}
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
-        <div id="dash-brand" style="display:none;margin-bottom:1rem">
-          <span style="display:inline-block;background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 10px">
-            <img id="dash-logo" alt="logo" style="height:40px;max-width:200px;object-fit:contain;display:block">
-          </span>
-        </div>
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value green" id="stat-revenue">$0.00</div><div class="stat-sub">This year (paid)</div></div>
           <div class="stat-card"><div class="stat-label">Total Expenses</div><div class="stat-value red" id="stat-expenses">$0.00</div><div class="stat-sub">This year</div></div>
@@ -1168,6 +1164,7 @@ function showPage(page, el) {
   if (el) { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
   const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Chart of Accounts',mileage:'Mileage',settings:'Settings'};
   document.getElementById('page-title').textContent = titles[page]||page;
+  updateTopbarLogo();
   const bc = document.getElementById('topbar-breadcrumb-page');
   if (bc) bc.textContent = titles[page]||page;
   const actions = {
@@ -1192,13 +1189,15 @@ function renderPage(page) {
 }
 
 // ====== DASHBOARD ======
+function updateTopbarLogo() {
+  const el = document.getElementById('topbar-logo');
+  if (!el) return;
+  if (profile.logo) { el.src = profile.logo; el.style.display = ''; }
+  else { el.style.display = 'none'; }
+}
+
 function renderDashboard() {
-  const brand = document.getElementById('dash-brand');
-  if (brand) {
-    const logo = document.getElementById('dash-logo');
-    if (profile.logo) { logo.src = profile.logo; brand.style.display = ''; }
-    else { brand.style.display = 'none'; }
-  }
+  updateTopbarLogo();
   const now = new Date(); const yr = now.getFullYear();
   const revenue = cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
   const expenses = cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
@@ -2839,7 +2838,7 @@ async function onLogoPick(e) {
   const { error } = await sb.from('profiles').upsert({ id: currentUser.id, logo: dataUrl });
   if (error) { showToast('Logo save failed: '+error.message,'error'); return; }
   profile.logo = dataUrl;
-  renderLogoState();
+  renderLogoState(); updateTopbarLogo();
   showToast('Logo saved','success');
 }
 async function removeLogo() {
@@ -2847,7 +2846,7 @@ async function removeLogo() {
   if (error) { showToast(error.message,'error'); return; }
   profile.logo = null;
   document.getElementById('s-logo-file').value = '';
-  renderLogoState();
+  renderLogoState(); updateTopbarLogo();
   showToast('Logo removed');
 }
 
