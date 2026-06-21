@@ -1,1 +1,1 @@
-{"version":81,"note":"Business logo in Settings: upload an image (auto-downscaled, stored on profile as data URL so it syncs and renders in PDFs); shows on invoice and report headers; removable"}
+{"version":82,"note":"Logo now saves immediately on pick (no separate Save step), with clear success/error toast and HEIC decoding via createImageBitmap"}
