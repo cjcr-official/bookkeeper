@@ -608,6 +608,10 @@ body.modal-open .main{overflow:hidden}
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
+        <div id="dash-brand" style="display:none;align-items:center;gap:.75rem;margin-bottom:1rem">
+          <img id="dash-logo" alt="logo" style="height:48px;max-width:170px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px">
+          <div id="dash-company" style="font-weight:700;font-size:18px;line-height:1.2"></div>
+        </div>
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value green" id="stat-revenue">$0.00</div><div class="stat-sub">This year (paid)</div></div>
           <div class="stat-card"><div class="stat-label">Total Expenses</div><div class="stat-value red" id="stat-expenses">$0.00</div><div class="stat-sub">This year</div></div>
@@ -696,24 +700,20 @@ body.modal-open .main{overflow:hidden}
           <div class="card-header"><h3>Company Settings</h3></div>
           <div class="modal-body">
             <div class="form-group"><label>Company Name</label><input id="s-company" type="text" placeholder="Acme Inc."></div>
-            <div class="form-group"><label>Business Logo <span style="color:var(--text3);font-weight:400;font-size:11px">(shown on invoices & reports)</span></label>
-              <input type="file" id="s-logo-file" accept="image/*" onchange="onLogoPick(event)" style="padding:.4rem">
-              <div id="s-logo-state" style="margin-top:.5rem"></div>
+            <div class="form-group"><label>Business Logo <span style="color:var(--text3);font-weight:400;font-size:11px">(shown on invoices, reports & home)</span></label>
+              <input type="file" id="s-logo-file" accept="image/*" onchange="onLogoPick(event)" style="display:none">
+              <div id="s-logo-state"></div>
             </div>
             <div class="form-group"><label>Address</label><textarea id="s-address" rows="2" placeholder="123 Main St..."></textarea></div>
             <div class="form-row">
               <div class="form-group"><label>Email</label><input id="s-email" type="email"></div>
               <div class="form-group"><label>Phone</label><input id="s-phone" type="tel"></div>
             </div>
-            <div class="form-row">
-              <div class="form-group"><label>Tax Rate (%)</label><input id="s-tax" type="number" value="0" min="0" max="100" step="0.1"></div>
-              <div class="form-group"><label>Currency</label>
-                <select id="s-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD ($)</option><option value="AUD">AUD ($)</option></select>
-              </div>
+            <div class="form-group"><label>Currency</label>
+              <select id="s-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD ($)</option><option value="AUD">AUD ($)</option></select>
             </div>
             <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
             <div class="form-group"><label>Google Routes API Key <span style="color:var(--text3);font-weight:400;font-size:11px">(optional — exact Google mileage)</span></label><div style="position:relative"><input id="s-ors-key" type="password" placeholder="Paste your Google Maps Platform API key" autocomplete="off" style="padding-right:40px"><button type="button" onclick="toggleKeyVisibility()" aria-label="Show/hide key" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;display:flex"><i id="s-ors-key-eye" class="ti ti-eye"></i></button></div><div style="font-size:11px;color:var(--text3);margin-top:.3rem">With a key, Calculate uses Google's Routes API for exact, Google-matching distances. Without one, it falls back to free estimates. Enable the "Routes API" on the key and (if you restrict it) allow your app's domain. Stored only on this device.</div></div>
-            <div class="form-group"><label>Invoice Terms / Notes</label><textarea id="s-terms" rows="2" placeholder="Payment due within 30 days."></textarea></div>
             <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button>
           </div>
         </div>
@@ -1132,7 +1132,7 @@ async function doResetPassword() {
 
 async function doLogout() {
   await sb.auth.signOut();
-  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],vendors:[],accounts:[],trips:[]};
+  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[]};
   document.getElementById('app').style.display = 'none';
   document.getElementById('auth-wrap').style.display = 'flex';
 }
@@ -1192,6 +1192,14 @@ function renderPage(page) {
 
 // ====== DASHBOARD ======
 function renderDashboard() {
+  const brand = document.getElementById('dash-brand');
+  if (brand) {
+    const logo = document.getElementById('dash-logo');
+    const comp = document.getElementById('dash-company');
+    if (profile.logo) { logo.src = profile.logo; logo.style.display = ''; } else { logo.style.display = 'none'; }
+    comp.textContent = profile.company || '';
+    brand.style.display = (profile.logo || profile.company) ? 'flex' : 'none';
+  }
   const now = new Date(); const yr = now.getFullYear();
   const revenue = cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
   const expenses = cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
@@ -2778,9 +2786,7 @@ function loadSettingsForm() {
   document.getElementById('s-address').value=profile.address||'';
   document.getElementById('s-email').value=profile.email||'';
   document.getElementById('s-phone').value=profile.phone||'';
-  document.getElementById('s-tax').value=profile.tax||0;
   document.getElementById('s-currency').value=profile.currency||'USD';
-  document.getElementById('s-terms').value=profile.terms||'';
   document.getElementById('s-base-address').value=profile.base_address||'';
   document.getElementById('s-ors-key').value = lsGet('bk-ors-key','');
   document.getElementById('s-ors-key').type = 'password';
@@ -2792,9 +2798,19 @@ function loadSettingsForm() {
 function renderLogoState() {
   const el = document.getElementById('s-logo-state');
   if (!el) return;
-  el.innerHTML = profile.logo
-    ? `<img src="${profile.logo}" alt="logo" style="max-height:60px;max-width:180px;border:1px solid var(--border);border-radius:6px;padding:4px;background:#fff;display:block;margin-bottom:.4rem"><button class="btn btn-sm btn-danger" type="button" onclick="removeLogo()">Remove logo</button>`
-    : '';
+  if (profile.logo) {
+    el.innerHTML = `<div style="display:flex;align-items:center;gap:.75rem">
+        <div style="width:84px;height:84px;border:1px solid var(--border);border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;padding:8px;flex-shrink:0">
+          <img src="${profile.logo}" alt="logo" style="max-width:100%;max-height:100%;object-fit:contain">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.4rem">
+          <button class="btn btn-sm" type="button" onclick="document.getElementById('s-logo-file').click()"><i class="ti ti-upload"></i> Change</button>
+          <button class="btn btn-sm btn-danger" type="button" onclick="removeLogo()"><i class="ti ti-trash"></i> Remove</button>
+        </div>
+      </div>`;
+  } else {
+    el.innerHTML = `<button class="btn" type="button" onclick="document.getElementById('s-logo-file').click()"><i class="ti ti-upload"></i> Upload logo</button>`;
+  }
 }
 // Decode (incl. iPhone HEIC via createImageBitmap), downscale to 320px, return a PNG data URL.
 async function fileToLogoDataURL(f) {
@@ -2844,7 +2860,7 @@ function toggleKeyVisibility() {
 }
 
 async function saveSettings() {
-  const row={company:document.getElementById('s-company').value,address:document.getElementById('s-address').value,email:document.getElementById('s-email').value,phone:document.getElementById('s-phone').value,tax:parseFloat(document.getElementById('s-tax').value)||0,currency:document.getElementById('s-currency').value,terms:document.getElementById('s-terms').value,base_address:document.getElementById('s-base-address').value};
+  const row={company:document.getElementById('s-company').value,address:document.getElementById('s-address').value,email:document.getElementById('s-email').value,phone:document.getElementById('s-phone').value,tax:0,currency:document.getElementById('s-currency').value,base_address:document.getElementById('s-base-address').value};
   const {error}=await sb.from('profiles').upsert({id:currentUser.id,...row});
   if (error) { showToast(error.message,'error'); return; }
   profile={...profile,...row};
