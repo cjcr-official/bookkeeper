@@ -1,1 +1,1 @@
-{"version":90,"note":"MODERN REVAMP (demo): violet gradient accent, frosted topbar/nav/toast, soft deep cards, pill buttons/badges, iOS-style active tab pill, tinted canvas. Roll back by redeploying the v89 file."}
+{"version":91,"note":"Revamp fix: re-flatten .list-card on mobile so the modern .card shadow/border no longer creates a double-card layer around list rows"}
