@@ -1,1 +1,1 @@
-{"version":89,"note":"Design pass: indigo 'ink' accent (both themes), tabular figures app-wide so amounts align, warmer light bg, softened stat bars, keyboard focus rings + reduced-motion support"}
+{"version":90,"note":"MODERN REVAMP (demo): violet gradient accent, frosted topbar/nav/toast, soft deep cards, pill buttons/badges, iOS-style active tab pill, tinted canvas. Roll back by redeploying the v89 file."}
