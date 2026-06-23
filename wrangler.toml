@@ -1,0 +1,6 @@
+name = "bookkeeper-push"
+main = "worker/push-cron.js"
+compatibility_date = "2025-01-15"
+
+[triggers]
+crons = ["0 14 * * *"]
