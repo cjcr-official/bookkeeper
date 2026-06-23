@@ -22,6 +22,27 @@ export default {
   },
   async fetch(req, env) {
     const url = new URL(req.url);
+    if (url.pathname === '/whoami') {
+      // TEMP DEBUG — remove after diagnosing the MANUAL_KEY mismatch
+      const sent = url.searchParams.get('key') || '';
+      const stored = env.MANUAL_KEY || '';
+      const hash = async (s) => {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+        return Array.from(new Uint8Array(buf)).slice(0, 6).map(b => b.toString(16).padStart(2,'0')).join('');
+      };
+      return new Response(JSON.stringify({
+        storedKeyLength: stored.length,
+        storedKeyHash6: await hash(stored),
+        sentKeyLength: sent.length,
+        sentKeyHash6: await hash(sent),
+        match: stored === sent,
+        supabaseUrlSet: !!env.SUPABASE_URL,
+        supabaseServiceKeySet: !!env.SUPABASE_SERVICE_KEY,
+        vapidPublicKeySet: !!env.VAPID_PUBLIC_KEY,
+        vapidPrivateKeySet: !!env.VAPID_PRIVATE_KEY,
+        vapidSubject: env.VAPID_SUBJECT
+      }, null, 2), { headers: { 'content-type': 'application/json' } });
+    }
     if (url.pathname === '/run' && url.searchParams.get('key') === env.MANUAL_KEY) {
       const summary = await runDailyPush(env);
       return new Response(JSON.stringify(summary, null, 2), { headers: { 'content-type': 'application/json' } });
