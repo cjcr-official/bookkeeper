@@ -1,12 +1,19 @@
-name = "bookkeeper-push"
+name = "bookkeeper"
 main = "worker/push-cron.js"
 compatibility_date = "2025-01-15"
+
+# Serve index.html + sw.js + manifest.json + version.json + icons as static
+# files. Worker's fetch() runs first; anything not handled there delegates to
+# env.ASSETS.fetch() to serve the static file. See .assetsignore for what's
+# excluded (wrangler.toml, worker source, docs, .git, etc.).
+[assets]
+directory = "./"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
 
 [triggers]
 crons = ["*/5 * * * *"]  # every 5 min — fires per-job reminders at exact timing
 
-# Plaintext vars persist here (dashboard-set ones get wiped each deploy).
-# Secrets stay in the Cloudflare dashboard and survive deploys.
 [vars]
 SUPABASE_URL = "https://fnfikvnxhylpuecshtix.supabase.co"
 VAPID_PUBLIC_KEY = "BERMR7TzR5rf0fQt_BcTOyOwiHIujwdr_S5dbutJhl1o_FyntPXRe7vuhx1xeACf5TqjgQLtPRpdFxfxRI0Wsfg"

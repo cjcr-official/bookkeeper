@@ -27,7 +27,9 @@ export default {
       const summary = await runReminders(env);
       return new Response(JSON.stringify(summary, null, 2), { headers: { 'content-type': 'application/json' } });
     }
-    return new Response('Bookkeeper push reminders. GET /run?key=... to trigger manually.');
+    // Everything else → static assets (index.html, sw.js, manifest.json, icons, version.json)
+    if (env.ASSETS) return env.ASSETS.fetch(req);
+    return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
   }
 };
 
