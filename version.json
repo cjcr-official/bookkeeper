@@ -1,1 +1,1 @@
-{"version":91,"note":"Revamp fix: re-flatten .list-card on mobile so the modern .card shadow/border no longer creates a double-card layer around list rows"}
+{"version":92,"note":"Restored soft drop shadow on individual list row cards (scoped to list pages, dashboard recents unaffected) without reintroducing the outer wrapper card"}
