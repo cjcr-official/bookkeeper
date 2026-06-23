@@ -1,4 +1,4 @@
-name = "bookkeeper-push"
+name = "bookkeeper"
 main = "worker/push-cron.js"
 compatibility_date = "2025-01-15"
 
