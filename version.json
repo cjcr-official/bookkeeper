@@ -1,1 +1,1 @@
-{"version":92,"note":"Restored soft drop shadow on individual list row cards (scoped to list pages, dashboard recents unaffected) without reintroducing the outer wrapper card"}
+{"version":93,"note":"Fixed top bar overflow on mobile: page action buttons (Recurring/New…) now collapse to icons so the settings gear and theme toggle no longer get pushed off-screen"}

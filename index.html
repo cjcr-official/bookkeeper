@@ -541,6 +541,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
 </head>
 <body>
 
+<!-- shared SVG sprite — the Bookkeeper logo, reused via <use href="#bk-logo"> -->
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true"><defs><linearGradient id="bkg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient><symbol id="bk-logo" viewBox="0 0 92 94"><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#bkg1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></symbol></defs></svg>
+
 <!-- INSTALL HINT (iOS Safari only, dismissible) -->
 <div id="install-hint" style="display:none;position:fixed;bottom:calc(62px + env(safe-area-inset-bottom,0px));left:0;right:0;z-index:9000;background:var(--surface2,#232d42);border-top:1px solid var(--border2,#2a3349);padding:.9rem 1rem;padding-bottom:max(.9rem,env(safe-area-inset-bottom,.9rem));font-size:13px;color:var(--text,#e8eaf0);display:flex;align-items:center;gap:.75rem">
   <i class="ti ti-device-mobile" style="font-size:22px;color:#3b82f6;flex-shrink:0"></i>
@@ -568,7 +571,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 <!-- LOADING -->
 <div class="loading-screen" id="loading-screen">
   <div style="display:flex;align-items:center;gap:16px">
-    <svg width="52" height="52" viewBox="0 0 92 94" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ls1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#ls1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></svg>
+    <svg width="52" height="52" viewBox="0 0 92 94"><use href="#bk-logo"/></svg>
     <div>
       <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:28px;color:var(--text);letter-spacing:-0.5px;line-height:1">Bookkeeper</div>
       <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:4px;letter-spacing:2px">LOADING...</div>
@@ -581,15 +584,15 @@ input,select,textarea{border-radius:var(--radius-sm)}
 <div class="auth-wrap" id="auth-wrap" style="display:none">
   <div class="auth-card">
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:1.75rem">
-      <svg width="48" height="48" viewBox="0 0 92 94" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="al1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#al1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="53" x2="74" y2="53" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="63" x2="62" y2="63" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></svg>
+      <svg width="48" height="48" viewBox="0 0 92 94"><use href="#bk-logo"/><line x1="22" y1="53" x2="74" y2="53" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="63" x2="62" y2="63" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/></svg>
       <div>
         <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:26px;color:var(--text);letter-spacing:-0.5px;line-height:1">Bookkeeper</div>
         <div class="auth-sub" style="margin-bottom:0">Free accounting software — your data, always safe</div>
       </div>
     </div>
     <div class="auth-tabs">
-      <button class="auth-tab active" onclick="switchAuthTab('login')">Sign In</button>
-      <button class="auth-tab" onclick="switchAuthTab('signup')">Create Account</button>
+      <button class="auth-tab active" onclick="switchAuthTab('login',this)">Sign In</button>
+      <button class="auth-tab" onclick="switchAuthTab('signup',this)">Create Account</button>
     </div>
     <div class="auth-error" id="auth-error"></div>
     <div class="auth-success" id="auth-success"></div>
@@ -613,7 +616,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <nav class="sidebar">
     <div class="sidebar-logo">
       <div style="display:flex;align-items:center;gap:10px;padding:0">
-        <svg width="32" height="32" viewBox="0 0 92 94" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="sb1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient></defs><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#sb1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></svg>
+        <svg width="32" height="32" viewBox="0 0 92 94"><use href="#bk-logo"/></svg>
         <div>
           <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:16px;color:var(--text);letter-spacing:-0.3px;line-height:1.1">Bookkeeper</div>
           <span id="user-company-name" style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">Free accounting</span>
@@ -1062,14 +1065,13 @@ let profile = {};
 let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[]};
 let currentPage = 'dashboard';
 
-// Re-render the active list when the viewport crosses the mobile/desktop
-// breakpoint (mainly: rotating the phone), so it uses the matching layout
-// instead of leaving stale mobile-card markup at desktop width.
+// Per-page render function used by showPage() AND by the resize/rotation rerender
+// (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
+const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccounts, mileage: renderMileage, settings: loadSettingsForm };
 let _viewResizeTimer = null;
 let _lastIsMobile = window.innerWidth <= 768;
 function rerenderCurrentView() {
-  const map = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccounts, mileage: renderMileage };
-  const fn = map[currentPage];
+  const fn = pageRenderers[currentPage];
   if (typeof fn === 'function') fn();
 }
 window.addEventListener('resize', () => {
@@ -1108,9 +1110,9 @@ function effectiveStatus(inv) {
   return inv.status||'draft';
 }
 
+const CURRENCY_SYMS = {USD:'$',EUR:'€',GBP:'£',CAD:'CA$',AUD:'A$'};
 function fmt(n) {
-  const syms = {USD:'$',EUR:'€',GBP:'£',CAD:'CA$',AUD:'A$'};
-  const sym = syms[profile.currency||'USD']||'$';
+  const sym = CURRENCY_SYMS[profile.currency||'USD']||'$';
   return sym + parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 function fmtDate(d) {
@@ -1140,9 +1142,9 @@ function showToast(msg, type='') {
 }
 
 // ====== AUTH ======
-function switchAuthTab(tab) {
+function switchAuthTab(tab, el) {
   document.querySelectorAll('.auth-tab').forEach(t=>t.classList.remove('active'));
-  event.target.classList.add('active');
+  if (el) el.classList.add('active');
   document.getElementById('login-form').style.display = tab==='login'?'block':'none';
   document.getElementById('signup-form').style.display = tab==='signup'?'block':'none';
   document.getElementById('auth-error').classList.remove('show');
@@ -1237,24 +1239,19 @@ function showPage(page, el) {
   const bc = document.getElementById('topbar-breadcrumb-page');
   if (bc) bc.textContent = titles[page]||page;
   const actions = {
-    invoices:`<button class="btn" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> Recurring</button> <button class="btn btn-primary" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> New Invoice</button>`,
-    customers:`<button class="btn btn-primary" onclick="openCustomerModal()"><i class="ti ti-plus"></i> New Customer</button>`,
-    expenses:`<button class="btn" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> Recurring</button> <button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> New Expense</button>`,
-    accounts:`<button class="btn btn-primary" onclick="openAccountModal()"><i class="ti ti-plus"></i> New Account</button>`,
-    mileage:`<button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> Log Trip</button>`,
+    invoices:`<button class="btn" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> <span>New Invoice</span></button>`,
+    customers:`<button class="btn btn-primary" onclick="openCustomerModal()"><i class="ti ti-plus"></i> <span>New Customer</span></button>`,
+    expenses:`<button class="btn" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
+    accounts:`<button class="btn btn-primary" onclick="openAccountModal()"><i class="ti ti-plus"></i> <span>New Account</span></button>`,
+    mileage:`<button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   renderPage(page);
 }
 
 function renderPage(page) {
-  if (page==='dashboard') renderDashboard();
-  else if (page==='invoices') renderInvoices();
-  else if (page==='customers') renderCustomers();
-  else if (page==='expenses') renderExpenses();
-  else if (page==='accounts') renderAccounts();
-  else if (page==='mileage') renderMileage();
-  else if (page==='settings') loadSettingsForm();
+  const fn = pageRenderers[page];
+  if (typeof fn === 'function') fn();
 }
 
 // ====== DASHBOARD ======
@@ -1306,64 +1303,43 @@ function renderDashboard() {
   }).join('');
   chart.innerHTML = `<div class="bar-grid">${grid}</div>${bars}`;
 
+  const esc = escHtml;
   const ri = document.getElementById('dash-invoices');
   const recent = cache.invoices.slice(0,5);
   ri.innerHTML = recent.length
-    ? `<div class="dash-wrap"><table class="dash-table dash-inv"><tbody>${recent.map(i=>`<tr style="cursor:pointer" onclick="openInvoiceInTab('${(i.number||'').replace(/'/g,"\\'")}')"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${i.number}</span></td><td>${i.customer_name||'—'}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(i.total)}</td></tr>`).join('')}</tbody></table></div>`
+    ? `<div class="dash-wrap"><table class="dash-table dash-inv"><tbody>${recent.map(i=>`<tr style="cursor:pointer" onclick="openInvoiceInTab('${(i.number||'').replace(/'/g,"\\'")}')"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(i.total)}</td></tr>`).join('')}</tbody></table></div>`
     : `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices yet</p></div>`;
 
   const re = document.getElementById('dash-expenses');
   const rexp = cache.expenses.slice(0,5);
   re.innerHTML = rexp.length
-    ? `<div class="dash-wrap"><table class="dash-table dash-exp"><tbody>${rexp.map(e=>`<tr><td style="white-space:nowrap;font-size:11.5px;color:#888">${fmtDate(e.date)}</td><td>${e.vendor}</td><td class="red" style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table></div>`
+    ? `<div class="dash-wrap"><table class="dash-table dash-exp"><tbody>${rexp.map(e=>`<tr><td style="white-space:nowrap;font-size:11.5px;color:#888">${fmtDate(e.date)}</td><td>${esc(e.vendor)}</td><td class="red" style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table></div>`
     : `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`;
 
   // Reports render on demand when the collapsible card is opened (see toggleReports)
 }
 
 // ====== INVOICES ======
-function openInvoiceInTab(number) {
+// Jump to Invoices tab, reset filter to All, prefill search with the given query.
+function gotoInvoicesSearch(query) {
   invFilter = 'all';
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  const invPage = document.getElementById('page-invoices');
-  if (invPage) invPage.classList.add('active');
+  document.getElementById('page-invoices').classList.add('active');
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const navInv = Array.from(document.querySelectorAll('.nav-item')).find(n=>/invoices/i.test(n.textContent));
   if (navInv) navInv.classList.add('active');
-  const pt = document.getElementById('page-title'); if (pt) pt.textContent = 'Invoices';
+  document.getElementById('page-title').textContent = 'Invoices';
   const tabs = document.querySelectorAll('#page-invoices .tab');
   tabs.forEach(t=>t.classList.remove('active'));
   if (tabs[0]) tabs[0].classList.add('active');
   const box = document.getElementById('inv-search');
-  if (box) box.value = number;
+  if (box) box.value = query||'';
   renderInvoices();
   const main = document.querySelector('.main'); if (main) main.scrollTop = 0;
 }
-
-function viewCustomerInvoices(name) {
-  // jump to Invoices tab, reset status filter to All, and search by this customer's name
-  invFilter = 'all';
-  // switch page
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  const invPage = document.getElementById('page-invoices');
-  if (invPage) invPage.classList.add('active');
-  // update nav highlight (bottom bar)
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  const navInv = Array.from(document.querySelectorAll('.nav-item')).find(n=>/invoices/i.test(n.textContent));
-  if (navInv) navInv.classList.add('active');
-  // update header title
-  const pt = document.getElementById('page-title'); if (pt) pt.textContent = 'Invoices';
-  // reset status tabs to All
-  const tabs = document.querySelectorAll('#page-invoices .tab');
-  tabs.forEach(t=>t.classList.remove('active'));
-  if (tabs[0]) tabs[0].classList.add('active');
-  // set the search box to the customer name and render
-  const box = document.getElementById('inv-search');
-  if (box) box.value = name;
-  renderInvoices();
-  // scroll list into view at top
-  const main = document.querySelector('.main'); if (main) main.scrollTop = 0;
-}
+// kept for backwards-compat with inline onclick handlers built into render strings
+const openInvoiceInTab = gotoInvoicesSearch;
+const viewCustomerInvoices = gotoInvoicesSearch;
 
 function filterInvoices(f,el) { invFilter=f; document.querySelectorAll('#page-invoices .tab').forEach(t=>t.classList.remove('active')); if(el)el.classList.add('active'); renderInvoices(); }
 
@@ -1378,15 +1354,16 @@ function renderInvoices() {
   const el = document.getElementById('invoices-table');
   if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices found</p></div>`; return; }
   const isMobile = window.innerWidth <= 768;
+  const esc = escHtml;
   if (isMobile) {
     el.innerHTML = list.map(i=>`
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .9rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.75rem;cursor:pointer" onclick="editInvoice('${i.id}')">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem">
-            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);font-weight:700">${i.number}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);font-weight:700">${esc(i.number)}</span>
             ${statusBadge(effectiveStatus(i))}
           </div>
-          <div style="font-size:13.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.customer_name||'—'}</div>
+          <div style="font-size:13.5px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(i.customer_name||'—')}</div>
           <div style="font-size:11px;color:var(--text3);margin-top:.1rem;font-family:'JetBrains Mono',monospace">Due ${fmtDate(i.due)}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
@@ -1399,7 +1376,7 @@ function renderInvoices() {
         </div>
       </div>`).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="editInvoice('${i.id}')">${i.number}</span></td><td>${i.customer_name||'—'}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}${(balanceDue(i)>0&&parseFloat(i.amount_paid||0)>0)?`<div style="font-size:10.5px;color:var(--text3)">Owes ${fmt(balanceDue(i))}</div>`:''}</td><td>${statusBadge(effectiveStatus(i))}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="editInvoice('${i.id}')">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}${(balanceDue(i)>0&&parseFloat(i.amount_paid||0)>0)?`<div style="font-size:10.5px;color:var(--text3)">Owes ${fmt(balanceDue(i))}</div>`:''}</td><td>${statusBadge(effectiveStatus(i))}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
@@ -1500,18 +1477,6 @@ function renderInvLines() {
   }
   calcInvTotals();
 }
-function addMileageLine() {
-  const cid = document.getElementById('inv-customer').value;
-  if (!cid) { showToast('Select a customer first','error'); return; }
-  const c = cache.customers.find(x=>x.id===cid);
-  // total miles logged for this client not yet billed (simple: all trips for client)
-  const clientTrips = cache.trips.filter(t=>t.customer_id===cid);
-  if (!clientTrips.length) { showToast('No trips logged for this client','error'); return; }
-  const totalMiles = clientTrips.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
-  editingInvLines.push({desc:`Mileage — ${totalMiles.toFixed(1)} mi (${clientTrips.length} trip${clientTrips.length===1?'':'s'})`, qty:totalMiles, rate:0, amount:0});
-  renderInvLines();
-  showToast(`Added ${totalMiles.toFixed(1)} miles — set your rate per mile`,'success');
-}
 
 function calcLine(i) {
   editingInvLines[i].amount = (editingInvLines[i].qty||0)*(editingInvLines[i].rate||0);
@@ -1537,19 +1502,21 @@ function removeInvExpense(i) { editingInvExpenses.splice(i,1); renderInvExpenses
 
 function addInvLine() { editingInvLines.push({desc:'',qty:1,rate:0,amount:0}); renderInvLines(); }
 function removeInvLine(i) { editingInvLines.splice(i,1); renderInvLines(); }
-function calcInvTotals() {
-  const sub=editingInvLines.reduce((s,l)=>s+(l.amount||0),0)+editingInvExpenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-  const taxR=parseFloat(profile.tax||0)/100;
-  document.getElementById('inv-subtotal').textContent=fmt(sub);
-  document.getElementById('inv-tax-amt').textContent=fmt(sub*taxR);
-  document.getElementById('inv-total').textContent=fmt(sub+sub*taxR);
+function invEditingSubtotal() {
+  return editingInvLines.reduce((s,l)=>s+(l.amount||0),0)
+       + editingInvExpenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
 }
-function currentInvTotal() {
-  const sub=editingInvLines.reduce((s,l)=>s+(l.amount||0),0)+editingInvExpenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
-  return sub + sub*(parseFloat(profile.tax||0)/100);
+function calcInvTotals() {
+  const sub = invEditingSubtotal();
+  const taxR = parseFloat(profile.tax||0)/100;
+  document.getElementById('inv-subtotal').textContent = fmt(sub);
+  document.getElementById('inv-tax-amt').textContent = fmt(sub*taxR);
+  document.getElementById('inv-total').textContent = fmt(sub+sub*taxR);
 }
 function markInvoicePaidFull() {
-  document.getElementById('inv-amount-paid').value = currentInvTotal().toFixed(2);
+  const sub = invEditingSubtotal();
+  const total = sub + sub*(parseFloat(profile.tax||0)/100);
+  document.getElementById('inv-amount-paid').value = total.toFixed(2);
   if (!document.getElementById('inv-paid-date').value) document.getElementById('inv-paid-date').value = today();
   document.getElementById('inv-status').value = 'paid';
   showToast('Marked paid in full — save to record','success');
@@ -1669,37 +1636,29 @@ let lastInvoiceTitle = 'Invoice';
 let lastReportHTML = '';
 let lastReportTitle = 'Report';
 
-async function buildInvoicePDF() {
-  if (!lastInvoiceHTML || !window.html2canvas || !window.jspdf) return null;
-  // Render from an OFF-SCREEN clone forced to a fixed desktop width (760px) so the
-  // invoice table stays in proper columns instead of the squeezed mobile/stacked layout.
+// Render an HTML fragment off-screen at a fixed desktop width (780px so the print
+// table keeps its columns), rasterize it, and paginate into a letter-size PDF.
+async function htmlToPDF(html, anchorSelector) {
+  if (!html || !window.html2canvas || !window.jspdf) return null;
   const holder = document.createElement('div');
   holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:780px;background:#fff;z-index:-1';
-  holder.innerHTML = '<div style="width:780px;background:#fff;padding:24px">' + lastInvoiceHTML + '</div>';
+  holder.innerHTML = '<div style="width:780px;background:#fff;padding:24px">' + html + '</div>';
   document.body.appendChild(holder);
-  const node = holder.querySelector('#inv-print-area') || holder.firstChild;
+  const node = (anchorSelector && holder.querySelector(anchorSelector)) || holder.firstChild;
   let canvas;
   try {
-    canvas = await html2canvas(node, { scale: 2, backgroundColor: '#ffffff', useCORS: true, width: 760, windowWidth: 760 });
-  } finally {
-    document.body.removeChild(holder);
-  }
+    canvas = await html2canvas(node, { scale:2, backgroundColor:'#ffffff', useCORS:true, width:780, windowWidth:780 });
+  } finally { document.body.removeChild(holder); }
   const imgData = canvas.toDataURL('image/jpeg', 0.95);
   const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ unit: 'pt', format: 'letter' });
-  const pageW = pdf.internal.pageSize.getWidth();
-  const pageH = pdf.internal.pageSize.getHeight();
-  const margin = 36;
+  const pdf = new jsPDF({ unit:'pt', format:'letter' });
+  const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight(), margin = 36;
   const usableW = pageW - margin*2;
   const imgH = canvas.height * (usableW / canvas.width);
-  // paginate if the invoice is taller than one page
-  let remaining = imgH, position = margin, sliceY = 0;
   if (imgH <= pageH - margin*2) {
     pdf.addImage(imgData, 'JPEG', margin, margin, usableW, imgH);
   } else {
-    // simple multi-page: add the whole image shifted up per page
-    let y = margin;
-    let heightLeft = imgH;
+    let y = margin, heightLeft = imgH;
     pdf.addImage(imgData, 'JPEG', margin, y, usableW, imgH);
     heightLeft -= (pageH - margin*2);
     while (heightLeft > 0) {
@@ -1711,6 +1670,8 @@ async function buildInvoicePDF() {
   }
   return pdf;
 }
+
+function buildInvoicePDF() { return htmlToPDF(lastInvoiceHTML, '#inv-print-area'); }
 
 async function shareInvoicePDF() {
   const btn = document.getElementById('inv-share-btn');
@@ -1741,51 +1702,48 @@ async function shareInvoicePDF() {
   }
 }
 
-async function printInvoice() {
-  // Print via a hidden iframe so iOS shows the native print dialog directly.
-  if (!lastInvoiceHTML) return;
-  // remove any prior print frame
+// Print HTML via a hidden iframe (iOS shows the native print dialog directly).
+// extraStyle adds page-specific CSS (e.g. unfreezing the invoice table layout).
+function printDocInIframe(html, title, extraStyle, fallback) {
+  if (!html) return;
   const old = document.getElementById('print-frame');
   if (old) old.remove();
   const iframe = document.createElement('iframe');
   iframe.id = 'print-frame';
   iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
   document.body.appendChild(iframe);
-  const docHTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + lastInvoiceTitle + '</title>'
+  const docHTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+title+'</title>'
     + '<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">'
-    + '<style>*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}'
-    + '@page{margin:0.5in}.doc{padding:0;width:100%}'
-    + '#inv-print-area table,#inv-print-area thead,#inv-print-area tbody,#inv-print-area tr,#inv-print-area th,#inv-print-area td{display:revert}'
-    + '#inv-print-area tr{display:table-row}#inv-print-area th,#inv-print-area td{display:table-cell}'
-    + '</style></head><body><div class="doc">' + lastInvoiceHTML + '</div></body></html>';
+    + '<style>*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}@page{margin:0.5in}.doc{width:100%}'
+    + (extraStyle||'')
+    + '</style></head><body><div class="doc">'+html+'</div></body></html>';
   const idoc = iframe.contentWindow.document;
   idoc.open(); idoc.write(docHTML); idoc.close();
-  // wait for fonts/layout, then print the iframe
-  const doPrint = () => {
-    try {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-    } catch(e) {
-      // fallback: open the PDF if iframe printing is blocked
-      printInvoiceFallback();
-    }
+  setTimeout(()=>{
+    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+    catch(e) { if (fallback) fallback(); }
     setTimeout(()=>{ const f=document.getElementById('print-frame'); if(f) f.remove(); }, 1000);
-  };
-  // give the iframe a moment to render
-  setTimeout(doPrint, 700);
+  }, 700);
 }
 
-async function printInvoiceFallback() {
+// Open a generated PDF in a new tab (or download it if the popup is blocked).
+async function openPDFBlob(buildFn) {
   try {
-    const pdf = await buildInvoicePDF();
-    if (pdf) {
-      const url = URL.createObjectURL(pdf.output('blob'));
-      const w = window.open(url, '_blank');
-      if (!w) { const a=document.createElement('a'); a.href=url; a.target='_blank'; document.body.appendChild(a); a.click(); a.remove(); }
-      setTimeout(()=>URL.revokeObjectURL(url), 60000);
-    }
+    const pdf = await buildFn();
+    if (!pdf) return;
+    const url = URL.createObjectURL(pdf.output('blob'));
+    const w = window.open(url, '_blank');
+    if (!w) { const a=document.createElement('a'); a.href=url; a.target='_blank'; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(()=>URL.revokeObjectURL(url), 60000);
   } catch(e) { console.error(e); }
 }
+
+function printInvoice() {
+  const invPrintCSS = '#inv-print-area table,#inv-print-area thead,#inv-print-area tbody,#inv-print-area tr,#inv-print-area th,#inv-print-area td{display:revert}'
+    + '#inv-print-area tr{display:table-row}#inv-print-area th,#inv-print-area td{display:table-cell}';
+  printDocInIframe(lastInvoiceHTML, lastInvoiceTitle, invPrintCSS, printInvoiceFallback);
+}
+function printInvoiceFallback() { return openPDFBlob(buildInvoicePDF); }
 
 function viewInvoice(id) {
   const inv = cache.invoices.find(i=>i.id===id); if(!inv) return;
@@ -1949,6 +1907,7 @@ function renderCustomers() {
     (c.email||'').toLowerCase().includes(q)
   );
   if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-search"></i><p>No customers match "${q}"</p></div>`; return; }
+  const esc = escHtml;
   if (window.innerWidth <= 768) {
     el.innerHTML = list.map(c=>{
       const nm = (c.name||'').replace(/'/g, "\\'");
@@ -1956,16 +1915,16 @@ function renderCustomers() {
       return '<div class="cust-card">' +
         '<div class="cust-card-head">' +
           '<div style="min-width:0;flex:1">' +
-            '<div class="cust-name">' + c.name + '</div>' +
-            (c.contact ? '<div class="cust-line">' + c.contact + '</div>' : '') +
-            (c.email ? '<div class="cust-line" style="color:var(--accent);word-break:break-all">' + c.email + '</div>' : '') +
-            (c.phone ? '<div class="cust-line" style="font-family:\'JetBrains Mono\',monospace">' + fmtPhone(c.phone) + '</div>' : '') +
+            '<div class="cust-name">' + esc(c.name) + '</div>' +
+            (c.contact ? '<div class="cust-line">' + esc(c.contact) + '</div>' : '') +
+            (c.email ? '<div class="cust-line" style="color:var(--accent);word-break:break-all">' + esc(c.email) + '</div>' : '') +
+            (c.phone ? '<div class="cust-line" style="font-family:\'JetBrains Mono\',monospace">' + esc(fmtPhone(c.phone)) + '</div>' : '') +
           '</div>' +
           '<div class="cust-amount">' + fmt(totalOf(c)) + '</div>' +
         '</div>' +
         '<div class="cust-actions">' +
-          (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + phoneHref + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
-          (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + c.email + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
+          (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + esc(phoneHref) + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
+          (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + esc(c.email) + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
           (c.address ? '<a class="cust-btn cust-btn-map" href="https://maps.apple.com/?q=' + encodeURIComponent(c.address) + '" target="_blank" rel="noopener"><i class="ti ti-map-pin"></i><span>Map</span></a>' : '') +
           '<button class="cust-btn" onclick="viewCustomerInvoices(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
           '<button class="cust-btn cust-btn-del" onclick="deleteCustomer(\'' + c.id + '\')"><i class="ti ti-trash"></i><span>Delete</span></button>' +
@@ -1974,7 +1933,7 @@ function renderCustomers() {
       '</div>';
     }).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${c.name}</td><td>${c.contact||'—'}</td><td style="color:var(--accent)">${c.email||'—'}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?fmtPhone(c.phone):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${(c.phone||'').replace(/[^\d+]/g,'')}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${c.email}" title="Email"><i class="ti ti-mail"></i></a>`:''}${c.address?`<a class="btn btn-sm" style="margin-right:4px" href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}" target="_blank" rel="noopener" title="Open in Maps"><i class="ti ti-map-pin"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${esc(c.name)}</td><td>${esc(c.contact||'—')}</td><td style="color:var(--accent)">${esc(c.email||'—')}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?esc(fmtPhone(c.phone)):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${esc((c.phone||'').replace(/[^\d+]/g,''))}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${esc(c.email)}" title="Email"><i class="ti ti-mail"></i></a>`:''}${c.address?`<a class="btn btn-sm" style="margin-right:4px" href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}" target="_blank" rel="noopener" title="Open in Maps"><i class="ti ti-map-pin"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
@@ -2208,13 +2167,14 @@ function renderMileage() {
   if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-car"></i><p>No trips logged${(document.getElementById('mi-from')?.value||document.getElementById('mi-to')?.value)?' in this range':' yet'}</p></div>`; return; }
   const rangeTotal = list.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
 
+  const esc = escHtml;
   if (window.innerWidth <= 768) {
     el.innerHTML = list.map(t=>`
       <div class="m-card" onclick="editTrip('${t.id}')">
         <div class="m-card-main">
-          <div class="m-card-title">${t.client_name||'—'}</div>
-          ${t.purpose?`<div class="m-card-sub" style="color:var(--text2);font-size:12px">${t.purpose}</div>`:''}
-          ${t.invoice_number?`<div class="m-card-sub" style="color:var(--accent);font-size:12px">Invoice #${t.invoice_number}</div>`:''}
+          <div class="m-card-title">${esc(t.client_name||'—')}</div>
+          ${t.purpose?`<div class="m-card-sub" style="color:var(--text2);font-size:12px">${esc(t.purpose)}</div>`:''}
+          ${t.invoice_number?`<div class="m-card-sub" style="color:var(--accent);font-size:12px">Invoice #${esc(t.invoice_number)}</div>`:''}
           <div class="m-card-meta">${fmtDate(t.date)}${t.trips>1?' · '+t.trips+' trips':''}</div>
         </div>
         <div class="m-card-right">
@@ -2227,7 +2187,7 @@ function renderMileage() {
       </div>`).join('') +
       `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;font-weight:700"><span>Range Total</span><span>${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} mi</span></div>`;
   } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Invoice #</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>`<tr><td>${fmtDate(t.date)}</td><td style="font-weight:500">${t.client_name||'—'}</td><td style="color:var(--text2)">${t.purpose||'—'}</td><td style="color:var(--accent)">${t.invoice_number||'—'}</td><td>${t.trips||1}</td><td style="font-weight:600;font-family:'JetBrains Mono',monospace">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editTrip('${t.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Range Total: ${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} miles</div>`;
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Invoice #</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>`<tr><td>${fmtDate(t.date)}</td><td style="font-weight:500">${esc(t.client_name||'—')}</td><td style="color:var(--text2)">${esc(t.purpose||'—')}</td><td style="color:var(--accent)">${esc(t.invoice_number||'—')}</td><td>${t.trips||1}</td><td style="font-weight:600;font-family:'JetBrains Mono',monospace">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editTrip('${t.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Range Total: ${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} miles</div>`;
   }
 }
 
@@ -2810,47 +2770,10 @@ function reportDoc(bizName, bizMeta, title, period, bodyHTML) {
   </div>`;
 }
 
-async function buildReportPDF() {
-  if (!lastReportHTML || !window.html2canvas || !window.jspdf) return null;
-  const holder = document.createElement('div');
-  holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:780px;background:#fff;z-index:-1';
-  holder.innerHTML = '<div style="width:780px;background:#fff;padding:24px">' + lastReportHTML + '</div>';
-  document.body.appendChild(holder);
-  const node = holder.querySelector('#report-print-area') || holder.firstChild;
-  let canvas;
-  try { canvas = await html2canvas(node, { scale:2, backgroundColor:'#ffffff', useCORS:true, width:780, windowWidth:780 }); }
-  finally { document.body.removeChild(holder); }
-  const imgData = canvas.toDataURL('image/jpeg', 0.95);
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ unit:'pt', format:'letter' });
-  const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight(), margin=36;
-  const usableW = pageW - margin*2;
-  const imgH = canvas.height * (usableW / canvas.width);
-  if (imgH <= pageH - margin*2) { pdf.addImage(imgData,'JPEG',margin,margin,usableW,imgH); }
-  else { let y=margin, left=imgH; pdf.addImage(imgData,'JPEG',margin,y,usableW,imgH); left-=(pageH-margin*2);
-    while(left>0){ y=margin-(imgH-left); pdf.addPage(); pdf.addImage(imgData,'JPEG',margin,y,usableW,imgH); left-=(pageH-margin*2); } }
-  return pdf;
-}
+function buildReportPDF() { return htmlToPDF(lastReportHTML, '#report-print-area'); }
 
-async function printReport() {
-  if (!lastReportHTML) return;
-  const old=document.getElementById('print-frame'); if(old) old.remove();
-  const iframe=document.createElement('iframe');
-  iframe.id='print-frame';
-  iframe.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
-  document.body.appendChild(iframe);
-  const docHTML='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+lastReportTitle+'</title>'
-    +'<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">'
-    +'<style>*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}@page{margin:0.5in}.doc{width:100%}</style></head><body>'
-    +'<div class="doc">'+lastReportHTML+'</div></body></html>';
-  const idoc=iframe.contentWindow.document; idoc.open(); idoc.write(docHTML); idoc.close();
-  setTimeout(()=>{ try{ iframe.contentWindow.focus(); iframe.contentWindow.print(); }catch(e){ printReportFallback(); }
-    setTimeout(()=>{const f=document.getElementById('print-frame');if(f)f.remove();},1000); }, 700);
-}
-
-async function printReportFallback() {
-  try { const pdf=await buildReportPDF(); if(pdf){ const url=URL.createObjectURL(pdf.output('blob')); const w=window.open(url,'_blank'); if(!w){const a=document.createElement('a');a.href=url;a.target='_blank';document.body.appendChild(a);a.click();a.remove();} setTimeout(()=>URL.revokeObjectURL(url),60000); } } catch(e){ console.error(e); }
-}
+function printReport() { printDocInIframe(lastReportHTML, lastReportTitle, '', printReportFallback); }
+function printReportFallback() { return openPDFBlob(buildReportPDF); }
 
 // ====== SETTINGS ======
 function loadSettingsForm() {
