@@ -249,6 +249,27 @@ textarea{resize:vertical;min-height:70px}
 .bar-tip{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:.3rem .5rem;font-size:10px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;margin-bottom:4px;z-index:5;box-shadow:var(--shadow)}
 .bar-col:hover .bar-tip{opacity:1}
 
+/* ── CALENDAR (month grid) ── */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border)}
+.cal-weekday{background:var(--bg2);padding:.45rem .2rem;font-size:10px;text-align:center;color:var(--text3);font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.6px;text-transform:uppercase}
+.cal-cell{background:var(--surface);min-height:84px;padding:.35rem;cursor:pointer;overflow:hidden;display:flex;flex-direction:column;gap:2px;transition:background .12s}
+.cal-cell:hover{background:var(--surface2)}
+.cal-cell.other-month{opacity:.35}
+.cal-cell.today .cal-cell-date{background:var(--accent);color:#fff;border-radius:999px;padding:1px 8px}
+.cal-cell.selected{background:var(--accent-bg)}
+.cal-cell-date{font-size:12px;font-weight:600;color:var(--text);align-self:flex-start;font-family:'JetBrains Mono',monospace}
+.cal-cell-job{background:var(--accent-bg);color:var(--accent-text);padding:1px 5px;border-radius:4px;font-size:10px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.cal-cell-job.done{opacity:.4;text-decoration:line-through}
+.cal-cell-job.invoice{background:var(--amber-bg);color:var(--amber)}
+.cal-cell-job.recurring{background:var(--cyan-bg);color:var(--cyan)}
+.cal-cell-more{font-size:9px;color:var(--text3);padding:0 2px}
+@media(max-width:768px){
+  .cal-cell{min-height:54px;padding:.25rem;font-size:11px}
+  .cal-cell-date{font-size:11px}
+  .cal-cell-job{font-size:9px;padding:0 3px}
+  .cal-weekday{font-size:9px;padding:.35rem .1rem}
+}
+
 /* ── SCROLLBAR ── */
 /* hide all scrollbars (still scrollable) */
 *{scrollbar-width:none;-ms-overflow-style:none}
@@ -628,6 +649,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="sidebar-nav-scroll">
     <div class="nav-section">Overview</div>
     <div class="nav-item active" onclick="showPage('dashboard',this)"><i class="ti ti-layout-dashboard"></i><span>Home</span></div>
+    <div class="nav-item" onclick="showPage('calendar',this)"><i class="ti ti-calendar"></i><span>Calendar</span></div>
     <div class="nav-section">Money In</div>
     <div class="nav-item" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i><span>Invoices</span></div>
     <div class="nav-item" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
@@ -713,6 +735,22 @@ input,select,textarea{border-radius:var(--radius-sm)}
         </div>
       </div>
 
+      <!-- CALENDAR -->
+      <div id="page-calendar" class="page">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;gap:.5rem">
+          <button class="btn btn-sm" onclick="calNavMonth(-1)" title="Previous month"><i class="ti ti-chevron-left"></i></button>
+          <div style="display:flex;align-items:center;gap:.6rem;flex:1;justify-content:center">
+            <div id="cal-month-label" style="font-weight:700;font-size:16px;letter-spacing:-.2px"></div>
+            <button class="btn btn-sm" onclick="calNavToday()" title="Jump to today"><i class="ti ti-target"></i> Today</button>
+          </div>
+          <button class="btn btn-sm" onclick="calNavMonth(1)" title="Next month"><i class="ti ti-chevron-right"></i></button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div id="cal-grid" class="cal-grid"></div>
+        </div>
+        <div id="cal-day-jobs" style="margin-top:1rem"></div>
+      </div>
+
       <!-- INVOICES -->
       <div id="page-invoices" class="page">
         <div class="tabs tabs-full">
@@ -769,10 +807,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
             <div class="form-group"><label>Google Routes API Key <span style="color:var(--text3);font-weight:400;font-size:11px">(optional — exact Google mileage)</span></label><div style="position:relative"><input id="s-ors-key" type="password" placeholder="Paste your Google Maps Platform API key" autocomplete="off" style="padding-right:40px"><button type="button" onclick="toggleKeyVisibility()" aria-label="Show/hide key" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;display:flex"><i id="s-ors-key-eye" class="ti ti-eye"></i></button></div><div style="font-size:11px;color:var(--text3);margin-top:.3rem">With a key, Calculate uses Google's Routes API for exact, Google-matching distances. Without one, it falls back to free estimates. Enable the "Routes API" on the key and (if you restrict it) allow your app's domain. Stored only on this device.</div></div>
             <div class="form-group" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">
-              <label>Daily Reminder Push</label>
+              <label>Notifications</label>
               <div id="push-status" style="font-size:13px;color:var(--text2);margin-bottom:.5rem">Loading…</div>
               <button class="btn" id="push-enable-btn" onclick="enablePush()" style="display:none"><i class="ti ti-bell"></i> Enable on this device</button>
-              <div style="font-size:11px;color:var(--text3);margin-top:.5rem">A morning ping when invoices, recurring items, or jobs are due in the next 2 days. iPhone needs iOS 16.4+ and the app added to Home Screen.</div>
+              <div id="push-debug" style="margin-top:.5rem"></div>
+              <div style="font-size:11px;color:var(--text3);margin-top:.5rem;line-height:1.5">A morning ping (8am) when you have invoices, recurring items, or jobs due in the next 2 days. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
             </div>
             <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button>
           </div>
@@ -981,6 +1020,18 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Time <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="job-time" type="time"></div>
       </div>
       <div class="form-group"><label>Customer <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="job-customer"><option value="">— None —</option></select></div>
+      <div class="form-group"><label>Reminder <span style="color:var(--text3);font-weight:400;font-size:11px">(push notification before the job)</span></label>
+        <select id="job-remind">
+          <option value="">No reminder</option>
+          <option value="0">At time of job</option>
+          <option value="5">5 minutes before</option>
+          <option value="15">15 minutes before</option>
+          <option value="30">30 minutes before</option>
+          <option value="60">1 hour before</option>
+          <option value="120">2 hours before</option>
+          <option value="1440">1 day before</option>
+        </select>
+      </div>
       <div class="form-group"><label>Notes</label><textarea id="job-notes" rows="3"></textarea></div>
       <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.5rem 0;font-weight:500">
         <input type="checkbox" id="job-done" style="width:18px;height:18px;flex-shrink:0">
@@ -1108,7 +1159,7 @@ let currentPage = 'dashboard';
 
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
-const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccounts, mileage: renderMileage, settings: loadSettingsForm };
+const pageRenderers = { dashboard: renderDashboard, calendar: renderCalendar, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccounts, mileage: renderMileage, settings: loadSettingsForm };
 let _viewResizeTimer = null;
 let _lastIsMobile = window.innerWidth <= 768;
 function rerenderCurrentView() {
@@ -1276,12 +1327,13 @@ function showPage(page, el) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   if (el) { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
-  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Chart of Accounts',mileage:'Mileage',settings:'Settings'};
+  const titles = {dashboard:'Dashboard',calendar:'Calendar',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Chart of Accounts',mileage:'Mileage',settings:'Settings'};
   document.getElementById('page-title').textContent = titles[page]||page;
   updateTopbarLogo();
   const bc = document.getElementById('topbar-breadcrumb-page');
   if (bc) bc.textContent = titles[page]||page;
   const actions = {
+    calendar:`<button class="btn btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>New Job</span></button>`,
     invoices:`<button class="btn" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> <span>New Invoice</span></button>`,
     customers:`<button class="btn btn-primary" onclick="openCustomerModal()"><i class="ti ti-plus"></i> <span>New Customer</span></button>`,
     expenses:`<button class="btn" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
@@ -2416,6 +2468,7 @@ function openJobModal(job) {
   const sel = document.getElementById('job-customer');
   sel.innerHTML = '<option value="">— None —</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
   sel.value = j.customer_id || '';
+  document.getElementById('job-remind').value = (j.remind_minutes != null ? String(j.remind_minutes) : '');
   document.getElementById('job-notes').value = j.notes || '';
   document.getElementById('job-done').checked = !!j.done;
   document.getElementById('job-delete-btn').style.display = j.id ? '' : 'none';
@@ -2425,6 +2478,7 @@ function editJob(id) { openJobModal((cache.jobs||[]).find(j=>j.id===id)); }
 
 async function saveJob() {
   const id = document.getElementById('job-id').value;
+  const remindVal = document.getElementById('job-remind').value;
   const row = {
     user_id: currentUser.id,
     title: document.getElementById('job-title-input').value.trim(),
@@ -2432,7 +2486,9 @@ async function saveJob() {
     time: document.getElementById('job-time').value || null,
     customer_id: document.getElementById('job-customer').value || null,
     notes: document.getElementById('job-notes').value,
-    done: document.getElementById('job-done').checked
+    done: document.getElementById('job-done').checked,
+    remind_minutes: remindVal === '' ? null : parseInt(remindVal),
+    reminded_at: null
   };
   if (!row.title) { showToast('Title is required','error'); return; }
   if (!row.date)  { showToast('Date is required','error'); return; }
@@ -2440,7 +2496,7 @@ async function saveJob() {
   if (id) { const r = await sb.from('jobs').update(row).eq('id',id); err=r.error; if(!err){const i=cache.jobs.findIndex(x=>x.id===id); if(i>-1) cache.jobs[i]={...cache.jobs[i],...row};} }
   else    { const r = await sb.from('jobs').insert(row).select().single(); err=r.error; if(!err&&r.data) cache.jobs.unshift(r.data); }
   if (err) { showToast(err.message,'error'); return; }
-  showToast('Job saved','success'); closeModal('modal-job'); renderUpcoming();
+  showToast('Job saved','success'); closeModal('modal-job'); renderUpcoming(); renderCalendar();
 }
 
 async function deleteJobFromModal() {
@@ -2450,7 +2506,111 @@ async function deleteJobFromModal() {
   const { error } = await sb.from('jobs').delete().eq('id',id);
   if (error) { showToast(error.message,'error'); return; }
   cache.jobs = (cache.jobs||[]).filter(j=>j.id!==id);
-  showToast('Job deleted'); closeModal('modal-job'); renderUpcoming();
+  showToast('Job deleted'); closeModal('modal-job'); renderUpcoming(); renderCalendar();
+}
+
+// ====== CALENDAR (month grid view of jobs + invoice due dates + recurring runs) ======
+let calCursor = (() => { const d = new Date(); d.setDate(1); return d; })();
+let calSelectedDate = null;
+
+function calNavMonth(delta) { calCursor.setMonth(calCursor.getMonth()+delta); calSelectedDate=null; renderCalendar(); }
+function calNavToday()     { const d=new Date(); calCursor=new Date(d.getFullYear(),d.getMonth(),1); calSelectedDate=d.toISOString().slice(0,10); renderCalendar(); }
+
+function calItemsByDate() {
+  const out = {};
+  (cache.jobs||[]).forEach(j => {
+    if (!j.date) return;
+    (out[j.date] = out[j.date] || []).push({ kind:'job', id:j.id, label:j.title||'Job', time:j.time||'', done:!!j.done, onclick:`editJob('${j.id}')` });
+  });
+  (cache.invoices||[]).forEach(i => {
+    if (!i.due || i.status==='draft' || effectiveStatus(i)==='paid') return;
+    (out[i.due] = out[i.due] || []).push({ kind:'invoice', id:i.id, label:'#'+(i.number||'')+' '+(i.customer_name||''), time:'', done:false, onclick:`editInvoice('${i.id}')` });
+  });
+  (cache.recurring||[]).forEach(r => {
+    if (!r.active || !r.next_date) return;
+    const label = r.label || ((r.data||{}).vendor) || ((cache.customers.find(c=>c.id===((r.data||{}).customer_id))||{}).name) || 'Recurring';
+    (out[r.next_date] = out[r.next_date] || []).push({ kind:'recurring', id:r.id, label, time:'', done:false, onclick:`openRecurringManager('${r.kind}')` });
+  });
+  return out;
+}
+
+function renderCalendar() {
+  const grid = document.getElementById('cal-grid');
+  if (!grid) return;
+  const lab = document.getElementById('cal-month-label');
+  const y = calCursor.getFullYear(), m = calCursor.getMonth();
+  lab.textContent = calCursor.toLocaleDateString('en-US', { month:'long', year:'numeric' });
+
+  const firstDow = new Date(y, m, 1).getDay();   // 0=Sun
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const byDate = calItemsByDate();
+  const todayStr = today();
+  const esc = escHtml;
+
+  const weekdays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  let html = weekdays.map(d => `<div class="cal-weekday">${d}</div>`).join('');
+
+  const cell = (day, ds, otherMonth) => {
+    const items = byDate[ds] || [];
+    const cls = 'cal-cell' + (otherMonth?' other-month':'') + (ds===todayStr?' today':'') + (ds===calSelectedDate?' selected':'');
+    const cap = (window.innerWidth<=768) ? 2 : 3;
+    const chips = items.slice(0,cap).map(it =>
+      `<div class="cal-cell-job ${it.kind} ${it.done?'done':''}" onclick="event.stopPropagation();${it.onclick}" title="${esc(it.label)}">${it.time?esc(it.time.slice(0,5))+' ':''}${esc(it.label)}</div>`
+    ).join('');
+    const more = items.length>cap ? `<div class="cal-cell-more">+${items.length-cap} more</div>` : '';
+    return `<div class="${cls}" onclick="calPickDay('${ds}')"><span class="cal-cell-date">${day}</span>${chips}${more}</div>`;
+  };
+
+  for (let i=0; i<firstDow; i++) {
+    const d = new Date(y, m, -firstDow + i + 1);
+    html += cell(d.getDate(), d.toISOString().slice(0,10), true);
+  }
+  for (let d=1; d<=daysInMonth; d++) {
+    const ds = new Date(y, m, d).toISOString().slice(0,10);
+    html += cell(d, ds, false);
+  }
+  const used = firstDow + daysInMonth;
+  const trailing = (7 - (used % 7)) % 7;
+  for (let i=1; i<=trailing; i++) {
+    const d = new Date(y, m+1, i);
+    html += cell(d.getDate(), d.toISOString().slice(0,10), true);
+  }
+  grid.innerHTML = html;
+  renderCalDayList();
+}
+
+function calPickDay(ds) {
+  if (calSelectedDate === ds) {
+    // second tap on same day → open New Job for that date
+    openJobModal({ date: ds });
+    return;
+  }
+  calSelectedDate = ds;
+  renderCalendar();
+}
+
+function renderCalDayList() {
+  const el = document.getElementById('cal-day-jobs');
+  if (!el) return;
+  if (!calSelectedDate) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);text-align:center;padding:.5rem">Tap a day to see/add jobs · tap it again to add a new job</div>'; return; }
+  const byDate = calItemsByDate();
+  const items = byDate[calSelectedDate] || [];
+  const heading = new Date(calSelectedDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
+  const esc = escHtml;
+  let body;
+  if (!items.length) {
+    body = `<div style="font-size:13px;color:var(--text3);padding:.5rem 0">Nothing scheduled.</div>`;
+  } else {
+    body = items.map(it => `
+      <div onclick="${it.onclick}" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .25rem;border-bottom:1px solid var(--border);cursor:pointer">
+        <i class="ti ${it.kind==='job'?'ti-briefcase':it.kind==='invoice'?'ti-file-invoice':'ti-repeat'}" style="color:var(--accent);font-size:18px;flex-shrink:0"></i>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;${it.done?'text-decoration:line-through;opacity:.55':''}">${esc(it.label)}</div>
+          <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase">${it.time?esc(it.time.slice(0,5))+' · ':''}${it.kind}</div>
+        </div>
+      </div>`).join('');
+  }
+  el.innerHTML = `<div class="card" style="padding:1rem"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem"><h3 style="font-size:14px">${esc(heading)}</h3><button class="btn btn-sm btn-primary" onclick="openJobModal({date:'${calSelectedDate}'})"><i class="ti ti-plus"></i> Add</button></div>${body}</div>`;
 }
 
 // ====== EXPENSES ======
@@ -3039,7 +3199,7 @@ async function saveSettings() {
   showToast('Settings saved','success');
 }
 
-// ====== PUSH NOTIFICATIONS (daily reminder via Cloudflare Worker cron) ======
+// ====== PUSH NOTIFICATIONS (daily reminder via the Cloudflare Worker cron) ======
 function urlB64ToUint8Array(b) {
   const padding = '='.repeat((4 - b.length % 4) % 4);
   const base64 = (b + padding).replace(/-/g,'+').replace(/_/g,'/');
@@ -3049,23 +3209,77 @@ function urlB64ToUint8Array(b) {
   return arr;
 }
 
-// Returns true on success. promptIfNeeded=true is for the "Enable" button (user gesture);
-// pass false to silently refresh the subscription on boot when permission is already granted.
-async function setupPushNotifications(promptIfNeeded) {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return false;
-  if (!VAPID_PUBLIC_KEY) return false;
+// Chatty enable function — writes each step's outcome to #push-debug so iPhone
+// users (where the JS console is invisible) can see exactly which step fails.
+async function enablePush() {
+  const dbg = document.getElementById('push-debug');
+  const log = (msg, ok) => {
+    if (dbg) dbg.innerHTML += `<div style="font-size:11px;font-family:'JetBrains Mono',monospace;color:${ok===false?'var(--red)':ok===true?'var(--green)':'var(--text2)'}">${escHtml(msg)}</div>`;
+  };
+  if (dbg) dbg.innerHTML = '';
+  const btn = document.getElementById('push-enable-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
+
+  try {
+    if (!('serviceWorker' in navigator)) { log('No serviceWorker in this browser', false); return; }
+    if (!('PushManager' in window))      { log('No PushManager in this browser', false); return; }
+    if (!('Notification' in window))     { log('No Notification API', false); return; }
+    if (!VAPID_PUBLIC_KEY)               { log('VAPID public key missing in index.html', false); return; }
+    if (!isStandalone() && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+      log('iOS requires Add to Home Screen first (iOS 16.4+)', false); return;
+    }
+    log('Registering service worker…');
+    const reg = await navigator.serviceWorker.register('sw.js');
+    log('SW registered, waiting for ready…');
+    await navigator.serviceWorker.ready;
+    log('SW ready');
+
+    let sub = await reg.pushManager.getSubscription();
+    if (sub) { log('Already have a subscription — re-saving'); }
+    else {
+      let perm = Notification.permission;
+      if (perm === 'default') {
+        log('Asking iOS for permission…');
+        perm = await Notification.requestPermission();
+      }
+      if (perm !== 'granted') { log('Permission: ' + perm, false); return; }
+      log('Permission granted — subscribing to push…');
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+      log('Subscribed');
+    }
+    const subObj = sub.toJSON();
+    log('Saving subscription to Supabase…');
+    const { error } = await sb.from('profiles').upsert({ id: currentUser.id, push_subscription: subObj });
+    if (error) {
+      log('Save failed: ' + error.message, false);
+      if (/column .*push_subscription/i.test(error.message)) {
+        log('→ Run: alter table profiles add column if not exists push_subscription jsonb;', false);
+      }
+      return;
+    }
+    profile.push_subscription = subObj;
+    log('Saved ✓ — you are subscribed', true);
+    showToast('Push enabled','success');
+  } catch (e) {
+    log('Threw: ' + (e && e.message || e), false);
+  } finally {
+    if (btn) btn.disabled = false;
+    renderPushStatus();
+  }
+}
+
+// Silent refresh on boot — only re-saves if permission is already granted.
+async function refreshPushSubscription() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !VAPID_PUBLIC_KEY) return;
+  if (Notification.permission !== 'granted') return;
   try {
     const reg = await navigator.serviceWorker.register('sw.js');
     await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
-      if (Notification.permission === 'default') {
-        if (!promptIfNeeded) return false;
-        const perm = await Notification.requestPermission();
-        if (perm !== 'granted') return false;
-      } else if (Notification.permission !== 'granted') {
-        return false;
-      }
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY)
@@ -3076,8 +3290,7 @@ async function setupPushNotifications(promptIfNeeded) {
       const { error } = await sb.from('profiles').upsert({ id: currentUser.id, push_subscription: subObj });
       if (!error) profile.push_subscription = subObj;
     }
-    return true;
-  } catch(e) { console.warn('Push setup failed:', e); return false; }
+  } catch (e) { console.warn('push refresh failed', e); }
 }
 
 function renderPushStatus() {
@@ -3085,20 +3298,16 @@ function renderPushStatus() {
   const btn = document.getElementById('push-enable-btn');
   if (!el || !btn) return;
   if (!('PushManager' in window) || !('Notification' in window)) {
-    el.textContent = 'This browser does not support push notifications.';
-    btn.style.display = 'none'; return;
-  }
-  if (!VAPID_PUBLIC_KEY) {
-    el.innerHTML = '<span style="color:var(--amber)">VAPID key not configured yet. See worker/README.md.</span>';
+    el.textContent = 'Push not supported in this browser.';
     btn.style.display = 'none'; return;
   }
   if (!isStandalone() && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
-    el.innerHTML = 'On iPhone, Add to Home Screen first — iOS only allows push from an installed PWA (iOS 16.4+).';
+    el.innerHTML = 'On iPhone: Share → <strong>Add to Home Screen</strong> first, then open from the icon. iOS 16.4+ required.';
     btn.style.display = 'none'; return;
   }
   const perm = Notification.permission;
   if (perm === 'denied') {
-    el.innerHTML = '<span style="color:var(--red)">Blocked.</span> Enable in iOS Settings → Notifications → Bookkeeper.';
+    el.innerHTML = '<span style="color:var(--red)">Blocked.</span> Enable in iOS Settings → Notifications → Bookkeeper, then come back.';
     btn.style.display = 'none';
   } else if (perm === 'granted' && profile.push_subscription) {
     el.innerHTML = '<span style="color:var(--green)">✓ Enabled on this device</span>';
@@ -3107,15 +3316,6 @@ function renderPushStatus() {
     el.textContent = perm === 'granted' ? 'Permission granted — tap to subscribe.' : 'Not enabled.';
     btn.style.display = ''; btn.innerHTML = '<i class="ti ti-bell"></i> Enable on this device';
   }
-}
-
-async function enablePush() {
-  const btn = document.getElementById('push-enable-btn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
-  const ok = await setupPushNotifications(true);
-  if (btn) btn.disabled = false;
-  showToast(ok ? 'Push enabled' : 'Could not enable push — check Settings → Notifications', ok ? 'success' : 'error');
-  renderPushStatus();
 }
 
 // ====== MODAL ======
@@ -3151,7 +3351,7 @@ async function boot() {
       hide();
       document.getElementById('app').style.display='flex';
       renderDashboard();
-      setupPushNotifications(false); // refresh subscription if user already granted permission
+      refreshPushSubscription();
     } else {
       hide();
       document.getElementById('auth-wrap').style.display='flex';
@@ -3173,7 +3373,7 @@ async function boot() {
       document.getElementById('loading-screen').style.display='none';
       document.getElementById('app').style.display='flex';
       renderDashboard();
-      setupPushNotifications(false);
+      refreshPushSubscription();
     } else if (event==='SIGNED_OUT') {
       document.getElementById('app').style.display='none';
       document.getElementById('auth-wrap').style.display='flex';

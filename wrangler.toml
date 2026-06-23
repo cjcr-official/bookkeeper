@@ -3,11 +3,10 @@ main = "worker/push-cron.js"
 compatibility_date = "2025-01-15"
 
 [triggers]
-crons = ["0 14 * * *"]
+crons = ["*/5 * * * *"]  # every 5 min — fires per-job reminders at exact timing
 
-# Plaintext vars persist via this block (otherwise dashboard-set plaintext vars
-# get wiped on each wrangler deploy). Secrets are NOT here — they're stored
-# separately in the Cloudflare dashboard and survive deploys.
+# Plaintext vars persist here (dashboard-set ones get wiped each deploy).
+# Secrets stay in the Cloudflare dashboard and survive deploys.
 [vars]
 SUPABASE_URL = "https://fnfikvnxhylpuecshtix.supabase.co"
 VAPID_PUBLIC_KEY = "BERMR7TzR5rf0fQt_BcTOyOwiHIujwdr_S5dbutJhl1o_FyntPXRe7vuhx1xeACf5TqjgQLtPRpdFxfxRI0Wsfg"
