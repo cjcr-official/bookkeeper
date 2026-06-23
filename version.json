@@ -1,1 +1,1 @@
-{"version":97,"note":"Dashboard now shows an \"Upcoming · Next 30 Days\" card listing recurring invoices/expenses about to run, plus unpaid invoices coming due. Overdue items show in red. Click an item to open it."}
+{"version":98,"note":"Editable jobs! Tap \"+ Job\" on the Upcoming card to schedule on-site visits and other dated work. Jobs show up alongside recurring items and unpaid invoices on the dashboard, overdue ones in red. Run the SQL block in the v98 commit to enable storage."}

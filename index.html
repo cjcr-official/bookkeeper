@@ -669,7 +669,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <div class="stat-card"><div class="stat-label">Outstanding</div><div class="stat-value amber" id="stat-outstanding">$0.00</div><div class="stat-sub">Unpaid invoices</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3></div>
+          <div class="card-header"><h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button></div>
           <div id="upcoming-list"></div>
         </div>
         <div class="two-col">
@@ -963,6 +963,32 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
+<!-- JOB MODAL -->
+<div class="modal-overlay" id="modal-job">
+  <div class="modal">
+    <div class="modal-header"><h2 id="job-modal-title">New Job</h2><button class="btn btn-sm" onclick="closeModal('modal-job')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <input type="hidden" id="job-id">
+      <div class="form-group"><label>Title</label><input id="job-title-input" type="text" placeholder="e.g. On-site repair at Acme"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Date</label><input id="job-date" type="date"></div>
+        <div class="form-group"><label>Time <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="job-time" type="time"></div>
+      </div>
+      <div class="form-group"><label>Customer <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="job-customer"><option value="">— None —</option></select></div>
+      <div class="form-group"><label>Notes</label><textarea id="job-notes" rows="3"></textarea></div>
+      <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.5rem 0;font-weight:500">
+        <input type="checkbox" id="job-done" style="width:18px;height:18px;flex-shrink:0">
+        <span>Done <span style="color:var(--text3);font-weight:400;font-size:12px">(hides it from Upcoming)</span></span>
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="job-delete-btn" onclick="deleteJobFromModal()" style="margin-right:auto;display:none"><i class="ti ti-trash"></i> Delete</button>
+      <button class="btn" onclick="closeModal('modal-job')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveJob()"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- EXPENSE MODAL -->
 <div class="modal-overlay" id="modal-expense">
   <div class="modal">
@@ -1068,7 +1094,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // ====== STATE ======
 let currentUser = null;
 let profile = {};
-let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[]};
+let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[]};
 let currentPage = 'dashboard';
 
 // Per-page render function used by showPage() AND by the resize/rotation rerender
@@ -1206,7 +1232,7 @@ async function doResetPassword() {
 
 async function doLogout() {
   await sb.auth.signOut();
-  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[]};
+  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[]};
   document.getElementById('app').style.display = 'none';
   document.getElementById('auth-wrap').style.display = 'flex';
 }
@@ -1215,7 +1241,7 @@ async function doLogout() {
 async function loadAllData() {
   // Each query wrapped so one missing table (e.g. trips before SQL is run) can't hang the whole load
   const safe = (q) => q.then(r=>r).catch(e=>({data:null,error:e}));
-  const [prof, customers, invoices, expenses, accounts, trips, recurring] = await Promise.all([
+  const [prof, customers, invoices, expenses, accounts, trips, recurring, jobs] = await Promise.all([
     safe(sb.from('profiles').select('*').eq('id', currentUser.id).single()),
     safe(sb.from('customers').select('*').eq('user_id', currentUser.id).order('name')),
     safe(sb.from('invoices').select('*').eq('user_id', currentUser.id).order('created_at', {ascending:false})),
@@ -1223,6 +1249,7 @@ async function loadAllData() {
     safe(sb.from('accounts').select('*').eq('user_id', currentUser.id).order('name')),
     safe(sb.from('trips').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
     safe(sb.from('recurring').select('*').eq('user_id', currentUser.id).order('next_date')),
+    safe(sb.from('jobs').select('*').eq('user_id', currentUser.id).order('date')),
   ]);
   profile = prof.data || {};
   cache.customers = customers.data || [];
@@ -1231,6 +1258,7 @@ async function loadAllData() {
   cache.accounts = accounts.data || [];
   cache.trips = trips.data || [];
   cache.recurring = recurring.data || [];
+  cache.jobs = jobs.data || [];
 }
 
 // ====== NAVIGATION ======
@@ -1370,6 +1398,20 @@ function renderUpcoming() {
       icon: 'ti-file-invoice',
       onclick: `editInvoice('${i.id}')`,
       amount: balanceDue(i),
+      overdue,
+    });
+  });
+  (cache.jobs||[]).forEach(j => {
+    if (j.done || !j.date || j.date > horizon) return;
+    const overdue = j.date < todayStr;
+    const cust = j.customer_id ? (cache.customers.find(c=>c.id===j.customer_id)||{}).name : '';
+    items.push({
+      date: j.date,
+      type: overdue ? 'Overdue job' : 'Job',
+      label: (j.title||'Job') + (j.time?' · '+j.time.slice(0,5):'') + (cust?' · '+cust:''),
+      icon: 'ti-briefcase',
+      onclick: `editJob('${j.id}')`,
+      amount: 0,
       overdue,
     });
   });
@@ -2352,6 +2394,54 @@ async function deleteTrip(id) {
   if (error) { showToast(error.message,'error'); return; }
   cache.trips = cache.trips.filter(t=>t.id!==id);
   showToast('Trip deleted'); renderMileage();
+}
+
+// ====== JOBS (editable calendar entries shown in dashboard Upcoming) ======
+function openJobModal(job) {
+  const j = job || {};
+  document.getElementById('job-modal-title').textContent = j.id ? 'Edit Job' : 'New Job';
+  document.getElementById('job-id').value = j.id || '';
+  document.getElementById('job-title-input').value = j.title || '';
+  document.getElementById('job-date').value = j.date || today();
+  document.getElementById('job-time').value = j.time || '';
+  const sel = document.getElementById('job-customer');
+  sel.innerHTML = '<option value="">— None —</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+  sel.value = j.customer_id || '';
+  document.getElementById('job-notes').value = j.notes || '';
+  document.getElementById('job-done').checked = !!j.done;
+  document.getElementById('job-delete-btn').style.display = j.id ? '' : 'none';
+  openModal('modal-job');
+}
+function editJob(id) { openJobModal((cache.jobs||[]).find(j=>j.id===id)); }
+
+async function saveJob() {
+  const id = document.getElementById('job-id').value;
+  const row = {
+    user_id: currentUser.id,
+    title: document.getElementById('job-title-input').value.trim(),
+    date: document.getElementById('job-date').value,
+    time: document.getElementById('job-time').value || null,
+    customer_id: document.getElementById('job-customer').value || null,
+    notes: document.getElementById('job-notes').value,
+    done: document.getElementById('job-done').checked
+  };
+  if (!row.title) { showToast('Title is required','error'); return; }
+  if (!row.date)  { showToast('Date is required','error'); return; }
+  let err;
+  if (id) { const r = await sb.from('jobs').update(row).eq('id',id); err=r.error; if(!err){const i=cache.jobs.findIndex(x=>x.id===id); if(i>-1) cache.jobs[i]={...cache.jobs[i],...row};} }
+  else    { const r = await sb.from('jobs').insert(row).select().single(); err=r.error; if(!err&&r.data) cache.jobs.unshift(r.data); }
+  if (err) { showToast(err.message,'error'); return; }
+  showToast('Job saved','success'); closeModal('modal-job'); renderUpcoming();
+}
+
+async function deleteJobFromModal() {
+  const id = document.getElementById('job-id').value;
+  if (!id) return;
+  if (!confirm('Delete this job?')) return;
+  const { error } = await sb.from('jobs').delete().eq('id',id);
+  if (error) { showToast(error.message,'error'); return; }
+  cache.jobs = (cache.jobs||[]).filter(j=>j.id!==id);
+  showToast('Job deleted'); closeModal('modal-job'); renderUpcoming();
 }
 
 // ====== EXPENSES ======
