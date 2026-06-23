@@ -768,6 +768,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </div>
             <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
             <div class="form-group"><label>Google Routes API Key <span style="color:var(--text3);font-weight:400;font-size:11px">(optional — exact Google mileage)</span></label><div style="position:relative"><input id="s-ors-key" type="password" placeholder="Paste your Google Maps Platform API key" autocomplete="off" style="padding-right:40px"><button type="button" onclick="toggleKeyVisibility()" aria-label="Show/hide key" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;display:flex"><i id="s-ors-key-eye" class="ti ti-eye"></i></button></div><div style="font-size:11px;color:var(--text3);margin-top:.3rem">With a key, Calculate uses Google's Routes API for exact, Google-matching distances. Without one, it falls back to free estimates. Enable the "Routes API" on the key and (if you restrict it) allow your app's domain. Stored only on this device.</div></div>
+            <div class="form-group" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">
+              <label>Daily Reminder Push</label>
+              <div id="push-status" style="font-size:13px;color:var(--text2);margin-bottom:.5rem">Loading…</div>
+              <button class="btn" id="push-enable-btn" onclick="enablePush()" style="display:none"><i class="ti ti-bell"></i> Enable on this device</button>
+              <div style="font-size:11px;color:var(--text3);margin-top:.5rem">A morning ping when invoices, recurring items, or jobs are due in the next 2 days. iPhone needs iOS 16.4+ and the app added to Home Screen.</div>
+            </div>
             <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button>
           </div>
         </div>
@@ -1090,6 +1096,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
 const SUPABASE_URL = 'https://fnfikvnxhylpuecshtix.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZuZmlrdm54aHlscHVlY3NodGl4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzMzM5MzAsImV4cCI6MjA5MzkwOTkzMH0.7DC5hQeMdLdbY6Y88qyskqjeq7ZI0WkEUdbiOpy5AKw';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ====== PUSH (VAPID public key — paste yours; see worker/README.md) ======
+const VAPID_PUBLIC_KEY = '';
 
 // ====== STATE ======
 let currentUser = null;
@@ -2952,6 +2961,7 @@ function loadSettingsForm() {
   document.getElementById('s-ors-key').type = 'password';
   document.getElementById('s-ors-key-eye').className = 'ti ti-eye';
   renderLogoState();
+  renderPushStatus();
   document.getElementById('user-email-display').textContent=currentUser.email;
 }
 
@@ -3029,6 +3039,85 @@ async function saveSettings() {
   showToast('Settings saved','success');
 }
 
+// ====== PUSH NOTIFICATIONS (daily reminder via Cloudflare Worker cron) ======
+function urlB64ToUint8Array(b) {
+  const padding = '='.repeat((4 - b.length % 4) % 4);
+  const base64 = (b + padding).replace(/-/g,'+').replace(/_/g,'/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i=0; i<raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+// Returns true on success. promptIfNeeded=true is for the "Enable" button (user gesture);
+// pass false to silently refresh the subscription on boot when permission is already granted.
+async function setupPushNotifications(promptIfNeeded) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return false;
+  if (!VAPID_PUBLIC_KEY) return false;
+  try {
+    const reg = await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      if (Notification.permission === 'default') {
+        if (!promptIfNeeded) return false;
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') return false;
+      } else if (Notification.permission !== 'granted') {
+        return false;
+      }
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
+    const subObj = sub.toJSON();
+    if (JSON.stringify(profile.push_subscription||null) !== JSON.stringify(subObj)) {
+      const { error } = await sb.from('profiles').upsert({ id: currentUser.id, push_subscription: subObj });
+      if (!error) profile.push_subscription = subObj;
+    }
+    return true;
+  } catch(e) { console.warn('Push setup failed:', e); return false; }
+}
+
+function renderPushStatus() {
+  const el = document.getElementById('push-status');
+  const btn = document.getElementById('push-enable-btn');
+  if (!el || !btn) return;
+  if (!('PushManager' in window) || !('Notification' in window)) {
+    el.textContent = 'This browser does not support push notifications.';
+    btn.style.display = 'none'; return;
+  }
+  if (!VAPID_PUBLIC_KEY) {
+    el.innerHTML = '<span style="color:var(--amber)">VAPID key not configured yet. See worker/README.md.</span>';
+    btn.style.display = 'none'; return;
+  }
+  if (!isStandalone() && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    el.innerHTML = 'On iPhone, Add to Home Screen first — iOS only allows push from an installed PWA (iOS 16.4+).';
+    btn.style.display = 'none'; return;
+  }
+  const perm = Notification.permission;
+  if (perm === 'denied') {
+    el.innerHTML = '<span style="color:var(--red)">Blocked.</span> Enable in iOS Settings → Notifications → Bookkeeper.';
+    btn.style.display = 'none';
+  } else if (perm === 'granted' && profile.push_subscription) {
+    el.innerHTML = '<span style="color:var(--green)">✓ Enabled on this device</span>';
+    btn.style.display = ''; btn.innerHTML = '<i class="ti ti-refresh"></i> Re-register';
+  } else {
+    el.textContent = perm === 'granted' ? 'Permission granted — tap to subscribe.' : 'Not enabled.';
+    btn.style.display = ''; btn.innerHTML = '<i class="ti ti-bell"></i> Enable on this device';
+  }
+}
+
+async function enablePush() {
+  const btn = document.getElementById('push-enable-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
+  const ok = await setupPushNotifications(true);
+  if (btn) btn.disabled = false;
+  showToast(ok ? 'Push enabled' : 'Could not enable push — check Settings → Notifications', ok ? 'success' : 'error');
+  renderPushStatus();
+}
+
 // ====== MODAL ======
 function openModal(id) {
   document.getElementById(id).classList.add('open');
@@ -3062,6 +3151,7 @@ async function boot() {
       hide();
       document.getElementById('app').style.display='flex';
       renderDashboard();
+      setupPushNotifications(false); // refresh subscription if user already granted permission
     } else {
       hide();
       document.getElementById('auth-wrap').style.display='flex';
@@ -3083,6 +3173,7 @@ async function boot() {
       document.getElementById('loading-screen').style.display='none';
       document.getElementById('app').style.display='flex';
       renderDashboard();
+      setupPushNotifications(false);
     } else if (event==='SIGNED_OUT') {
       document.getElementById('app').style.display='none';
       document.getElementById('auth-wrap').style.display='flex';

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<title>VAPID Keygen — Bookkeeper</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;max-width:680px;margin:2rem auto;padding:1rem;background:#f5f5f7;color:#1a1a1a;line-height:1.5}
+h1{font-size:20px;margin:0 0 .5rem}
+p{color:#555;font-size:14px}
+.box{background:#fff;border:1px solid #e2e2e2;border-radius:10px;padding:1rem;margin-top:1rem}
+label{display:block;font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:#666;margin-bottom:.4rem}
+input{width:100%;font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:12px;padding:.55rem .65rem;border:1px solid #d0d0d0;border-radius:6px;background:#fafafa}
+button{padding:.6rem 1.1rem;font-size:14px;font-weight:600;background:#2563eb;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit}
+button:hover{background:#1d4ed8}
+.note{font-size:12px;color:#666;margin-top:.6rem}
+code{background:#eef;padding:1px 5px;border-radius:3px;font-size:12px}
+</style></head><body>
+<h1>VAPID Keypair Generator</h1>
+<p>Generates a Web Push keypair using Web Crypto in your browser. Keys never leave this page.
+Open this file with <strong>File → Open</strong> in any browser, or just double-click it.</p>
+<button onclick="gen()">Generate New Keypair</button>
+<div id="out"></div>
+<script>
+async function gen() {
+  const kp = await crypto.subtle.generateKey({ name:'ECDSA', namedCurve:'P-256' }, true, ['sign','verify']);
+  const pubJwk  = await crypto.subtle.exportKey('jwk', kp.publicKey);
+  const privJwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+  const x = urlB64ToBytes(pubJwk.x);
+  const y = urlB64ToBytes(pubJwk.y);
+  const pubRaw = new Uint8Array(65);
+  pubRaw[0] = 0x04; pubRaw.set(x, 1); pubRaw.set(y, 33);
+  const pub  = bytesToUrlB64(pubRaw);
+  const priv = privJwk.d;
+  document.getElementById('out').innerHTML = `
+    <div class="box">
+      <label>VAPID Public Key</label>
+      <input value="${pub}" readonly onclick="this.select()">
+      <div class="note">Paste into <code>index.html</code> (<code>VAPID_PUBLIC_KEY</code>) <em>and</em> the Cloudflare Worker secret <code>VAPID_PUBLIC_KEY</code>. Safe to publish.</div>
+    </div>
+    <div class="box">
+      <label>VAPID Private Key</label>
+      <input value="${priv}" readonly onclick="this.select()">
+      <div class="note"><strong>Secret.</strong> Paste into the Cloudflare Worker secret <code>VAPID_PRIVATE_KEY</code> only. Never check it in.</div>
+    </div>
+    <div class="note" style="margin-top:1rem">Refreshing this page generates a new pair. Save both somewhere safe before closing.</div>`;
+}
+function urlB64ToBytes(b){const p='='.repeat((4-b.length%4)%4),s=(b+p).replace(/-/g,'+').replace(/_/g,'/'),r=atob(s),a=new Uint8Array(r.length);for(let i=0;i<r.length;i++)a[i]=r.charCodeAt(i);return a}
+function bytesToUrlB64(by){let s='';for(const x of by)s+=String.fromCharCode(x);return btoa(s).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')}
+</script>
+</body></html>
