@@ -1246,12 +1246,7 @@ function showPage(page, el) {
     mileage:`<button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
-  renderPage(page);
-}
-
-function renderPage(page) {
-  const fn = pageRenderers[page];
-  if (typeof fn === 'function') fn();
+  rerenderCurrentView();
 }
 
 // ====== DASHBOARD ======
@@ -1307,7 +1302,7 @@ function renderDashboard() {
   const ri = document.getElementById('dash-invoices');
   const recent = cache.invoices.slice(0,5);
   ri.innerHTML = recent.length
-    ? `<div class="dash-wrap"><table class="dash-table dash-inv"><tbody>${recent.map(i=>`<tr style="cursor:pointer" onclick="openInvoiceInTab('${(i.number||'').replace(/'/g,"\\'")}')"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(i.total)}</td></tr>`).join('')}</tbody></table></div>`
+    ? `<div class="dash-wrap"><table class="dash-table dash-inv"><tbody>${recent.map(i=>`<tr style="cursor:pointer" onclick="gotoInvoicesSearch('${(i.number||'').replace(/'/g,"\\'")}')"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(i.total)}</td></tr>`).join('')}</tbody></table></div>`
     : `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices yet</p></div>`;
 
   const re = document.getElementById('dash-expenses');
@@ -1337,10 +1332,6 @@ function gotoInvoicesSearch(query) {
   renderInvoices();
   const main = document.querySelector('.main'); if (main) main.scrollTop = 0;
 }
-// kept for backwards-compat with inline onclick handlers built into render strings
-const openInvoiceInTab = gotoInvoicesSearch;
-const viewCustomerInvoices = gotoInvoicesSearch;
-
 function filterInvoices(f,el) { invFilter=f; document.querySelectorAll('#page-invoices .tab').forEach(t=>t.classList.remove('active')); if(el)el.classList.add('active'); renderInvoices(); }
 
 function renderInvoices() {
@@ -1396,7 +1387,7 @@ function nextInvoiceNumber() {
 
 function openInvoiceModal(inv) {
   const sel = document.getElementById('inv-customer');
-  sel.innerHTML = '<option value="">Select customer...</option>' + cache.customers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  sel.innerHTML = '<option value="">Select customer...</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
   document.getElementById('inv-tax-pct').textContent = profile.tax||0;
   if (inv) {
     document.getElementById('inv-modal-title').textContent = 'Edit Invoice';
@@ -1926,26 +1917,27 @@ function renderCustomers() {
           (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + esc(phoneHref) + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
           (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + esc(c.email) + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
           (c.address ? '<a class="cust-btn cust-btn-map" href="https://maps.apple.com/?q=' + encodeURIComponent(c.address) + '" target="_blank" rel="noopener"><i class="ti ti-map-pin"></i><span>Map</span></a>' : '') +
-          '<button class="cust-btn" onclick="viewCustomerInvoices(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
+          '<button class="cust-btn" onclick="gotoInvoicesSearch(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
           '<button class="cust-btn cust-btn-del" onclick="deleteCustomer(\'' + c.id + '\')"><i class="ti ti-trash"></i><span>Delete</span></button>' +
         '</div>' +
         '<button class="cust-btn cust-btn-edit-big" onclick="editCustomer(\'' + c.id + '\')"><i class="ti ti-edit"></i><span>Edit Customer</span></button>' +
       '</div>';
     }).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${esc(c.name)}</td><td>${esc(c.contact||'—')}</td><td style="color:var(--accent)">${esc(c.email||'—')}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?esc(fmtPhone(c.phone)):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${esc((c.phone||'').replace(/[^\d+]/g,''))}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${esc(c.email)}" title="Email"><i class="ti ti-mail"></i></a>`:''}${c.address?`<a class="btn btn-sm" style="margin-right:4px" href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}" target="_blank" rel="noopener" title="Open in Maps"><i class="ti ti-map-pin"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="viewCustomerInvoices('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${esc(c.name)}</td><td>${esc(c.contact||'—')}</td><td style="color:var(--accent)">${esc(c.email||'—')}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?esc(fmtPhone(c.phone)):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${esc((c.phone||'').replace(/[^\d+]/g,''))}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${esc(c.email)}" title="Email"><i class="ti ti-mail"></i></a>`:''}${c.address?`<a class="btn btn-sm" style="margin-right:4px" href="https://maps.apple.com/?q=${encodeURIComponent(c.address)}" target="_blank" rel="noopener" title="Open in Maps"><i class="ti ti-map-pin"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="gotoInvoicesSearch('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
 function openCustomerModal(c) {
-  document.getElementById('cust-title').textContent = c?'Edit Customer':'New Customer';
-  document.getElementById('cust-id').value = c?c.id:'';
-  document.getElementById('cust-name').value = c?c.name:'';
-  document.getElementById('cust-contact').value = c?c.contact:'';
-  document.getElementById('cust-email').value = c?c.email:'';
-  document.getElementById('cust-phone').value = c?c.phone:'';
-  document.getElementById('cust-address').value = c?c.address:'';
-  document.getElementById('cust-miles').value = c&&c.miles?c.miles:'';
+  c = c || {};
+  document.getElementById('cust-title').textContent = c.id?'Edit Customer':'New Customer';
+  document.getElementById('cust-id').value = c.id||'';
+  document.getElementById('cust-name').value = c.name||'';
+  document.getElementById('cust-contact').value = c.contact||'';
+  document.getElementById('cust-email').value = c.email||'';
+  document.getElementById('cust-phone').value = c.phone||'';
+  document.getElementById('cust-address').value = c.address||'';
+  document.getElementById('cust-miles').value = c.miles||'';
   (()=>{ const cb=document.getElementById('cust-calc-btn'); if(!cb) return;
     const hk = !!lsGet('bk-ors-key','').trim();
     cb.innerHTML = '<i class="ti ti-route"></i> ' + (hk ? 'Calculate (Google)' : 'Estimate');
@@ -2193,7 +2185,7 @@ function renderMileage() {
 
 function openTripModal(trip) {
   const sel = document.getElementById('trip-client');
-  sel.innerHTML = '<option value="">Select client...</option>' + cache.customers.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  sel.innerHTML = '<option value="">Select client...</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
   document.getElementById('trip-maps-link').innerHTML = '';
   if (trip) {
     document.getElementById('trip-title').textContent = 'Edit Trip';
@@ -2287,14 +2279,15 @@ async function deleteTrip(id) {
 function renderExpenses() {
   const el = document.getElementById('expenses-table');
   if (!cache.expenses.length) { el.innerHTML = `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`; return; }
+  const esc = escHtml;
   if (window.innerWidth <= 768) {
     el.innerHTML = cache.expenses.map(e=>`
       <div class="m-card" onclick="editExpense('${e.id}')">
         <div class="m-card-main">
-          <div class="m-card-title">${e.vendor}</div>
-          <div class="m-card-sub"><span class="badge badge-gray">${e.category}</span>${e.reimbursed?' <span class="badge badge-green">Reimbursed</span>':''}</div>
-          ${e.description?`<div class="m-card-meta">${e.description}</div>`:''}
-          <div class="m-card-meta">${fmtDate(e.date)} · ${e.method||'—'}${e.receipt_path?` · <span onclick="event.stopPropagation();viewReceipt('${e.receipt_path}')" style="color:var(--accent);cursor:pointer"><i class="ti ti-paperclip"></i> Receipt</span>`:''}</div>
+          <div class="m-card-title">${esc(e.vendor)}</div>
+          <div class="m-card-sub"><span class="badge badge-gray">${esc(e.category)}</span>${e.reimbursed?' <span class="badge badge-green">Reimbursed</span>':''}</div>
+          ${e.description?`<div class="m-card-meta">${esc(e.description)}</div>`:''}
+          <div class="m-card-meta">${fmtDate(e.date)} · ${esc(e.method)||'—'}${e.receipt_path?` · <span onclick="event.stopPropagation();viewReceipt('${e.receipt_path}')" style="color:var(--accent);cursor:pointer"><i class="ti ti-paperclip"></i> Receipt</span>`:''}</div>
         </div>
         <div class="m-card-right">
           <div class="m-card-amount red">${fmt(e.amount)}</div>
@@ -2305,7 +2298,7 @@ function renderExpenses() {
         </div>
       </div>`).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${cache.expenses.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${e.vendor}</td><td><span class="badge badge-gray">${e.category}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.description||'—'}</td><td>${e.method||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${cache.expenses.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
@@ -2389,18 +2382,19 @@ async function viewReceipt(path) {
 function openExpenseModal(exp) {
   editingExpense = exp || null;
   pendingReceiptFile = null; pendingReceiptRemove = false;
+  const e = exp || {};
   document.getElementById('exp-title').textContent = exp?'Edit Expense':'New Expense';
-  document.getElementById('exp-id').value = exp?exp.id:'';
-  document.getElementById('exp-date').value = exp?exp.date:today();
-  document.getElementById('exp-vendor').value = exp?exp.vendor:'';
-  renderCategoryOptions(exp?exp.category:'');
-  renderExpInvoiceOptions(exp?exp.invoice_id:'');
-  document.getElementById('exp-category').value = exp?exp.category:(getCategories()[0]||'Other');
-  document.getElementById('exp-amount').value = exp?exp.amount:'';
-  document.getElementById('exp-method').value = exp?exp.method:'Credit Card';
-  document.getElementById('exp-desc').value = exp?exp.description:'';
-  document.getElementById('exp-reimbursed').checked = exp?!!exp.reimbursed:false;
-  document.getElementById('exp-account').innerHTML = cache.accounts.map(a=>`<option value="${a.id}">${a.name}</option>`).join('');
+  document.getElementById('exp-id').value = e.id||'';
+  document.getElementById('exp-date').value = e.date||today();
+  document.getElementById('exp-vendor').value = e.vendor||'';
+  renderCategoryOptions(e.category||'');
+  renderExpInvoiceOptions(e.invoice_id||'');
+  document.getElementById('exp-category').value = e.category||(getCategories()[0]||'Other');
+  document.getElementById('exp-amount').value = e.amount||'';
+  document.getElementById('exp-method').value = e.method||'Credit Card';
+  document.getElementById('exp-desc').value = e.description||'';
+  document.getElementById('exp-reimbursed').checked = !!e.reimbursed;
+  document.getElementById('exp-account').innerHTML = cache.accounts.map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('');
   if (exp) document.getElementById('exp-account').value = exp.account_id||'';
   renderReceiptState(exp);
   openModal('modal-expense');
@@ -2617,6 +2611,7 @@ function renderAccounts() {
   const el = document.getElementById('accounts-table');
   if (!cache.accounts.length) { el.innerHTML=`<div class="empty"><i class="ti ti-credit-card"></i><p>No accounts yet</p></div>`; return; }
   const types=['Bank','Accounts Receivable','Accounts Payable','Credit Card','Income','Expense','Equity','Other Asset','Other Liability'];
+  const esc = escHtml;
   if (window.innerWidth <= 768) {
     let h='';
     types.forEach(t=>{
@@ -2625,8 +2620,8 @@ function renderAccounts() {
       h+=accs.map(a=>`
         <div class="m-card" onclick="editAccount('${a.id}')">
           <div class="m-card-main">
-            <div class="m-card-title">${a.name}</div>
-            ${a.description?`<div class="m-card-meta">${a.description}</div>`:''}
+            <div class="m-card-title">${esc(a.name)}</div>
+            ${a.description?`<div class="m-card-meta">${esc(a.description)}</div>`:''}
           </div>
           <div class="m-card-right">
             <div class="m-card-amount">${fmt(a.balance)}</div>
@@ -2643,18 +2638,19 @@ function renderAccounts() {
     types.forEach(t=>{
       const accs=cache.accounts.filter(a=>a.type===t); if(!accs.length) return;
       html+=`<tr><td colspan="5" style="background:var(--bg2);font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-family:'JetBrains Mono',monospace;padding:.5rem 1rem">${t}</td></tr>`;
-      html+=accs.map(a=>`<tr><td style="padding-left:1.5rem;font-weight:500">${a.name}</td><td>${a.type}</td><td style="color:var(--text2)">${a.description||'—'}</td><td style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editAccount('${a.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteAccount('${a.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('');
+      html+=accs.map(a=>`<tr><td style="padding-left:1.5rem;font-weight:500">${esc(a.name)}</td><td>${esc(a.type)}</td><td style="color:var(--text2)">${esc(a.description)||'—'}</td><td style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editAccount('${a.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteAccount('${a.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('');
     });
     el.innerHTML=`<table><thead><tr><th>Account</th><th>Type</th><th>Description</th><th>Balance</th><th></th></tr></thead><tbody>${html}</tbody></table>`;
   }
 }
 
 function openAccountModal(a) {
-  document.getElementById('acc-id').value=a?a.id:'';
-  document.getElementById('acc-name').value=a?a.name:'';
-  document.getElementById('acc-type').value=a?a.type:'Bank';
-  document.getElementById('acc-balance').value=a?a.balance:'0';
-  document.getElementById('acc-desc').value=a?a.description:'';
+  a = a || {};
+  document.getElementById('acc-id').value = a.id||'';
+  document.getElementById('acc-name').value = a.name||'';
+  document.getElementById('acc-type').value = a.type||'Bank';
+  document.getElementById('acc-balance').value = a.balance!=null?a.balance:'0';
+  document.getElementById('acc-desc').value = a.description||'';
   openModal('modal-account');
 }
 function editAccount(id) { openAccountModal(cache.accounts.find(a=>a.id===id)); }
@@ -2874,7 +2870,7 @@ function closeModal(id) {
   // only unlock scroll if no other modal is still open
   if (!document.querySelector('.modal-overlay.open')) document.body.classList.remove('modal-open');
 }
-document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)this.classList.remove('open');}));
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)closeModal(this.id);}));
 
 // ====== BOOT ======
 async function boot() {
@@ -2948,9 +2944,7 @@ function toggleTheme() {
 })();
 
 // ====== LOCK ZOOM (iOS Safari) ======
-document.addEventListener('gesturestart', e=>e.preventDefault());
-document.addEventListener('gesturechange', e=>e.preventDefault());
-document.addEventListener('gestureend', e=>e.preventDefault());
+['gesturestart','gesturechange','gestureend'].forEach(t=>document.addEventListener(t, e=>e.preventDefault()));
 let lastTouch = 0;
 document.addEventListener('touchend', e=>{
   const now = Date.now();

@@ -1,1 +1,1 @@
-{"version":93,"note":"Fixed top bar overflow on mobile: page action buttons (Recurring/New…) now collapse to icons so the settings gear and theme toggle no longer get pushed off-screen"}
+{"version":94,"note":"Fixes: click-outside no longer leaves the scroll lock stuck; edit forms no longer show literal \"undefined\" when an optional field is empty; expense and account lists now escape names so a < in a vendor or account name doesn't break the row."}
