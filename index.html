@@ -649,7 +649,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="sidebar-nav-scroll">
     <div class="nav-section">Overview</div>
     <div class="nav-item active" onclick="showPage('dashboard',this)"><i class="ti ti-layout-dashboard"></i><span>Home</span></div>
-    <div class="nav-item" onclick="showPage('calendar',this)"><i class="ti ti-calendar"></i><span>Calendar</span></div>
     <div class="nav-section">Money In</div>
     <div class="nav-item" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i><span>Invoices</span></div>
     <div class="nav-item" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
@@ -691,8 +690,27 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <div class="stat-card"><div class="stat-label">Outstanding</div><div class="stat-value amber" id="stat-outstanding">$0.00</div><div class="stat-sub">Unpaid invoices</div></div>
         </div>
         <div class="card">
-          <div class="card-header"><h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button></div>
+          <div class="card-header"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button></div>
           <div id="upcoming-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-header" onclick="toggleCalendar()" style="cursor:pointer;user-select:none">
+            <h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Calendar</h3>
+            <i class="ti ti-chevron-down" id="calendar-chevron" style="transition:transform .2s;color:var(--text3)"></i>
+          </div>
+          <div id="calendar-body" style="display:none">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;gap:.5rem;border-bottom:1px solid var(--border)">
+              <button class="btn btn-sm" onclick="event.stopPropagation();calNavMonth(-1)" title="Previous month"><i class="ti ti-chevron-left"></i></button>
+              <div style="display:flex;align-items:center;gap:.5rem;flex:1;justify-content:center">
+                <div id="cal-month-label" style="font-weight:700;font-size:15px;letter-spacing:-.2px"></div>
+                <button class="btn btn-sm" onclick="event.stopPropagation();calNavToday()" title="Jump to today"><i class="ti ti-target"></i> Today</button>
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openJobModal()" title="New Job"><i class="ti ti-plus"></i></button>
+              </div>
+              <button class="btn btn-sm" onclick="event.stopPropagation();calNavMonth(1)" title="Next month"><i class="ti ti-chevron-right"></i></button>
+            </div>
+            <div id="cal-grid" class="cal-grid"></div>
+            <div id="cal-day-jobs" style="padding:.75rem 1rem"></div>
+          </div>
         </div>
         <div class="two-col">
           <div class="card">
@@ -733,22 +751,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div id="report-content"></div>
           </div>
         </div>
-      </div>
-
-      <!-- CALENDAR -->
-      <div id="page-calendar" class="page">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;gap:.5rem">
-          <button class="btn btn-sm" onclick="calNavMonth(-1)" title="Previous month"><i class="ti ti-chevron-left"></i></button>
-          <div style="display:flex;align-items:center;gap:.6rem;flex:1;justify-content:center">
-            <div id="cal-month-label" style="font-weight:700;font-size:16px;letter-spacing:-.2px"></div>
-            <button class="btn btn-sm" onclick="calNavToday()" title="Jump to today"><i class="ti ti-target"></i> Today</button>
-          </div>
-          <button class="btn btn-sm" onclick="calNavMonth(1)" title="Next month"><i class="ti ti-chevron-right"></i></button>
-        </div>
-        <div class="card" style="padding:0;overflow:hidden">
-          <div id="cal-grid" class="cal-grid"></div>
-        </div>
-        <div id="cal-day-jobs" style="margin-top:1rem"></div>
       </div>
 
       <!-- INVOICES -->
@@ -1159,7 +1161,7 @@ let currentPage = 'dashboard';
 
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
-const pageRenderers = { dashboard: renderDashboard, calendar: renderCalendar, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccounts, mileage: renderMileage, settings: loadSettingsForm };
+const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccounts, mileage: renderMileage, settings: loadSettingsForm };
 let _viewResizeTimer = null;
 let _lastIsMobile = window.innerWidth <= 768;
 function rerenderCurrentView() {
@@ -1327,13 +1329,12 @@ function showPage(page, el) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   if (el) { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
-  const titles = {dashboard:'Dashboard',calendar:'Calendar',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Chart of Accounts',mileage:'Mileage',settings:'Settings'};
+  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Chart of Accounts',mileage:'Mileage',settings:'Settings'};
   document.getElementById('page-title').textContent = titles[page]||page;
   updateTopbarLogo();
   const bc = document.getElementById('topbar-breadcrumb-page');
   if (bc) bc.textContent = titles[page]||page;
   const actions = {
-    calendar:`<button class="btn btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>New Job</span></button>`,
     invoices:`<button class="btn" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> <span>New Invoice</span></button>`,
     customers:`<button class="btn btn-primary" onclick="openCustomerModal()"><i class="ti ti-plus"></i> <span>New Customer</span></button>`,
     expenses:`<button class="btn" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
@@ -3020,6 +3021,15 @@ function toggleReports() {
   body.style.display = open ? 'none' : 'block';
   if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
   if (!open) renderReport(currentReport); // render fresh when opening
+}
+
+function toggleCalendar() {
+  const body = document.getElementById('calendar-body');
+  const chev = document.getElementById('calendar-chevron');
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+  if (!open) renderCalendar();
 }
 
 function showReport(r,el) { currentReport=r; document.querySelectorAll('#report-tabs .tab').forEach(t=>t.classList.remove('active')); if(el)el.classList.add('active'); renderReport(r); }

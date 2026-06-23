@@ -1,1 +1,1 @@
-{"version":102,"note":"Consolidated to a single Cloudflare Worker that serves both the app and the push backend. After this deploys: visit bookkeeper.casejohnstoncomputerrepair.workers.dev (the URL you've been using) — Calendar, jobs, push, all in one place."}
+{"version":103,"note":"Calendar is now a collapsible card on the dashboard (just like Reports). Tap the header to show/hide the month grid. The standalone Calendar nav item was removed — everything's on the dashboard now."}
