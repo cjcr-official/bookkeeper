@@ -1265,6 +1265,14 @@ function updateTopbarLogo() {
     if (sbImg) sbImg.style.display = 'none';
     if (sbSvg) sbSvg.style.display = '';
   }
+  // Browser tab favicon + Add-to-Home-Screen icon: use the uploaded logo when set.
+  // iOS caches the home-screen icon at install time — existing installs need a remove + re-add.
+  const src = profile.logo || 'icon.png';
+  ['icon','apple-touch-icon'].forEach(rel => {
+    let l = document.querySelector(`link[rel="${rel}"]`);
+    if (!l) { l = document.createElement('link'); l.rel = rel; document.head.appendChild(l); }
+    l.href = src;
+  });
 }
 
 function renderDashboard() {

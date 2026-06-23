@@ -1,1 +1,1 @@
-{"version":95,"note":"Your uploaded business logo now appears in the desktop sidebar in place of the Bookkeeper book icon. The small logo in the top bar is hidden on desktop (still visible on phone, where there's no sidebar)."}
+{"version":96,"note":"Your uploaded business logo is now used as the browser tab favicon and the Add-to-Home-Screen icon. Note: iOS caches the home-screen icon at install time — if you already added Bookkeeper to your home screen, remove it and re-add it to pick up the new icon."}
