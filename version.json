@@ -1,1 +1,1 @@
-{"version":94,"note":"Fixes: click-outside no longer leaves the scroll lock stuck; edit forms no longer show literal \"undefined\" when an optional field is empty; expense and account lists now escape names so a < in a vendor or account name doesn't break the row."}
+{"version":95,"note":"Your uploaded business logo now appears in the desktop sidebar in place of the Bookkeeper book icon. The small logo in the top bar is hidden on desktop (still visible on phone, where there's no sidebar)."}

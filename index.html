@@ -122,6 +122,7 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .topbar-breadcrumb{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace}
 .topbar-right{display:flex;align-items:center;gap:.5rem}
 .content{padding:1.5rem;flex:1}
+@media(min-width:769px){#topbar-logo{display:none!important}}
 
 /* ── BUTTONS ── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:.45rem .9rem;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all .15s;white-space:nowrap}
@@ -616,7 +617,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <nav class="sidebar">
     <div class="sidebar-logo">
       <div style="display:flex;align-items:center;gap:10px;padding:0">
-        <svg width="32" height="32" viewBox="0 0 92 94"><use href="#bk-logo"/></svg>
+        <svg id="sidebar-logo-svg" width="32" height="32" viewBox="0 0 92 94"><use href="#bk-logo"/></svg>
+        <img id="sidebar-logo-img" alt="logo" style="display:none;width:32px;height:32px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px">
         <div>
           <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:16px;color:var(--text);letter-spacing:-0.3px;line-height:1.1">Bookkeeper</div>
           <span id="user-company-name" style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">Free accounting</span>
@@ -1251,10 +1253,18 @@ function showPage(page, el) {
 
 // ====== DASHBOARD ======
 function updateTopbarLogo() {
-  const el = document.getElementById('topbar-logo');
-  if (!el) return;
-  if (profile.logo) { el.src = profile.logo; el.style.display = ''; }
-  else { el.style.display = 'none'; }
+  const tb = document.getElementById('topbar-logo');
+  const sbSvg = document.getElementById('sidebar-logo-svg');
+  const sbImg = document.getElementById('sidebar-logo-img');
+  if (profile.logo) {
+    if (tb) { tb.src = profile.logo; tb.style.display = ''; }
+    if (sbImg) { sbImg.src = profile.logo; sbImg.style.display = ''; }
+    if (sbSvg) sbSvg.style.display = 'none';
+  } else {
+    if (tb) tb.style.display = 'none';
+    if (sbImg) sbImg.style.display = 'none';
+    if (sbSvg) sbSvg.style.display = '';
+  }
 }
 
 function renderDashboard() {
