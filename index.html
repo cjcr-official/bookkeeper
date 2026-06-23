@@ -668,6 +668,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <div class="stat-card"><div class="stat-label">Net Profit</div><div class="stat-value" id="stat-profit">$0.00</div><div class="stat-sub">Revenue − Expenses</div></div>
           <div class="stat-card"><div class="stat-label">Outstanding</div><div class="stat-value amber" id="stat-outstanding">$0.00</div><div class="stat-sub">Unpaid invoices</div></div>
         </div>
+        <div class="card">
+          <div class="card-header"><h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3></div>
+          <div id="upcoming-list"></div>
+        </div>
         <div class="two-col">
           <div class="card">
             <div class="card-header">
@@ -1329,7 +1333,64 @@ function renderDashboard() {
     ? `<div class="dash-wrap"><table class="dash-table dash-exp"><tbody>${rexp.map(e=>`<tr><td style="white-space:nowrap;font-size:11.5px;color:#888">${fmtDate(e.date)}</td><td>${esc(e.vendor)}</td><td class="red" style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table></div>`
     : `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`;
 
+  renderUpcoming();
   // Reports render on demand when the collapsible card is opened (see toggleReports)
+}
+
+function renderUpcoming() {
+  const el = document.getElementById('upcoming-list');
+  if (!el) return;
+  const todayStr = today();
+  const h = new Date(); h.setDate(h.getDate()+30);
+  const horizon = h.toISOString().slice(0,10);
+  const items = [];
+  (cache.recurring||[]).forEach(r => {
+    if (!r.active || !r.next_date || r.next_date > horizon) return;
+    const d = r.data || {};
+    const who = r.kind==='invoice'
+      ? ((cache.customers.find(c=>c.id===d.customer_id)||{}).name||'')
+      : (d.vendor||'');
+    items.push({
+      date: r.next_date,
+      type: r.kind==='invoice' ? 'Recurring invoice' : 'Recurring expense',
+      label: r.label || who || '—',
+      icon: 'ti-repeat',
+      onclick: `openRecurringManager('${r.kind}')`,
+      amount: parseFloat(d.amount||0),
+      overdue: false,
+    });
+  });
+  (cache.invoices||[]).forEach(i => {
+    if (i.status==='draft' || effectiveStatus(i)==='paid' || !i.due || i.due > horizon) return;
+    const overdue = i.due < todayStr;
+    items.push({
+      date: i.due,
+      type: overdue ? 'Overdue invoice' : 'Invoice due',
+      label: `#${i.number||''} · ${i.customer_name||'—'}`,
+      icon: 'ti-file-invoice',
+      onclick: `editInvoice('${i.id}')`,
+      amount: balanceDue(i),
+      overdue,
+    });
+  });
+  items.sort((a,b) => a.date.localeCompare(b.date));
+  if (!items.length) {
+    el.innerHTML = `<div class="empty" style="padding:1.5rem 1rem"><i class="ti ti-calendar-check"></i><p>Nothing due in the next 30 days</p></div>`;
+    return;
+  }
+  const esc = escHtml;
+  el.innerHTML = items.map(it => `
+    <div onclick="${it.onclick}" style="display:flex;align-items:center;gap:.75rem;padding:.65rem 1rem;border-bottom:1px solid var(--border);cursor:pointer">
+      <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:${it.overdue?'var(--red-bg)':'var(--accent-bg)'};color:${it.overdue?'var(--red)':'var(--accent-text)'};border-radius:8px;flex-shrink:0"><i class="ti ${it.icon}"></i></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.label)}</div>
+        <div style="font-size:10.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;margin-top:.1rem">${it.type}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:12.5px;font-weight:600;${it.overdue?'color:var(--red)':''};font-family:'JetBrains Mono',monospace">${fmtDate(it.date)}</div>
+        ${it.amount>0?`<div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:.1rem">${fmt(it.amount)}</div>`:''}
+      </div>
+    </div>`).join('');
 }
 
 // ====== INVOICES ======
