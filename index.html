@@ -1928,9 +1928,6 @@ function viewInvoice(id) {
   const p = profile || {};
   const cust = cache.customers.find(x=>x.id===inv.customer_id) || {};
   const lines = inv.lines || [];
-  // derive an hourly rate to show (if all line rates match, show that; else blank)
-  const rates = [...new Set(lines.map(l=>parseFloat(l.rate||0)).filter(r=>r>0))];
-  const hourly = rates.length===1 ? rates[0] : null;
   const custExpenses = (cache.expenses||[]).filter(e=>e.invoice_id===inv.id);
   const bizName = p.company || 'My Business';
   const bizAddr = fmtAddress(p.address);
@@ -1971,8 +1968,6 @@ function viewInvoice(id) {
         </div>
       </div>`:''}
     </div>
-
-    ${hourly!==null?`<div style="margin-bottom:1rem"><div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#666">HOURLY RATE</div><div style="margin-top:.2rem">${fmt(hourly)} per hour</div></div>`:''}
 
     <!-- LINE ITEMS -->
     <table style="width:100%;border-collapse:collapse;margin-bottom:1.25rem;font-size:13px;table-layout:fixed">

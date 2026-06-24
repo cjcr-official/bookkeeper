@@ -1,1 +1,1 @@
-{"version":105,"note":"Invoice mileage fixes: Trips Made now defaults to 0 on new invoices, and saving with Trips=0 actually saves 0 (was silently forced back to 1 by a falsy-coalescing bug)."}
+{"version":106,"note":"Removed the HOURLY RATE block from the invoice header (and its helper code)."}
