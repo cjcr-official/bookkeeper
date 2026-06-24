@@ -807,7 +807,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <select id="s-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD ($)</option><option value="AUD">AUD ($)</option></select>
             </div>
             <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
-            <div class="form-group"><label>Google Routes API Key <span style="color:var(--text3);font-weight:400;font-size:11px">(optional — exact Google mileage)</span></label><div style="position:relative"><input id="s-ors-key" type="password" placeholder="Paste your Google Maps Platform API key" autocomplete="off" style="padding-right:40px"><button type="button" onclick="toggleKeyVisibility()" aria-label="Show/hide key" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;display:flex"><i id="s-ors-key-eye" class="ti ti-eye"></i></button></div><div style="font-size:11px;color:var(--text3);margin-top:.3rem">With a key, Calculate uses Google's Routes API for exact, Google-matching distances. Without one, it falls back to free estimates. Enable the "Routes API" on the key and (if you restrict it) allow your app's domain. Stored only on this device.</div></div>
             <div class="form-group" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">
               <label>Notifications</label>
               <div id="push-status" style="font-size:13px;color:var(--text2);margin-bottom:.5rem">Loading…</div>
@@ -971,9 +970,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <div class="form-group"><label>Round-Trip Miles (from your base)</label>
         <div style="display:flex;gap:.5rem;align-items:center">
           <input id="cust-miles" type="number" min="0" step="0.1" placeholder="e.g. 24" style="flex:1">
-          <button class="btn btn-sm" id="cust-calc-btn" onclick="calcCustomerMiles()" type="button"><i class="ti ti-route"></i> Estimate</button>
+          <button class="btn btn-sm" id="cust-calc-btn" onclick="calcCustomerMiles()" type="button"><i class="ti ti-route"></i> Calculate</button>
+          <button class="btn btn-sm" type="button" onclick="openInMaps()" title="Open the route in Google Maps"><i class="ti ti-map"></i> Maps</button>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">With a Google key, Calculate returns exact, Google-matching round-trip miles; without one it uses a free estimate. You can also type it manually.</div></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Calculate uses the US Census Geocoder + OSRM (free, no key) — matches Google Maps within ~10%. For an exact Maps match, tap <b>Maps</b> to open the route and type the value in.</div></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-customer')">Cancel</button>
@@ -2120,10 +2120,6 @@ function openCustomerModal(c) {
   document.getElementById('cust-phone').value = c.phone||'';
   document.getElementById('cust-address').value = c.address||'';
   document.getElementById('cust-miles').value = c.miles||'';
-  (()=>{ const cb=document.getElementById('cust-calc-btn'); if(!cb) return;
-    const hk = !!((profile.routes_api_key||'') || lsGet('bk-ors-key','')).trim();
-    cb.innerHTML = '<i class="ti ti-route"></i> ' + (hk ? 'Calculate (Google)' : 'Estimate');
-  })();
   openModal('modal-customer');
 }
 function editCustomer(id) { openCustomerModal(cache.customers.find(c=>c.id===id)); }
@@ -2147,177 +2143,72 @@ function cleanAddr(s) {
     .replace(/\s+/g,' ').replace(/\s*,\s*/g,', ').trim();
 }
 
-// Build a precision ladder of query variants: exact -> drop house number
-// (road level) -> drop street (town/ZIP level). Rural house numbers often aren't
-// in OpenStreetMap, so we fall back to the road or town rather than failing.
-function addrVariants(q) {
-  const out = [];
-  const push = v => {
-    if (v) v = v.replace(/\s*,\s*/g, ', ').replace(/^,\s*|,\s*$/g, '').trim();
-    if (v && !out.includes(v)) out.push(v);
-  };
-  push(q);                                      // exact
-  push(q.replace(/^\s*\d+[a-zA-Z]?\s+/, ''));   // drop leading house number -> road
-  const parts = q.split(',').map(s => s.trim()).filter(Boolean);
-  if (parts.length > 1) push(parts.slice(1).join(', ')); // drop street -> town/ZIP
-  return out;
-}
-
-// Try one query string across the providers. Returns [lon,lat] or null if simply
-// not found; throws only when the services are unreachable (network/CORS).
-async function geocodeOne(q, key) {
-  let netErr = null;
-  if (key) {
-    try {
-      const url = 'https://api.openrouteservice.org/geocode/search?api_key=' + encodeURIComponent(key) + '&text=' + encodeURIComponent(q) + '&size=1';
-      const r = await fetch(url); netErr = null;
-      if (r.ok) { const j = await r.json(); if (j.features && j.features.length) return j.features[0].geometry.coordinates; }
-    } catch(e) { netErr = e; }
-  }
-  try {
-    const nr = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), { headers: { 'Accept': 'application/json' } });
-    netErr = null;
-    if (nr.ok) { const nj = await nr.json(); if (nj.length) return [parseFloat(nj[0].lon), parseFloat(nj[0].lat)]; }
-  } catch(e) { netErr = e; }
-  try {
-    const pr = await fetch('https://photon.komoot.io/api?limit=1&lang=en&q=' + encodeURIComponent(q));
-    netErr = null;
-    if (pr.ok) { const pj = await pr.json(); if (pj.features && pj.features.length) return pj.features[0].geometry.coordinates; }
-  } catch(e) { netErr = e; }
-  if (netErr) throw fetchErr(netErr, 'address lookup');
-  return null;
-}
-
-// Geocode to {coords:[lon,lat], approx:bool}. Walks the precision ladder until a
-// provider returns a hit; approx=true means it fell back below the exact address.
-async function geocodeAddress(address, key) {
-  const variants = addrVariants(cleanAddr(address));
-  for (let i = 0; i < variants.length; i++) {
-    const hit = await geocodeOne(variants[i], key);
-    if (hit) return { coords: hit, approx: i > 0 };
-  }
-  throw new Error('Address not found — try adding the city, state, and ZIP (e.g. "123 Main St, Plains, MT 59859").');
-}
-
-// Driving distance in meters between two [lon, lat] points. ORS if keyed,
-// otherwise (or on any ORS failure) the keyless OSRM demo router.
-async function routeMeters(a, b, key) {
-  if (key) {
-    try {
-      const url = 'https://api.openrouteservice.org/v2/directions/driving-car?api_key='+encodeURIComponent(key)
-        +'&start='+a[0]+','+a[1]+'&end='+b[0]+','+b[1];
-      const r = await fetch(url);
-      if (r.ok) {
-        const j = await r.json();
-        const d = j.features && j.features[0] && j.features[0].properties.summary.distance;
-        if (typeof d === 'number') return d;
-      }
-    } catch(e) { /* fall through to keyless router */ }
-  }
-  // Keyless fallback — OSRM demo server
-  const ourl = 'https://router.project-osrm.org/route/v1/driving/'+a[0]+','+a[1]+';'+b[0]+','+b[1]+'?overview=false';
-  let r2;
-  try { r2 = await fetch(ourl); }
-  catch(e) { throw fetchErr(e, 'routing'); }
-  if (!r2.ok) throw new Error('Routing failed ('+r2.status+')');
-  const j2 = await r2.json();
-  if (!j2.routes || !j2.routes.length) throw new Error('No driving route found between those addresses');
-  return j2.routes[0].distance; // meters
-}
-
-// EXACT distance via Google Routes API. Passes addresses straight to Google, so
-// Google does both geocoding and routing — the result matches Google Maps. Key +
-// field mask go in the query string so the only header is Content-Type (most
-// CORS-friendly). Returns one-way meters; throws a useful message on failure.
-// Resolve an address via our Worker /geocode proxy. The proxy does a hybrid
-// lookup (Google first, OSM fallback when Google drifts to the wrong road).
-// Returns either { placeId, ... } or { location: {lat,lng}, ... }; the caller
-// passes whichever to Routes API.
-async function googleGeocodePlace(address) {
-  if (!currentUser || !currentUser.id) throw new Error('Not signed in');
-  const url = '/geocode?uid=' + encodeURIComponent(currentUser.id)
-    + '&address=' + encodeURIComponent(cleanAddr(address));
+// Resolve an address to lat/lng via the Worker /geocode proxy (Census first,
+// Photon/OSM fallback). Returns { location:{lat,lng}, formattedAddress, source }.
+async function lookupAddress(address) {
+  const url = '/geocode?address=' + encodeURIComponent(cleanAddr(address));
   let r;
   try { r = await fetch(url); }
-  catch (e) { throw fetchErr(e, 'Google geocoding'); }
+  catch (e) { throw fetchErr(e, 'address lookup'); }
   const j = await r.json().catch(()=>({}));
   if (j && j.error) throw new Error('Geocoding: ' + j.error);
   if (!r.ok) throw new Error('Geocoding HTTP ' + r.status);
-  if (j.status !== 'OK' || !j.results || !j.results[0]) {
+  if (j.status !== 'OK' || !j.results || !j.results[0] || !j.results[0].location) {
     const detail = j.error_message ? ' — ' + j.error_message : '';
     throw new Error('Geocoding ' + (j.status || 'failed') + detail);
   }
-  const top = j.results[0];
-  return {
-    placeId: top.place_id || null,
-    location: top.location || null,
-    formattedAddress: top.formatted_address || '',
-    source: top.source || ''
-  };
+  return j.results[0];
 }
 
-async function googleRouteMeters(base, dest, key) {
-  // 1) Resolve both addresses via Worker /geocode (Census → Google → OSM)
-  const [originPlace, destPlace] = await Promise.all([
-    googleGeocodePlace(base),
-    googleGeocodePlace(dest)
-  ]);
-  if (!originPlace.location || !destPlace.location) {
-    throw new Error('Could not get coordinates for one or both addresses');
-  }
-  // 2) Route via Worker /route (Distance Matrix API — matches the Maps app
-  //    more closely than the newer Routes API).
-  const rUrl = '/route?uid=' + encodeURIComponent(currentUser.id)
-    + '&oLat=' + originPlace.location.lat + '&oLng=' + originPlace.location.lng
-    + '&dLat=' + destPlace.location.lat + '&dLng=' + destPlace.location.lng;
-  let rr;
-  try { rr = await fetch(rUrl); }
+// Driving distance in meters between two addresses, via the Worker /route
+// proxy (OSRM). Returns { meters, originAddress, destAddress }.
+async function calcRouteMeters(base, dest) {
+  const [o, d] = await Promise.all([lookupAddress(base), lookupAddress(dest)]);
+  const url = '/route?oLat=' + o.location.lat + '&oLng=' + o.location.lng
+    + '&dLat=' + d.location.lat + '&dLng=' + d.location.lng;
+  let r;
+  try { r = await fetch(url); }
   catch (e) { throw fetchErr(e, 'route lookup'); }
-  const rj = await rr.json().catch(()=>({}));
-  if (rj && rj.error) throw new Error('Route: ' + rj.error);
-  if (!rr.ok) throw new Error('Route HTTP ' + rr.status);
-  if (typeof rj.meters !== 'number') throw new Error('Route: no distance returned');
-  return { meters: rj.meters, originAddress: originPlace.formattedAddress, destAddress: destPlace.formattedAddress };
+  const j = await r.json().catch(()=>({}));
+  if (j && j.error) throw new Error('Route: ' + j.error);
+  if (!r.ok) throw new Error('Route HTTP ' + r.status);
+  if (typeof j.meters !== 'number') throw new Error('Route: no distance returned');
+  return { meters: j.meters, originAddress: o.formatted_address, destAddress: d.formatted_address };
 }
 
 async function calcCustomerMiles() {
-  const key = ((profile.routes_api_key||'') || lsGet('bk-ors-key','')).trim();
   const base = (profile.base_address||'').trim();
   if (!base) { showToast('Set your base address in Settings first','error'); return; }
   const dest = (document.getElementById('cust-address').value||'').trim();
   if (!dest) { showToast('Enter the customer address first','error'); return; }
   const btn = document.getElementById('cust-calc-btn');
-  const orig = btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
-  const setRT = m => { const rt = Math.round((m/1609.344)*2*100)/100; document.getElementById('cust-miles').value = rt; return rt; };
-  // Keyless estimate (OSM) — used directly or as a fallback when Google fails.
-  const estimate = async () => {
-    const a = await geocodeAddress(base, '');
-    const b = await geocodeAddress(dest, '');
-    const m = await routeMeters(a.coords, b.coords, '');
-    return { rt: setRT(m), approx: a.approx || b.approx };
-  };
+  const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
   try {
-    if (key) {
-      try {
-        const g = await googleRouteMeters(base, dest, key); // {meters, originAddress, destAddress}
-        const rt = setRT(g.meters);
-        const owMi = Math.round((g.meters/1609.344)*100)/100;
-        showToast('Round trip: '+rt+' mi (Google · '+owMi+' mi one-way) → '+(g.destAddress||'?'),'success');
-        return;
-      } catch(ge) {
-        // Google failed — fall back to the free estimate but say why.
-        const r = await estimate();
-        showToast('Google: '+(ge.message||'failed')+' — free estimate used: '+r.rt+' mi','error');
-        return;
-      }
-    }
-    const r = await estimate();
-    showToast('Round trip: '+r.rt+' mi'+(r.approx ? ' (approx — verify)' : ''), r.approx ? '' : 'success');
-  } catch(e) {
-    showToast(e.message||'Could not calculate distance','error');
+    const g = await calcRouteMeters(base, dest);
+    const rt = Math.round((g.meters/1609.344)*2*100)/100;
+    document.getElementById('cust-miles').value = rt;
+    const owMi = Math.round((g.meters/1609.344)*100)/100;
+    showToast('Round trip: '+rt+' mi · '+owMi+' mi one-way → '+(g.destAddress||'?'), 'success');
+  } catch (e) {
+    showToast(e.message || 'Could not calculate distance', 'error');
   } finally {
-    btn.disabled=false; btn.innerHTML=orig;
+    btn.disabled = false; btn.innerHTML = orig;
   }
+}
+
+// Open Google Maps directions for this customer in a new tab. For when you
+// need a distance that exactly matches the Maps app (developer APIs don't
+// expose the same routing engine, so we link out instead of guessing).
+function openInMaps() {
+  const base = (profile.base_address||'').trim();
+  const dest = (document.getElementById('cust-address').value||'').trim();
+  if (!base) { showToast('Set your base address in Settings first','error'); return; }
+  if (!dest) { showToast('Enter the customer address first','error'); return; }
+  const url = 'https://www.google.com/maps/dir/?api=1'
+    + '&origin=' + encodeURIComponent(cleanAddr(base))
+    + '&destination=' + encodeURIComponent(cleanAddr(dest))
+    + '&travelmode=driving';
+  window.open(url, '_blank', 'noopener');
 }
 
 async function saveCustomer() {
@@ -3222,11 +3113,6 @@ function loadSettingsForm() {
   document.getElementById('s-phone').value=profile.phone||'';
   document.getElementById('s-currency').value=profile.currency||'USD';
   document.getElementById('s-base-address').value=profile.base_address||'';
-  // Routes API key now lives on the profile (syncs across devices). Fall back to the
-  // legacy device-only localStorage value if the column hasn't been populated yet.
-  document.getElementById('s-ors-key').value = profile.routes_api_key || lsGet('bk-ors-key','');
-  document.getElementById('s-ors-key').type = 'password';
-  document.getElementById('s-ors-key-eye').className = 'ti ti-eye';
   renderLogoState();
   renderPushStatus();
   document.getElementById('user-email-display').textContent=currentUser.email;
@@ -3289,22 +3175,21 @@ async function removeLogo() {
   showToast('Logo removed');
 }
 
-function toggleKeyVisibility() {
-  const inp = document.getElementById('s-ors-key');
-  const eye = document.getElementById('s-ors-key-eye');
-  if (inp.type === 'password') { inp.type = 'text'; eye.className = 'ti ti-eye-off'; }
-  else { inp.type = 'password'; eye.className = 'ti ti-eye'; }
-}
-
 async function saveSettings() {
-  const keyVal = document.getElementById('s-ors-key').value.trim();
-  const row={company:document.getElementById('s-company').value,address:document.getElementById('s-address').value,email:document.getElementById('s-email').value,phone:document.getElementById('s-phone').value,tax:0,currency:document.getElementById('s-currency').value,base_address:document.getElementById('s-base-address').value,routes_api_key:keyVal||null};
-  const {error}=await sb.from('profiles').upsert({id:currentUser.id,...row});
-  if (error) { showToast(error.message,'error'); return; }
-  profile={...profile,...row};
-  lsSet('bk-ors-key', keyVal); // keep local cache too so the calc button still works if profile load is slow
-  document.getElementById('user-company-name').textContent=row.company||'My Business';
-  showToast('Settings saved','success');
+  const row = {
+    company: document.getElementById('s-company').value,
+    address: document.getElementById('s-address').value,
+    email:   document.getElementById('s-email').value,
+    phone:   document.getElementById('s-phone').value,
+    tax: 0,
+    currency: document.getElementById('s-currency').value,
+    base_address: document.getElementById('s-base-address').value
+  };
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, ...row });
+  if (error) { showToast(error.message, 'error'); return; }
+  profile = { ...profile, ...row };
+  document.getElementById('user-company-name').textContent = row.company || 'My Business';
+  showToast('Settings saved', 'success');
 }
 
 // ====== PUSH NOTIFICATIONS (daily reminder via the Cloudflare Worker cron) ======
