@@ -1035,7 +1035,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
         </select>
       </div>
       <div class="form-group"><label>Notes</label><textarea id="job-notes" rows="3"></textarea></div>
-      <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.5rem 0;font-weight:500">
+      <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.4rem 0;font-weight:500">
+        <input type="checkbox" id="job-repeat" style="width:18px;height:18px;flex-shrink:0">
+        <span>Repeats monthly <span style="color:var(--text3);font-weight:400;font-size:12px">(creates 11 more on the same day next 11 months)</span></span>
+      </label>
+      <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.4rem 0;font-weight:500">
         <input type="checkbox" id="job-done" style="width:18px;height:18px;flex-shrink:0">
         <span>Done <span style="color:var(--text3);font-weight:400;font-size:12px">(hides it from Upcoming)</span></span>
       </label>
@@ -2471,6 +2475,7 @@ function openJobModal(job) {
   sel.value = j.customer_id || '';
   document.getElementById('job-remind').value = (j.remind_minutes != null ? String(j.remind_minutes) : '');
   document.getElementById('job-notes').value = j.notes || '';
+  document.getElementById('job-repeat').checked = !!j.repeat_monthly;
   document.getElementById('job-done').checked = !!j.done;
   document.getElementById('job-delete-btn').style.display = j.id ? '' : 'none';
   openModal('modal-job');
@@ -2480,6 +2485,7 @@ function editJob(id) { openJobModal((cache.jobs||[]).find(j=>j.id===id)); }
 async function saveJob() {
   const id = document.getElementById('job-id').value;
   const remindVal = document.getElementById('job-remind').value;
+  const repeatMonthly = document.getElementById('job-repeat').checked;
   const row = {
     user_id: currentUser.id,
     title: document.getElementById('job-title-input').value.trim(),
@@ -2489,15 +2495,52 @@ async function saveJob() {
     notes: document.getElementById('job-notes').value,
     done: document.getElementById('job-done').checked,
     remind_minutes: remindVal === '' ? null : parseInt(remindVal),
+    repeat_monthly: repeatMonthly,
     reminded_at: null
   };
   if (!row.title) { showToast('Title is required','error'); return; }
   if (!row.date)  { showToast('Date is required','error'); return; }
-  let err;
+  let err, savedId = id;
   if (id) { const r = await sb.from('jobs').update(row).eq('id',id); err=r.error; if(!err){const i=cache.jobs.findIndex(x=>x.id===id); if(i>-1) cache.jobs[i]={...cache.jobs[i],...row};} }
-  else    { const r = await sb.from('jobs').insert(row).select().single(); err=r.error; if(!err&&r.data) cache.jobs.unshift(r.data); }
+  else    { const r = await sb.from('jobs').insert(row).select().single(); err=r.error; if(!err&&r.data){ cache.jobs.unshift(r.data); savedId = r.data.id; } }
   if (err) { showToast(err.message,'error'); return; }
-  showToast('Job saved','success'); closeModal('modal-job'); renderUpcoming(); renderCalendar();
+  let extra = 0;
+  if (repeatMonthly) extra = await generateMonthlyJobInstances({...row, id: savedId}, 11);
+  showToast(extra ? `Job saved · ${extra} more scheduled` : 'Job saved','success');
+  closeModal('modal-job'); renderUpcoming(); renderCalendar();
+}
+
+// Add `count` more monthly instances of `baseRow` (same day of month, clamped
+// to last day if the target month is shorter). Skips months that already have
+// a job with the same title + customer_id on the target date.
+async function generateMonthlyJobInstances(baseRow, count) {
+  let created = 0;
+  for (let m = 1; m <= count; m++) {
+    const targetDate = addMonths(baseRow.date, m);
+    const dup = (cache.jobs||[]).some(j =>
+      j.id !== baseRow.id &&
+      j.date === targetDate &&
+      (j.title||'') === (baseRow.title||'') &&
+      (j.customer_id||null) === (baseRow.customer_id||null)
+    );
+    if (dup) continue;
+    const clone = { ...baseRow, date: targetDate, reminded_at: null };
+    delete clone.id;
+    const r = await sb.from('jobs').insert(clone).select().single();
+    if (!r.error && r.data) { cache.jobs.unshift(r.data); created++; }
+  }
+  return created;
+}
+
+function addMonths(dateStr, months) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const targetIdx = (m - 1) + months;
+  const targetYear = y + Math.floor(targetIdx / 12);
+  const targetMonth = ((targetIdx % 12) + 12) % 12;
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const finalDay = Math.min(d, lastDay);
+  const pad = n => String(n).padStart(2,'0');
+  return `${targetYear}-${pad(targetMonth+1)}-${pad(finalDay)}`;
 }
 
 async function deleteJobFromModal() {
