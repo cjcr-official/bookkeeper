@@ -1,1 +1,1 @@
-{"version":111,"note":"Mileage calc now matches Google Maps better on short trips. Routes API was defaulting to \"fastest\" (which detours via main roads); we now request alternative routes and pick the shortest, which is what Maps shows for short trips."}
+{"version":112,"note":"Mileage calc now asks Google for the SHORTER_DISTANCE reference route (Routes API's purpose-built feature for this) instead of the default ETA-optimized route. Distances should now match what the Maps app shows for short trips."}

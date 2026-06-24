@@ -2232,16 +2232,18 @@ async function routeMeters(a, b, key) {
 async function googleRouteMeters(base, dest, key) {
   const url = 'https://routes.googleapis.com/directions/v2:computeRoutes'
     + '?key=' + encodeURIComponent(key)
-    + '&fields=' + encodeURIComponent('routes.distanceMeters');
-  // Request alternative routes and pick the shortest by distance. Routes API
-  // defaults to "fastest" which on short trips prefers main roads even when a
-  // shorter back-streets route exists — that's the route the Maps app picks.
+    + '&fields=' + encodeURIComponent('routes.distanceMeters,routes.routeLabels');
+  // Ask Routes API for an explicit shorter-distance route. Without this the
+  // API returns the DEFAULT_ROUTE (optimized for ETA, prefers main roads),
+  // which is longer than what the Maps app shows on short trips. With
+  // SHORTER_DISTANCE the response contains a second route labeled accordingly
+  // that prioritizes distance — matching what Maps displays.
   const body = {
     origin: { address: cleanAddr(base) },
     destination: { address: cleanAddr(dest) },
     travelMode: 'DRIVE',
     routingPreference: 'TRAFFIC_AWARE',
-    computeAlternativeRoutes: true,
+    requestedReferenceRoutes: ['SHORTER_DISTANCE'],
     units: 'IMPERIAL'
   };
   let r;
@@ -2255,9 +2257,12 @@ async function googleRouteMeters(base, dest, key) {
     throw new Error(msg);
   }
   const j = await r.json();
-  const dists = (j.routes||[]).map(rt => rt.distanceMeters).filter(d => typeof d === 'number');
-  if (!dists.length) throw new Error('No driving route found — check the addresses');
-  return Math.min(...dists); // one-way meters of the shortest alternative
+  const routes = j.routes || [];
+  const shorter = routes.find(rt => (rt.routeLabels||[]).includes('SHORTER_DISTANCE'));
+  const route = shorter || routes[0];
+  const d = route && route.distanceMeters;
+  if (typeof d !== 'number') throw new Error('No driving route found — check the addresses');
+  return d;
 }
 
 async function calcCustomerMiles() {
