@@ -1,1 +1,1 @@
-{"version":117,"note":"Mileage calc now requests Routes API alternatives AND the SHORTER_DISTANCE reference route, then picks the shortest of all returned options — closer to what the Maps app shows."}
+{"version":118,"note":"Mileage toast now shows the destination address Places API actually resolved to (e.g. \"...→ 35 Deemer Creek Rd, Plains, MT 59859, USA\"). If the formatted address differs from what you typed, that's where the distance drift comes from."}
