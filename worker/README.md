@@ -1,90 +1,113 @@
-# Bookkeeper Push Cron — Cloudflare Worker
+# Bookkeeper Worker
 
-Sends one daily Web Push notification per user who has invoices, recurring
-items, or jobs due within the next 2 days. Free tier: well under Cloudflare's
-free Worker quota and Mailchannels-style cost is zero.
+One Cloudflare Worker (`bookkeeper`, per `wrangler.toml`) that does two jobs:
+
+1. **Serves the app** — `index.html`, `sw.js`, `manifest.json`, `version.json`,
+   and icons are bundled as static assets via the `[assets]` binding.
+2. **Fires push reminders** — a cron trigger runs every minute, checks for
+   jobs whose `remind_minutes` window is open, and sends a Web Push to the
+   user's subscribed device. The notification text comes from `sw.js`
+   (payload-less push — no per-recipient encryption needed).
+
+Deploy happens automatically via Cloudflare Workers Builds whenever you push
+to `main` on GitHub.
+
+---
 
 ## One-time setup
 
-### 1. Generate a VAPID keypair
-
-Open `vapid-keygen.html` in any browser (just double-click the file). Click
-**Generate**. You'll get a public key (safe to publish) and a private key
-(secret). Save both somewhere you won't lose them — they're not regenerable
-without re-subscribing every device.
-
-### 2. Add the push column to Supabase
-
-In Supabase → SQL Editor, run:
+### 1. SQL migrations (Supabase → SQL Editor)
 
 ```sql
 alter table profiles add column if not exists push_subscription jsonb;
+alter table jobs     add column if not exists remind_minutes integer;
+alter table jobs     add column if not exists reminded_at    timestamptz;
+alter table jobs     add column if not exists repeat_monthly boolean default false;
 ```
 
-### 3. Paste the public key into `index.html`
+(Plus everything else in `CLAUDE.md` → Database if starting from scratch.)
 
-Find the line near the top of the `<script>`:
+### 2. Generate VAPID keys
 
-```js
-const VAPID_PUBLIC_KEY = '';
+Open `vapid-keygen.html` in any browser (double-click the file). Click
+**Generate**. You'll get a public key (safe to publish) and a private key
+(secret). Rotating later requires re-subscribing every device, so save both.
+
+### 3. Update `wrangler.toml`
+
+The public key + subject already live as plaintext vars in `wrangler.toml`:
+
+```toml
+[vars]
+SUPABASE_URL = "https://fnfikvnxhylpuecshtix.supabase.co"
+VAPID_PUBLIC_KEY = "BERMR7TzR5rf0fQt_BcTOyOwiHIujwdr_S5dbutJhl1o_FyntPXRe7vuhx1xeACf5TqjgQLtPRpdFxfxRI0Wsfg"
+VAPID_SUBJECT = "mailto:casejohnstoncomputerrepair@hotmail.com"
 ```
 
-Paste the **public** key between the quotes. Commit + push so it goes live.
+If you rotated the keypair, replace `VAPID_PUBLIC_KEY` here.
 
-### 4. Create the Cloudflare Worker
+### 4. Connect Cloudflare Workers Builds to the GitHub repo
 
-In the Cloudflare dashboard → **Workers & Pages** → **Create** → **Worker**.
-Name it `bookkeeper-push`. Open the editor and replace the default code with
-the contents of `push-cron.js`. Click **Save and Deploy**.
+Cloudflare dashboard → **Workers & Pages** → **Create** → **Connect to Git**.
+Select the `cjcr-official/bookkeeper` repo. Project name: `bookkeeper`. Build
+command empty; deploy command `npx wrangler deploy`. Click Deploy. Cloudflare
+reads `wrangler.toml` (worker name `bookkeeper`, assets binding, cron) and
+sets everything up.
 
-### 5. Set the Worker variables and secrets
+### 5. Add the secrets
 
-In the Worker's **Settings → Variables and Secrets**, add:
+Worker → **Settings → Variables and Secrets** → Add:
 
 | Name                   | Type      | Value |
 |------------------------|-----------|-------|
-| `SUPABASE_URL`         | Plaintext | `https://fnfikvnxhylpuecshtix.supabase.co` |
 | `SUPABASE_SERVICE_KEY` | **Secret**| service_role key from Supabase → Project Settings → API |
-| `VAPID_PUBLIC_KEY`     | **Secret**| the public key from step 1 |
-| `VAPID_PRIVATE_KEY`    | **Secret**| the private key from step 1 |
-| `VAPID_SUBJECT`        | Plaintext | `mailto:casejohnstoncomputerrepair@hotmail.com` |
-| `MANUAL_KEY`           | **Secret**| any random string (used to test by visiting `/run?key=...`) |
+| `VAPID_PRIVATE_KEY`    | **Secret**| the private key from step 2 |
+| `MANUAL_KEY`           | **Secret**| any random string (gates `/run?key=...`) |
 
 ⚠️ The `service_role` key bypasses RLS — treat it like a password.
 
-### 6. Add the cron trigger
+### 6. iPhone — install and subscribe
 
-In the Worker's **Settings → Triggers → Cron Triggers**, add:
+- Open the Worker's URL (e.g. `https://bookkeeper.<your-subdomain>.workers.dev/`)
+  in Safari → Share → **Add to Home Screen**.
+- Open the app from the Home Screen icon (not Safari).
+- **Settings → Notifications → Enable on this device.** Accept the iOS prompt.
+  The debug pane logs each step; "Saved ✓ — you are subscribed" means it took.
 
-```
-0 14 * * *
-```
+### 7. Test the push
 
-That's 14:00 UTC daily = **08:00 MDT / 07:00 MST**. Tweak for your timezone:
-[crontab.guru](https://crontab.guru/).
-
-### 7. Subscribe your iPhone
-
-- Make sure you've installed Bookkeeper to the Home Screen (Safari → Share → Add to Home Screen). Already-installed? Force-refresh once after the v99 deploy.
-- Open the app from the Home Screen.
-- **Settings → Daily Reminder Push → Enable on this device.** Accept the iOS permission prompt.
-- That's it. You should see "Enabled on this device".
-
-### 8. Test it
-
-In your browser, visit:
+In any browser:
 
 ```
-https://bookkeeper-push.<your-subdomain>.workers.dev/run?key=<MANUAL_KEY>
+https://bookkeeper.<your-subdomain>.workers.dev/run?key=<MANUAL_KEY>
 ```
 
-You'll get a JSON summary (`sent`, `skipped`, `cleared`). If you have anything
-due in the next 2 days, you should see the notification land on the phone
-within a few seconds.
+Returns JSON like `{"checked":N,"fired":N,"missed":N,"failed":N}`. Create a
+test job with reminder = "At time of job" and a date+time a couple minutes
+out; hit `/run` again after the trigger; the phone should buzz.
+
+---
+
+## How the push code works
+
+- **Cron:** `* * * * *` (every minute), in `wrangler.toml`.
+- **Per fire:** query `jobs?done=eq.false&remind_minutes=not.is.null&reminded_at=is.null`.
+  For each job, compute `triggerAt = jobLocalDateTime - remind_minutes` in
+  `America/Denver`. If `now >= triggerAt` AND `now < triggerAt + 30 min`,
+  send a payload-less Web Push (`POST` to the subscription endpoint with a
+  VAPID-signed `Authorization` header) and stamp `reminded_at = now()`.
+- If the window has blown past (now > triggerAt + 30 min), stamp
+  `reminded_at = triggerAt` anyway so the row stops matching the query.
+- If the push returns 404 / 410, the subscription is dead; clear it from the
+  profile.
 
 ## Notes
 
-- **iOS 16.4+ required**, and Bookkeeper must be installed to the Home Screen (not just open in Safari). The Settings status will say why if it can't enable.
-- The push is payload-less — the notification text is hardcoded in `sw.js`. This keeps the Worker simple (no per-recipient payload encryption).
-- Expired subscriptions (HTTP 404/410) are cleared automatically.
-- The Worker is idempotent: re-running the same day won't send duplicate pushes unless you have new due items.
+- iOS 16.4+ required; Bookkeeper must be installed to Home Screen.
+- Payload-less push — `sw.js` shows a static notification. Adding payload
+  encryption (RFC 8291) is doable but not worth the ~150 lines for one user.
+- VAPID JWT is signed with Web Crypto using the keypair imported as a JWK
+  (no PKCS#8 wrapping needed — see `makeVapidJwt` in `push-cron.js`).
+- The Worker no longer calls any Google APIs. Mileage is user-typed; the
+  customer modal's Maps button opens `https://www.google.com/maps/search/?api=1&query=...`
+  in a new tab (iOS deep-links to the Maps app via universal link).
