@@ -45,14 +45,33 @@ async function geocodeProxy(url, env) {
     const profs = await supaGet(env, `profiles?id=eq.${uid}&select=routes_api_key`);
     const key = profs && profs[0] && profs[0].routes_api_key;
     if (!key) return new Response('{"error":"No Google API key saved to this profile"}', { status: 400, headers: { 'content-type': 'application/json' } });
-    const googleUrl = 'https://maps.googleapis.com/maps/api/geocode/json'
-      + '?address=' + encodeURIComponent(address)
-      + '&key=' + encodeURIComponent(key);
-    const r = await fetch(googleUrl);
-    const body = await r.text();
-    return new Response(body, { status: r.status, headers: { 'content-type': 'application/json' } });
+    // Use Places API (New) searchText — same dataset the Google Maps app uses,
+    // so the returned place_id matches what Maps uses for routing. The legacy
+    // Geocoding API uses a separate dataset that resolves rural addresses to
+    // different points (e.g., a different stretch of a road), which is why
+    // Bookkeeper's distances were drifting from Maps.
+    const r = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'places.id,places.formattedAddress'
+      },
+      body: JSON.stringify({ textQuery: address })
+    });
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok) {
+      const msg = (j && j.error && j.error.message) || ('Places API HTTP ' + r.status);
+      return new Response(JSON.stringify({ status: 'ERROR', error_message: msg }), { status: r.status, headers: { 'content-type': 'application/json' } });
+    }
+    const places = (j && j.places) || [];
+    // Re-shape into the Geocoding-API response the client already understands.
+    return new Response(JSON.stringify({
+      status: places.length ? 'OK' : 'ZERO_RESULTS',
+      results: places.map(p => ({ place_id: p.id, formatted_address: p.formattedAddress }))
+    }), { headers: { 'content-type': 'application/json' } });
   } catch (e) {
-    return new Response(JSON.stringify({ error: String(e && e.message || e) }), { status: 500, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ status: 'ERROR', error_message: String(e && e.message || e) }), { status: 500, headers: { 'content-type': 'application/json' } });
   }
 }
 

@@ -1,1 +1,1 @@
-{"version":115,"note":"Geocoding now proxies through your Bookkeeper Worker (server-side) — Google's Geocoding API rejects browser calls regardless of key restrictions because it sees the Referer header. The Worker uses your saved API key, so no extra setup."}
+{"version":116,"note":"Mileage calc now resolves addresses via Places API (New) searchText instead of the legacy Geocoding API — same dataset the Google Maps app uses, so distances match Maps. Requires enabling \"Places API (New)\" on your Google Cloud key (alongside Routes API)."}
