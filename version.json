@@ -1,1 +1,1 @@
-{"version":108,"note":"Google Routes API key now saves to your account (profile) so it syncs across devices — your phone won't lose it anymore. Mileage accuracy on rural/short trips improves once the key is on every device (was using the free OSM fallback which mis-geocodes). Requires one SQL: alter table profiles add column if not exists routes_api_key text;"}
+{"version":109,"note":"Mileage calculator now rounds to 2 decimals (e.g. 0.34 mi instead of 0.4 mi) — short trips no longer get rounded up beyond recognition."}

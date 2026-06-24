@@ -2263,7 +2263,7 @@ async function calcCustomerMiles() {
   if (!dest) { showToast('Enter the customer address first','error'); return; }
   const btn = document.getElementById('cust-calc-btn');
   const orig = btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
-  const setRT = m => { const rt = Math.round((m/1609.344)*2*10)/10; document.getElementById('cust-miles').value = rt; return rt; };
+  const setRT = m => { const rt = Math.round((m/1609.344)*2*100)/100; document.getElementById('cust-miles').value = rt; return rt; };
   // Keyless estimate (OSM) — used directly or as a fallback when Google fails.
   const estimate = async () => {
     const a = await geocodeAddress(base, '');
