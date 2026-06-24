@@ -1,1 +1,1 @@
-{"version":125,"note":"Removed the auto-calc button entirely. The Maps button on the customer form now opens the address in the Google Maps app (iOS deep-links automatically). Read the mileage from Maps, type it into the Round-Trip Miles field. Worker /geocode and /route endpoints removed too — no more dead code."}
+{"version":126,"note":"All Map buttons now open Google Maps (universal link → iPhone deep-links to the Maps app). Mobile customer cards, desktop customer table row, and the trip modal route link all unified — same behavior as the customer form's Maps button."}
