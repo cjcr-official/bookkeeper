@@ -2241,8 +2241,10 @@ async function googleGeocodePlaceId(address, key) {
   catch (e) { throw fetchErr(e, 'Google geocoding'); }
   if (!r.ok) throw new Error('Geocoding error ' + r.status);
   const j = await r.json();
-  if (j.status === 'REQUEST_DENIED') throw new Error('Geocoding API not enabled on your key — enable it in Google Cloud Console (same key as Routes API)');
-  if (j.status !== 'OK' || !j.results || !j.results[0]) throw new Error('Geocoding: ' + (j.error_message || j.status || 'no results'));
+  if (j.status !== 'OK' || !j.results || !j.results[0]) {
+    const detail = j.error_message ? ' — ' + j.error_message : '';
+    throw new Error('Geocoding ' + (j.status || 'failed') + detail);
+  }
   return j.results[0].place_id;
 }
 
