@@ -1,14 +1,9 @@
 // Bookkeeper Worker.
-//   /run?key=...  — push reminder cron trigger (per-job, every minute)
-//   /geocode?address=... — US Census Geocoder → OSM Photon fallback
-//   /route?oLat=...&oLng=...&dLat=...&dLng=... — OSRM driving distance
+//   /run?key=... — push reminder cron trigger (per-job, every minute)
 //   anything else → static assets (index.html, sw.js, manifest.json, version.json, icons)
 //
-// Required Worker secrets (push notifications only):
-//   SUPABASE_URL, SUPABASE_SERVICE_KEY, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY,
-//   VAPID_SUBJECT, MANUAL_KEY
-//
-// No Google API key is required for mileage — Census + OSRM are free, no key.
+// Required Worker secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY,
+// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, MANUAL_KEY.
 
 const TZ = 'America/Denver';
 const FIRE_WINDOW_MS = 30 * 60 * 1000;
@@ -21,77 +16,10 @@ export default {
       const summary = await runReminders(env);
       return new Response(JSON.stringify(summary, null, 2), { headers: { 'content-type': 'application/json' } });
     }
-    if (url.pathname === '/geocode') return geocodeProxy(url);
-    if (url.pathname === '/route')   return routeProxy(url);
     if (env.ASSETS) return env.ASSETS.fetch(req);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
   }
 };
-
-// ──────────────────────────────────────────────────────────────────────
-// Geocode: address → lat/lng. US Census first (authoritative TIGER data,
-// knows real rural addresses), Photon (OSM) fallback for non-US.
-async function geocodeProxy(url) {
-  const address = url.searchParams.get('address');
-  if (!address) return jres({ error: 'Missing address' }, 400);
-
-  try {
-    const r = await fetch('https://geocoding.geo.census.gov/geocoder/locations/onelineaddress'
-      + '?address=' + encodeURIComponent(address)
-      + '&benchmark=Public_AR_Current&format=json');
-    if (r.ok) {
-      const j = await r.json().catch(()=>null);
-      const m = j && j.result && j.result.addressMatches && j.result.addressMatches[0];
-      if (m && m.coordinates) return jres({
-        status: 'OK',
-        results: [{
-          location: { lat: m.coordinates.y, lng: m.coordinates.x },
-          formatted_address: (m.matchedAddress || address) + ' (US Census)',
-          source: 'census'
-        }]
-      });
-    }
-  } catch (_) {}
-
-  try {
-    const r = await fetch('https://photon.komoot.io/api?limit=1&q=' + encodeURIComponent(address));
-    if (r.ok) {
-      const j = await r.json().catch(()=>({}));
-      const f = j.features && j.features[0];
-      if (f && f.geometry) {
-        const [lng, lat] = f.geometry.coordinates;
-        const fa = [f.properties.name, f.properties.city, f.properties.state, f.properties.postcode, f.properties.country].filter(Boolean).join(', ') + ' (OSM)';
-        return jres({ status: 'OK', results: [{ location: { lat, lng }, formatted_address: fa, source: 'osm' }] });
-      }
-    }
-  } catch (_) {}
-
-  return jres({ status: 'ZERO_RESULTS', error_message: 'No geocoder matched that address' }, 404);
-}
-
-// Route: lat/lng pair → driving distance in meters via the OSRM demo router.
-// Matches Google Maps app distances within ~10% on short trips and uses the
-// shortest road path (Google's Routes/DM APIs default to fastest-via-highways).
-async function routeProxy(url) {
-  const oLat = url.searchParams.get('oLat'), oLng = url.searchParams.get('oLng');
-  const dLat = url.searchParams.get('dLat'), dLng = url.searchParams.get('dLng');
-  if (!oLat || !oLng || !dLat || !dLng) return jres({ error: 'Missing oLat/oLng/dLat/dLng' }, 400);
-  try {
-    const r = await fetch('https://router.project-osrm.org/route/v1/driving/'
-      + oLng + ',' + oLat + ';' + dLng + ',' + dLat + '?overview=false');
-    if (!r.ok) return jres({ error: 'OSRM HTTP ' + r.status }, 500);
-    const j = await r.json().catch(()=>({}));
-    const rt = j && j.routes && j.routes[0];
-    if (!rt || typeof rt.distance !== 'number') return jres({ error: 'No driving route found' }, 500);
-    return jres({ meters: rt.distance });
-  } catch (e) {
-    return jres({ error: String(e && e.message || e) }, 500);
-  }
-}
-
-function jres(body, status) {
-  return new Response(JSON.stringify(body), { status: status || 200, headers: { 'content-type': 'application/json' } });
-}
 
 // ──────────────────────────────────────────────────────────────────────
 // Push reminders cron — fires per-job at the user-configured offset.

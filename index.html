@@ -970,10 +970,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <div class="form-group"><label>Round-Trip Miles (from your base)</label>
         <div style="display:flex;gap:.5rem;align-items:center">
           <input id="cust-miles" type="number" min="0" step="0.1" placeholder="e.g. 24" style="flex:1">
-          <button class="btn btn-sm" id="cust-calc-btn" onclick="calcCustomerMiles()" type="button"><i class="ti ti-route"></i> Calculate</button>
-          <button class="btn btn-sm" type="button" onclick="openInMaps()" title="Open the route in Google Maps"><i class="ti ti-map"></i> Maps</button>
+          <button class="btn btn-sm" type="button" onclick="openInMaps()" title="Open this address in Google Maps"><i class="ti ti-map"></i> Maps</button>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Calculate uses the US Census Geocoder + OSRM (free, no key) — matches Google Maps within ~10%. For an exact Maps match, tap <b>Maps</b> to open the route and type the value in.</div></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Tap <b>Maps</b> to open the address in the Google Maps app and read the round-trip mileage, then type it here.</div></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-customer')">Cancel</button>
@@ -2124,90 +2123,22 @@ function openCustomerModal(c) {
 }
 function editCustomer(id) { openCustomerModal(cache.customers.find(c=>c.id===id)); }
 
-// Distinguish a network/CORS-level failure ("Failed to fetch" / "Load failed")
-// from a real HTTP error, so the user gets a useful message instead of a vague one.
-function fetchErr(e, what) {
-  const m = (e && e.message) ? e.message : '';
-  if (/failed to fetch|load failed|networkerror|cors/i.test(m)) {
-    return new Error("Couldn't reach the "+what+" service — check your connection and try again.");
-  }
-  return e;
-}
-
-// Normalize a free-form / multi-line address into one clean line. The customer
-// address box allows line breaks, which the free geocoders handle poorly — turn
-// them into commas and collapse extra whitespace.
+// Normalize a free-form / multi-line address into one clean line for the
+// Google Maps URL (line breaks become commas, extra whitespace collapsed).
 function cleanAddr(s) {
   return (s||'').replace(/\r/g,'')
     .split('\n').map(x=>x.trim()).filter(Boolean).join(', ')
     .replace(/\s+/g,' ').replace(/\s*,\s*/g,', ').trim();
 }
 
-// Resolve an address to lat/lng via the Worker /geocode proxy (Census first,
-// Photon/OSM fallback). Returns { location:{lat,lng}, formattedAddress, source }.
-async function lookupAddress(address) {
-  const url = '/geocode?address=' + encodeURIComponent(cleanAddr(address));
-  let r;
-  try { r = await fetch(url); }
-  catch (e) { throw fetchErr(e, 'address lookup'); }
-  const j = await r.json().catch(()=>({}));
-  if (j && j.error) throw new Error('Geocoding: ' + j.error);
-  if (!r.ok) throw new Error('Geocoding HTTP ' + r.status);
-  if (j.status !== 'OK' || !j.results || !j.results[0] || !j.results[0].location) {
-    const detail = j.error_message ? ' — ' + j.error_message : '';
-    throw new Error('Geocoding ' + (j.status || 'failed') + detail);
-  }
-  return j.results[0];
-}
-
-// Driving distance in meters between two addresses, via the Worker /route
-// proxy (OSRM). Returns { meters, originAddress, destAddress }.
-async function calcRouteMeters(base, dest) {
-  const [o, d] = await Promise.all([lookupAddress(base), lookupAddress(dest)]);
-  const url = '/route?oLat=' + o.location.lat + '&oLng=' + o.location.lng
-    + '&dLat=' + d.location.lat + '&dLng=' + d.location.lng;
-  let r;
-  try { r = await fetch(url); }
-  catch (e) { throw fetchErr(e, 'route lookup'); }
-  const j = await r.json().catch(()=>({}));
-  if (j && j.error) throw new Error('Route: ' + j.error);
-  if (!r.ok) throw new Error('Route HTTP ' + r.status);
-  if (typeof j.meters !== 'number') throw new Error('Route: no distance returned');
-  return { meters: j.meters, originAddress: o.formatted_address, destAddress: d.formatted_address };
-}
-
-async function calcCustomerMiles() {
-  const base = (profile.base_address||'').trim();
-  if (!base) { showToast('Set your base address in Settings first','error'); return; }
-  const dest = (document.getElementById('cust-address').value||'').trim();
-  if (!dest) { showToast('Enter the customer address first','error'); return; }
-  const btn = document.getElementById('cust-calc-btn');
-  const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
-  try {
-    const g = await calcRouteMeters(base, dest);
-    const rt = Math.round((g.meters/1609.344)*2*100)/100;
-    document.getElementById('cust-miles').value = rt;
-    const owMi = Math.round((g.meters/1609.344)*100)/100;
-    showToast('Round trip: '+rt+' mi · '+owMi+' mi one-way → '+(g.destAddress||'?'), 'success');
-  } catch (e) {
-    showToast(e.message || 'Could not calculate distance', 'error');
-  } finally {
-    btn.disabled = false; btn.innerHTML = orig;
-  }
-}
-
-// Open Google Maps directions for this customer in a new tab. For when you
-// need a distance that exactly matches the Maps app (developer APIs don't
-// expose the same routing engine, so we link out instead of guessing).
+// Open the customer's address in the Google Maps app. On iOS the universal
+// link is automatically intercepted by the installed Maps app; on desktop /
+// non-installed devices it opens maps.google.com in a new tab.
 function openInMaps() {
-  const base = (profile.base_address||'').trim();
   const dest = (document.getElementById('cust-address').value||'').trim();
-  if (!base) { showToast('Set your base address in Settings first','error'); return; }
   if (!dest) { showToast('Enter the customer address first','error'); return; }
-  const url = 'https://www.google.com/maps/dir/?api=1'
-    + '&origin=' + encodeURIComponent(cleanAddr(base))
-    + '&destination=' + encodeURIComponent(cleanAddr(dest))
-    + '&travelmode=driving';
+  const url = 'https://www.google.com/maps/search/?api=1&query='
+    + encodeURIComponent(cleanAddr(dest));
   window.open(url, '_blank', 'noopener');
 }
 
