@@ -41,6 +41,33 @@ async function geocodeProxy(url, env) {
   const uid = url.searchParams.get('uid');
   const address = url.searchParams.get('address');
   if (!uid || !address) return new Response('{"error":"Missing uid or address"}', { status: 400, headers: { 'content-type': 'application/json' } });
+
+  // 1) US Census Geocoder — free, no key, authoritative TIGER/Line data for
+  //    US addresses. Where Google's dev Geocoding API silently mis-resolves
+  //    rural addresses ("35 Deemer Creek Rd" → "35 Deemer Ridge Road"),
+  //    Census returns the literal address with house-number-accurate coords.
+  try {
+    const cUrl = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress'
+      + '?address=' + encodeURIComponent(address)
+      + '&benchmark=Public_AR_Current&format=json';
+    const cr = await fetch(cUrl);
+    if (cr.ok) {
+      const cj = await cr.json().catch(()=>null);
+      const m = cj && cj.result && cj.result.addressMatches && cj.result.addressMatches[0];
+      if (m && m.coordinates) {
+        return new Response(JSON.stringify({
+          status: 'OK',
+          results: [{
+            location: { lat: m.coordinates.y, lng: m.coordinates.x },
+            formatted_address: (m.matchedAddress || address) + ' (US Census)',
+            source: 'census'
+          }]
+        }), { headers: { 'content-type': 'application/json' } });
+      }
+    }
+  } catch (_) { /* fall through to Google */ }
+
+  // 2) Fall back to Google + OSM hybrid (international addresses, edge cases)
   try {
     const profs = await supaGet(env, `profiles?id=eq.${uid}&select=routes_api_key`);
     const key = profs && profs[0] && profs[0].routes_api_key;
