@@ -1,1 +1,1 @@
-{"version":116,"note":"Mileage calc now resolves addresses via Places API (New) searchText instead of the legacy Geocoding API — same dataset the Google Maps app uses, so distances match Maps. Requires enabling \"Places API (New)\" on your Google Cloud key (alongside Routes API)."}
+{"version":117,"note":"Mileage calc now requests Routes API alternatives AND the SHORTER_DISTANCE reference route, then picks the shortest of all returned options — closer to what the Maps app shows."}

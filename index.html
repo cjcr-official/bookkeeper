@@ -2256,7 +2256,11 @@ async function googleRouteMeters(base, dest, key) {
     googleGeocodePlaceId(base, key),
     googleGeocodePlaceId(dest, key)
   ]);
-  // 2) Ask Routes API for the SHORTER_DISTANCE reference route (matches what Maps shows for short trips)
+  // 2) Routes API: request the SHORTER_DISTANCE reference route AND alternative
+  //    routes, then pick the shortest distanceMeters of all returned options.
+  //    SHORTER_DISTANCE alone matches Maps better than the default ETA route,
+  //    but Maps sometimes uses a tertiary alternative that's even shorter — so
+  //    we just take the min across all routes Google offers.
   const url = 'https://routes.googleapis.com/directions/v2:computeRoutes'
     + '?key=' + encodeURIComponent(key)
     + '&fields=' + encodeURIComponent('routes.distanceMeters,routes.routeLabels');
@@ -2266,6 +2270,7 @@ async function googleRouteMeters(base, dest, key) {
     travelMode: 'DRIVE',
     routingPreference: 'TRAFFIC_AWARE',
     requestedReferenceRoutes: ['SHORTER_DISTANCE'],
+    computeAlternativeRoutes: true,
     units: 'IMPERIAL'
   };
   let r;
@@ -2279,12 +2284,9 @@ async function googleRouteMeters(base, dest, key) {
     throw new Error(msg);
   }
   const j = await r.json();
-  const routes = j.routes || [];
-  const shorter = routes.find(rt => (rt.routeLabels||[]).includes('SHORTER_DISTANCE'));
-  const route = shorter || routes[0];
-  const d = route && route.distanceMeters;
-  if (typeof d !== 'number') throw new Error('No driving route found — check the addresses');
-  return d;
+  const dists = ((j && j.routes) || []).map(rt => rt.distanceMeters).filter(d => typeof d === 'number');
+  if (!dists.length) throw new Error('No driving route found — check the addresses');
+  return Math.min(...dists);
 }
 
 async function calcCustomerMiles() {
