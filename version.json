@@ -1,1 +1,1 @@
-{"version":107,"note":"Un-checking \"Repeats monthly\" on a job in a series now offers to delete the other instances (past and future) in one step instead of one-by-one. Decline the prompt to keep them."}
+{"version":108,"note":"Google Routes API key now saves to your account (profile) so it syncs across devices — your phone won't lose it anymore. Mileage accuracy on rural/short trips improves once the key is on every device (was using the free OSM fallback which mis-geocodes). Requires one SQL: alter table profiles add column if not exists routes_api_key text;"}

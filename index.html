@@ -2121,7 +2121,7 @@ function openCustomerModal(c) {
   document.getElementById('cust-address').value = c.address||'';
   document.getElementById('cust-miles').value = c.miles||'';
   (()=>{ const cb=document.getElementById('cust-calc-btn'); if(!cb) return;
-    const hk = !!lsGet('bk-ors-key','').trim();
+    const hk = !!((profile.routes_api_key||'') || lsGet('bk-ors-key','')).trim();
     cb.innerHTML = '<i class="ti ti-route"></i> ' + (hk ? 'Calculate (Google)' : 'Estimate');
   })();
   openModal('modal-customer');
@@ -2256,7 +2256,7 @@ async function googleRouteMeters(base, dest, key) {
 }
 
 async function calcCustomerMiles() {
-  const key = lsGet('bk-ors-key','').trim();
+  const key = ((profile.routes_api_key||'') || lsGet('bk-ors-key','')).trim();
   const base = (profile.base_address||'').trim();
   if (!base) { showToast('Set your base address in Settings first','error'); return; }
   const dest = (document.getElementById('cust-address').value||'').trim();
@@ -3196,7 +3196,9 @@ function loadSettingsForm() {
   document.getElementById('s-phone').value=profile.phone||'';
   document.getElementById('s-currency').value=profile.currency||'USD';
   document.getElementById('s-base-address').value=profile.base_address||'';
-  document.getElementById('s-ors-key').value = lsGet('bk-ors-key','');
+  // Routes API key now lives on the profile (syncs across devices). Fall back to the
+  // legacy device-only localStorage value if the column hasn't been populated yet.
+  document.getElementById('s-ors-key').value = profile.routes_api_key || lsGet('bk-ors-key','');
   document.getElementById('s-ors-key').type = 'password';
   document.getElementById('s-ors-key-eye').className = 'ti ti-eye';
   renderLogoState();
@@ -3269,11 +3271,12 @@ function toggleKeyVisibility() {
 }
 
 async function saveSettings() {
-  const row={company:document.getElementById('s-company').value,address:document.getElementById('s-address').value,email:document.getElementById('s-email').value,phone:document.getElementById('s-phone').value,tax:0,currency:document.getElementById('s-currency').value,base_address:document.getElementById('s-base-address').value};
+  const keyVal = document.getElementById('s-ors-key').value.trim();
+  const row={company:document.getElementById('s-company').value,address:document.getElementById('s-address').value,email:document.getElementById('s-email').value,phone:document.getElementById('s-phone').value,tax:0,currency:document.getElementById('s-currency').value,base_address:document.getElementById('s-base-address').value,routes_api_key:keyVal||null};
   const {error}=await sb.from('profiles').upsert({id:currentUser.id,...row});
   if (error) { showToast(error.message,'error'); return; }
   profile={...profile,...row};
-  lsSet('bk-ors-key', document.getElementById('s-ors-key').value.trim());
+  lsSet('bk-ors-key', keyVal); // keep local cache too so the calc button still works if profile load is slow
   document.getElementById('user-company-name').textContent=row.company||'My Business';
   showToast('Settings saved','success');
 }
