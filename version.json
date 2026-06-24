@@ -1,1 +1,1 @@
-{"version":126,"note":"All Map buttons now open Google Maps (universal link → iPhone deep-links to the Maps app). Mobile customer cards, desktop customer table row, and the trip modal route link all unified — same behavior as the customer form's Maps button."}
+{"version":127,"note":"Reverted: all Map buttons now use Apple Maps (maps.apple.com) — same as before v126. Customer form, mobile cards, desktop table, and trip directions all unified on Apple Maps URLs."}
