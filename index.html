@@ -2257,47 +2257,27 @@ async function googleGeocodePlace(address) {
 }
 
 async function googleRouteMeters(base, dest, key) {
-  // 1) Resolve both addresses via Worker proxy (Google + OSM hybrid)
+  // 1) Resolve both addresses via Worker /geocode (Census → Google → OSM)
   const [originPlace, destPlace] = await Promise.all([
     googleGeocodePlace(base),
     googleGeocodePlace(dest)
   ]);
-  const toWaypoint = p => p.placeId
-    ? { placeId: p.placeId }
-    : { location: { latLng: { latitude: p.location.lat, longitude: p.location.lng } } };
-  const origin = toWaypoint(originPlace);
-  const destination = toWaypoint(destPlace);
-  // 2) Routes API: request the SHORTER_DISTANCE reference route AND alternative
-  //    routes, then pick the shortest distanceMeters of all returned options.
-  //    SHORTER_DISTANCE alone matches Maps better than the default ETA route,
-  //    but Maps sometimes uses a tertiary alternative that's even shorter — so
-  //    we just take the min across all routes Google offers.
-  const url = 'https://routes.googleapis.com/directions/v2:computeRoutes'
-    + '?key=' + encodeURIComponent(key)
-    + '&fields=' + encodeURIComponent('routes.distanceMeters,routes.routeLabels');
-  const body = {
-    origin,
-    destination,
-    travelMode: 'DRIVE',
-    routingPreference: 'TRAFFIC_AWARE',
-    requestedReferenceRoutes: ['SHORTER_DISTANCE'],
-    computeAlternativeRoutes: true,
-    units: 'IMPERIAL'
-  };
-  let r;
-  try {
-    r = await fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
-  } catch(e) { throw fetchErr(e, 'Google routing'); }
-  if (!r.ok) {
-    let msg = 'Google error ('+r.status+')';
-    try { const ej = await r.json(); if (ej && ej.error && ej.error.message) msg = ej.error.message; } catch(_) {}
-    if (r.status === 403) msg = "Google rejected the key — enable the Routes API for it and check its restrictions";
-    throw new Error(msg);
+  if (!originPlace.location || !destPlace.location) {
+    throw new Error('Could not get coordinates for one or both addresses');
   }
-  const j = await r.json();
-  const dists = ((j && j.routes) || []).map(rt => rt.distanceMeters).filter(d => typeof d === 'number');
-  if (!dists.length) throw new Error('No driving route found — check the addresses');
-  return { meters: Math.min(...dists), originAddress: originPlace.formattedAddress, destAddress: destPlace.formattedAddress };
+  // 2) Route via Worker /route (Distance Matrix API — matches the Maps app
+  //    more closely than the newer Routes API).
+  const rUrl = '/route?uid=' + encodeURIComponent(currentUser.id)
+    + '&oLat=' + originPlace.location.lat + '&oLng=' + originPlace.location.lng
+    + '&dLat=' + destPlace.location.lat + '&dLng=' + destPlace.location.lng;
+  let rr;
+  try { rr = await fetch(rUrl); }
+  catch (e) { throw fetchErr(e, 'route lookup'); }
+  const rj = await rr.json().catch(()=>({}));
+  if (rj && rj.error) throw new Error('Route: ' + rj.error);
+  if (!rr.ok) throw new Error('Route HTTP ' + rr.status);
+  if (typeof rj.meters !== 'number') throw new Error('Route: no distance returned');
+  return { meters: rj.meters, originAddress: originPlace.formattedAddress, destAddress: destPlace.formattedAddress };
 }
 
 async function calcCustomerMiles() {

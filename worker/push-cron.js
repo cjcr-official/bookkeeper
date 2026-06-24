@@ -31,6 +31,7 @@ export default {
     // Geocoding API by calling it server-side. Reads the user's Routes/Geocoding
     // key from their profile via Supabase service role.
     if (url.pathname === '/geocode') return geocodeProxy(url, env);
+    if (url.pathname === '/route')   return routeProxy(url, env);
     // Everything else → static assets (index.html, sw.js, manifest.json, icons, version.json)
     if (env.ASSETS) return env.ASSETS.fetch(req);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
@@ -92,9 +93,15 @@ async function geocodeProxy(url, env) {
     if (gr.ok && gj.status === 'OK' && gj.results && gj.results[0]) {
       const hit = gj.results.find(rr => roadMatches(rr.formatted_address, roadName));
       if (hit) {
+        const loc = hit.geometry && hit.geometry.location;
         return new Response(JSON.stringify({
           status: 'OK',
-          results: [{ place_id: hit.place_id, formatted_address: hit.formatted_address, source: 'google' }]
+          results: [{
+            place_id: hit.place_id,
+            location: loc ? { lat: loc.lat, lng: loc.lng } : null,
+            formatted_address: hit.formatted_address,
+            source: 'google'
+          }]
         }), { headers: { 'content-type': 'application/json' } });
       }
     }
@@ -117,14 +124,53 @@ async function geocodeProxy(url, env) {
     // caller can still show something), tagged so the toast can warn.
     if (gj.status === 'OK' && gj.results && gj.results[0]) {
       const fb = gj.results[0];
+      const loc = fb.geometry && fb.geometry.location;
       return new Response(JSON.stringify({
         status: 'OK',
-        results: [{ place_id: fb.place_id, formatted_address: fb.formatted_address + ' (approx — no exact match)', source: 'google-fuzzy' }]
+        results: [{
+          place_id: fb.place_id,
+          location: loc ? { lat: loc.lat, lng: loc.lng } : null,
+          formatted_address: fb.formatted_address + ' (approx — no exact match)',
+          source: 'google-fuzzy'
+        }]
       }), { headers: { 'content-type': 'application/json' } });
     }
     return new Response(JSON.stringify({ status: gj.status || 'ZERO_RESULTS', error_message: gj.error_message || 'No match' }), { headers: { 'content-type': 'application/json' } });
   } catch (e) {
     return new Response(JSON.stringify({ status: 'ERROR', error_message: String(e && e.message || e) }), { status: 500, headers: { 'content-type': 'application/json' } });
+  }
+}
+
+// Server-side route distance proxy. Uses Google's legacy Distance Matrix API,
+// which the community has confirmed matches the Maps app's driving distance
+// more closely than the newer Routes API (Routes API runs a slightly different
+// engine and tends to drift 1-3% from Maps).
+async function routeProxy(url, env) {
+  const uid = url.searchParams.get('uid');
+  const oLat = url.searchParams.get('oLat'), oLng = url.searchParams.get('oLng');
+  const dLat = url.searchParams.get('dLat'), dLng = url.searchParams.get('dLng');
+  if (!uid || !oLat || !oLng || !dLat || !dLng) {
+    return new Response('{"error":"Missing uid/oLat/oLng/dLat/dLng"}', { status: 400, headers: { 'content-type': 'application/json' } });
+  }
+  try {
+    const profs = await supaGet(env, `profiles?id=eq.${uid}&select=routes_api_key`);
+    const key = profs && profs[0] && profs[0].routes_api_key;
+    if (!key) return new Response('{"error":"No Google API key on profile"}', { status: 400, headers: { 'content-type': 'application/json' } });
+    const gUrl = 'https://maps.googleapis.com/maps/api/distancematrix/json'
+      + '?origins=' + encodeURIComponent(oLat + ',' + oLng)
+      + '&destinations=' + encodeURIComponent(dLat + ',' + dLng)
+      + '&units=imperial&mode=driving'
+      + '&key=' + encodeURIComponent(key);
+    const r = await fetch(gUrl);
+    const j = await r.json().catch(()=>({}));
+    if (!r.ok || j.status !== 'OK') {
+      return new Response(JSON.stringify({ error: (j && j.error_message) || j.status || ('DM HTTP ' + r.status) }), { status: 500, headers: { 'content-type': 'application/json' } });
+    }
+    const el = j.rows && j.rows[0] && j.rows[0].elements && j.rows[0].elements[0];
+    if (!el || el.status !== 'OK') return new Response(JSON.stringify({ error: (el && el.status) || 'No route' }), { status: 500, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ meters: el.distance.value, text: el.distance.text }), { headers: { 'content-type': 'application/json' } });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e && e.message || e) }), { status: 500, headers: { 'content-type': 'application/json' } });
   }
 }
 
