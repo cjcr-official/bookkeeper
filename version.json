@@ -1,1 +1,1 @@
-{"version":106,"note":"Removed the HOURLY RATE block from the invoice header (and its helper code)."}
+{"version":107,"note":"Un-checking \"Repeats monthly\" on a job in a series now offers to delete the other instances (past and future) in one step instead of one-by-one. Decline the prompt to keep them."}

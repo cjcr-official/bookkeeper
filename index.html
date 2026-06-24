@@ -2481,6 +2481,8 @@ async function saveJob() {
   const id = document.getElementById('job-id').value;
   const remindVal = document.getElementById('job-remind').value;
   const repeatMonthly = document.getElementById('job-repeat').checked;
+  const previous = id ? (cache.jobs||[]).find(j=>j.id===id) : null;
+  const wasRepeat = !!(previous && previous.repeat_monthly);
   const row = {
     user_id: currentUser.id,
     title: document.getElementById('job-title-input').value.trim(),
@@ -2495,13 +2497,42 @@ async function saveJob() {
   };
   if (!row.title) { showToast('Title is required','error'); return; }
   if (!row.date)  { showToast('Date is required','error'); return; }
+
+  // Un-checking the repeat box → confirm before purging the rest of the series.
+  // Siblings = other jobs with matching title + customer_id that were generated as
+  // part of a monthly series (repeat_monthly=true). Past + future, all of them.
+  let toDelete = [];
+  if (wasRepeat && !repeatMonthly) {
+    toDelete = (cache.jobs||[]).filter(j =>
+      j.id !== id &&
+      (j.title||'') === (row.title||'') &&
+      (j.customer_id||null) === (row.customer_id||null) &&
+      !!j.repeat_monthly
+    );
+    if (toDelete.length && !confirm(`Also delete the ${toDelete.length} other monthly instance${toDelete.length>1?'s':''} of "${row.title}"?`)) {
+      toDelete = [];
+    }
+  }
+
   let err, savedId = id;
   if (id) { const r = await sb.from('jobs').update(row).eq('id',id); err=r.error; if(!err){const i=cache.jobs.findIndex(x=>x.id===id); if(i>-1) cache.jobs[i]={...cache.jobs[i],...row};} }
   else    { const r = await sb.from('jobs').insert(row).select().single(); err=r.error; if(!err&&r.data){ cache.jobs.unshift(r.data); savedId = r.data.id; } }
   if (err) { showToast(err.message,'error'); return; }
+
+  let removed = 0;
+  for (const s of toDelete) {
+    const r = await sb.from('jobs').delete().eq('id', s.id);
+    if (!r.error) removed++;
+  }
+  if (removed) cache.jobs = cache.jobs.filter(j => !toDelete.some(s => s.id === j.id));
+
   let extra = 0;
   if (repeatMonthly) extra = await generateMonthlyJobInstances({...row, id: savedId}, 11);
-  showToast(extra ? `Job saved · ${extra} more scheduled` : 'Job saved','success');
+
+  let msg = 'Job saved';
+  if (extra)   msg += ` · ${extra} more scheduled`;
+  if (removed) msg += ` · ${removed} removed`;
+  showToast(msg, 'success');
   closeModal('modal-job'); renderUpcoming(); renderCalendar();
 }
 
