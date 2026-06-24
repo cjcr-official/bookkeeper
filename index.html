@@ -2229,10 +2229,10 @@ async function routeMeters(a, b, key) {
 // Google does both geocoding and routing — the result matches Google Maps. Key +
 // field mask go in the query string so the only header is Content-Type (most
 // CORS-friendly). Returns one-way meters; throws a useful message on failure.
-// Resolve an address via our Worker → Places API (New) searchText, returning
-// { placeId, formattedAddress }. The proxy exists because Google's geocoding
-// endpoints reject browser-originated calls regardless of the key's restriction
-// settings (they see the Referer header).
+// Resolve an address via our Worker /geocode proxy. The proxy does a hybrid
+// lookup (Google first, OSM fallback when Google drifts to the wrong road).
+// Returns either { placeId, ... } or { location: {lat,lng}, ... }; the caller
+// passes whichever to Routes API.
 async function googleGeocodePlace(address) {
   if (!currentUser || !currentUser.id) throw new Error('Not signed in');
   const url = '/geocode?uid=' + encodeURIComponent(currentUser.id)
@@ -2247,17 +2247,26 @@ async function googleGeocodePlace(address) {
     const detail = j.error_message ? ' — ' + j.error_message : '';
     throw new Error('Geocoding ' + (j.status || 'failed') + detail);
   }
-  return { placeId: j.results[0].place_id, formattedAddress: j.results[0].formatted_address || '' };
+  const top = j.results[0];
+  return {
+    placeId: top.place_id || null,
+    location: top.location || null,
+    formattedAddress: top.formatted_address || '',
+    source: top.source || ''
+  };
 }
 
 async function googleRouteMeters(base, dest, key) {
-  // 1) Resolve both addresses via Places API (same dataset the Maps app uses)
+  // 1) Resolve both addresses via Worker proxy (Google + OSM hybrid)
   const [originPlace, destPlace] = await Promise.all([
     googleGeocodePlace(base),
     googleGeocodePlace(dest)
   ]);
-  const originPid = originPlace.placeId;
-  const destPid   = destPlace.placeId;
+  const toWaypoint = p => p.placeId
+    ? { placeId: p.placeId }
+    : { location: { latLng: { latitude: p.location.lat, longitude: p.location.lng } } };
+  const origin = toWaypoint(originPlace);
+  const destination = toWaypoint(destPlace);
   // 2) Routes API: request the SHORTER_DISTANCE reference route AND alternative
   //    routes, then pick the shortest distanceMeters of all returned options.
   //    SHORTER_DISTANCE alone matches Maps better than the default ETA route,
@@ -2267,8 +2276,8 @@ async function googleRouteMeters(base, dest, key) {
     + '?key=' + encodeURIComponent(key)
     + '&fields=' + encodeURIComponent('routes.distanceMeters,routes.routeLabels');
   const body = {
-    origin: { placeId: originPid },
-    destination: { placeId: destPid },
+    origin,
+    destination,
     travelMode: 'DRIVE',
     routingPreference: 'TRAFFIC_AWARE',
     requestedReferenceRoutes: ['SHORTER_DISTANCE'],

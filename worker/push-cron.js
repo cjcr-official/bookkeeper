@@ -45,24 +45,72 @@ async function geocodeProxy(url, env) {
     const profs = await supaGet(env, `profiles?id=eq.${uid}&select=routes_api_key`);
     const key = profs && profs[0] && profs[0].routes_api_key;
     if (!key) return new Response('{"error":"No Google API key saved to this profile"}', { status: 400, headers: { 'content-type': 'application/json' } });
-    // Use Geocoding API (literal address parser) constrained to the input's
-    // postal code + country. Places API SearchText was returning fuzzy matches
-    // for nearby differently-named streets ("Deemer Creek Rd" → "Deemer Ridge
-    // Road"); Geocoding API stays on the road name you actually typed.
+    // Hybrid resolver: Google Geocoding first (because it knows house numbers),
+    // verify the returned road name actually matches what was typed, fall back
+    // to OpenStreetMap (Photon) if Google fuzzy-matched to a similar-but-wrong
+    // road. Google's dev Geocoding API silently drifts on rural addresses
+    // ("Deemer Creek Rd" → "Deemer Ridge Road"); OSM has rural Montana roads
+    // indexed literally.
+    const roadName = extractRoadName(address);          // e.g. "Deemer Creek"
     const zipMatch = address.match(/\b(\d{5})(?:-\d{4})?\b/);
     const zip = zipMatch ? zipMatch[1] : '';
     const components = ['country:US'];
     if (zip) components.push('postal_code:' + zip);
-    const url = 'https://maps.googleapis.com/maps/api/geocode/json'
+    const gUrl = 'https://maps.googleapis.com/maps/api/geocode/json'
       + '?address=' + encodeURIComponent(address)
       + '&components=' + encodeURIComponent(components.join('|'))
       + '&key=' + encodeURIComponent(key);
-    const r = await fetch(url);
-    const body = await r.text();
-    return new Response(body, { status: r.status, headers: { 'content-type': 'application/json' } });
+    const gr = await fetch(gUrl);
+    const gj = await gr.json().catch(()=>({}));
+    if (gr.ok && gj.status === 'OK' && gj.results && gj.results[0]) {
+      const hit = gj.results.find(rr => roadMatches(rr.formatted_address, roadName));
+      if (hit) {
+        return new Response(JSON.stringify({
+          status: 'OK',
+          results: [{ place_id: hit.place_id, formatted_address: hit.formatted_address, source: 'google' }]
+        }), { headers: { 'content-type': 'application/json' } });
+      }
+    }
+    // Google drifted (or empty). Try Photon (OSM) for the exact road.
+    const photonUrl = 'https://photon.komoot.io/api?limit=5&q=' + encodeURIComponent(address);
+    const pr = await fetch(photonUrl);
+    if (pr.ok) {
+      const pj = await pr.json().catch(()=>({}));
+      const feat = (pj.features||[]).find(f => roadMatches((f.properties && (f.properties.name||'') + ' ' + (f.properties.city||'')) || '', roadName));
+      if (feat) {
+        const [lng, lat] = feat.geometry.coordinates;
+        const fa = [feat.properties.name, feat.properties.city, feat.properties.state, feat.properties.postcode].filter(Boolean).join(', ') + ' (OSM)';
+        return new Response(JSON.stringify({
+          status: 'OK',
+          results: [{ location: { lat, lng }, formatted_address: fa, source: 'osm' }]
+        }), { headers: { 'content-type': 'application/json' } });
+      }
+    }
+    // Neither matched the typed road. Return whatever Google gave (so the
+    // caller can still show something), tagged so the toast can warn.
+    if (gj.status === 'OK' && gj.results && gj.results[0]) {
+      const fb = gj.results[0];
+      return new Response(JSON.stringify({
+        status: 'OK',
+        results: [{ place_id: fb.place_id, formatted_address: fb.formatted_address + ' (approx — no exact match)', source: 'google-fuzzy' }]
+      }), { headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ status: gj.status || 'ZERO_RESULTS', error_message: gj.error_message || 'No match' }), { headers: { 'content-type': 'application/json' } });
   } catch (e) {
     return new Response(JSON.stringify({ status: 'ERROR', error_message: String(e && e.message || e) }), { status: 500, headers: { 'content-type': 'application/json' } });
   }
+}
+
+// Pull the distinctive road name out of an address (the part between the
+// leading house number and the street-type suffix). For "35 Deemer Creek Rd,
+// Plains, MT 59859" → "Deemer Creek".
+function extractRoadName(addr) {
+  const m = String(addr||'').match(/^\s*\d+\s+(.+?)\s+(?:Rd|Road|St|Street|Ave|Avenue|Blvd|Boulevard|Dr|Drive|Ln|Lane|Ct|Court|Way|Pl|Place|Pkwy|Parkway|Cir|Circle|Ter|Terrace|Hwy|Highway|Loop|Trl|Trail|Sq|Square)\b/i);
+  return m ? m[1].trim() : '';
+}
+function roadMatches(haystack, road) {
+  if (!road) return true; // can't verify → don't reject
+  return String(haystack||'').toLowerCase().includes(road.toLowerCase());
 }
 
 async function runReminders(env) {
