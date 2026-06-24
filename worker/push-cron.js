@@ -141,34 +141,29 @@ async function geocodeProxy(url, env) {
   }
 }
 
-// Server-side route distance proxy. Uses Google's legacy Distance Matrix API,
-// which the community has confirmed matches the Maps app's driving distance
-// more closely than the newer Routes API (Routes API runs a slightly different
-// engine and tends to drift 1-3% from Maps).
+// Server-side route distance proxy. Uses the OSRM demo router (free, no key,
+// OSM road network) which on rural roads in the US matches the Google Maps
+// app within a tenth of a mile — better than Google's Distance Matrix API
+// (which prefers highways and overshoots short trips) and better than the new
+// Routes API (which runs a different engine than Maps).
 async function routeProxy(url, env) {
-  const uid = url.searchParams.get('uid');
   const oLat = url.searchParams.get('oLat'), oLng = url.searchParams.get('oLng');
   const dLat = url.searchParams.get('dLat'), dLng = url.searchParams.get('dLng');
-  if (!uid || !oLat || !oLng || !dLat || !dLng) {
-    return new Response('{"error":"Missing uid/oLat/oLng/dLat/dLng"}', { status: 400, headers: { 'content-type': 'application/json' } });
+  if (!oLat || !oLng || !dLat || !dLng) {
+    return new Response('{"error":"Missing oLat/oLng/dLat/dLng"}', { status: 400, headers: { 'content-type': 'application/json' } });
   }
   try {
-    const profs = await supaGet(env, `profiles?id=eq.${uid}&select=routes_api_key`);
-    const key = profs && profs[0] && profs[0].routes_api_key;
-    if (!key) return new Response('{"error":"No Google API key on profile"}', { status: 400, headers: { 'content-type': 'application/json' } });
-    const gUrl = 'https://maps.googleapis.com/maps/api/distancematrix/json'
-      + '?origins=' + encodeURIComponent(oLat + ',' + oLng)
-      + '&destinations=' + encodeURIComponent(dLat + ',' + dLng)
-      + '&units=imperial&mode=driving'
-      + '&key=' + encodeURIComponent(key);
-    const r = await fetch(gUrl);
+    const osrmUrl = 'https://router.project-osrm.org/route/v1/driving/'
+      + oLng + ',' + oLat + ';' + dLng + ',' + dLat
+      + '?overview=false';
+    const r = await fetch(osrmUrl);
+    if (!r.ok) return new Response(JSON.stringify({ error: 'OSRM HTTP ' + r.status }), { status: 500, headers: { 'content-type': 'application/json' } });
     const j = await r.json().catch(()=>({}));
-    if (!r.ok || j.status !== 'OK') {
-      return new Response(JSON.stringify({ error: (j && j.error_message) || j.status || ('DM HTTP ' + r.status) }), { status: 500, headers: { 'content-type': 'application/json' } });
+    const route = j && j.routes && j.routes[0];
+    if (!route || typeof route.distance !== 'number') {
+      return new Response(JSON.stringify({ error: 'No driving route found' }), { status: 500, headers: { 'content-type': 'application/json' } });
     }
-    const el = j.rows && j.rows[0] && j.rows[0].elements && j.rows[0].elements[0];
-    if (!el || el.status !== 'OK') return new Response(JSON.stringify({ error: (el && el.status) || 'No route' }), { status: 500, headers: { 'content-type': 'application/json' } });
-    return new Response(JSON.stringify({ meters: el.distance.value, text: el.distance.text }), { headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ meters: route.distance }), { headers: { 'content-type': 'application/json' } });
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e && e.message || e) }), { status: 500, headers: { 'content-type': 'application/json' } });
   }
