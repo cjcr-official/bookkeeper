@@ -1,1 +1,1 @@
-{"version":104,"note":"Jobs can now repeat monthly — new checkbox in the job modal. Check it and save: 11 more jobs get scheduled on the same day for the next 11 months (each is independent, with its own reminder). Requires one more SQL column: alter table jobs add column if not exists repeat_monthly boolean default false;"}
+{"version":105,"note":"Invoice mileage fixes: Trips Made now defaults to 0 on new invoices, and saving with Trips=0 actually saves 0 (was silently forced back to 1 by a falsy-coalescing bug)."}
