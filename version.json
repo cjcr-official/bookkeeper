@@ -1,1 +1,1 @@
-{"version":110,"note":"Mileage toast now shows the one-way distance Google returned (e.g. \"Round trip: 4.80 mi (Google · 2.40 mi one-way)\") — makes it easy to compare against the Google Maps app for the same two addresses when results look off."}
+{"version":111,"note":"Mileage calc now matches Google Maps better on short trips. Routes API was defaulting to \"fastest\" (which detours via main roads); we now request alternative routes and pick the shortest, which is what Maps shows for short trips."}
