@@ -1,1 +1,1 @@
-{"version":118,"note":"Mileage toast now shows the destination address Places API actually resolved to (e.g. \"...→ 35 Deemer Creek Rd, Plains, MT 59859, USA\"). If the formatted address differs from what you typed, that's where the distance drift comes from."}
+{"version":119,"note":"Mileage proxy reverted to Geocoding API (more literal about street names) with a postal-code/country restriction so rural addresses no longer fuzzy-match to similarly-named nearby streets. Toast still shows the resolved address so you can verify it landed on the right road."}
