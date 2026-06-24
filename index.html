@@ -2276,7 +2276,8 @@ async function calcCustomerMiles() {
       try {
         const meters = await googleRouteMeters(base, dest, key); // exact
         const rt = setRT(meters);
-        showToast('Round trip: '+rt+' mi (Google)','success');
+        const owMi = Math.round((meters/1609.344)*100)/100;
+        showToast('Round trip: '+rt+' mi (Google · '+owMi+' mi one-way)','success');
         return;
       } catch(ge) {
         // Google failed — fall back to the free estimate but say why.

@@ -1,1 +1,1 @@
-{"version":109,"note":"Mileage calculator now rounds to 2 decimals (e.g. 0.34 mi instead of 0.4 mi) — short trips no longer get rounded up beyond recognition."}
+{"version":110,"note":"Mileage toast now shows the one-way distance Google returned (e.g. \"Round trip: 4.80 mi (Google · 2.40 mi one-way)\") — makes it easy to compare against the Google Maps app for the same two addresses when results look off."}
