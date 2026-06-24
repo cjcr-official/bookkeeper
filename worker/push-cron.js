@@ -27,11 +27,34 @@ export default {
       const summary = await runReminders(env);
       return new Response(JSON.stringify(summary, null, 2), { headers: { 'content-type': 'application/json' } });
     }
+    // Geocoding proxy — bypasses Google's "no browser keys" policy on the
+    // Geocoding API by calling it server-side. Reads the user's Routes/Geocoding
+    // key from their profile via Supabase service role.
+    if (url.pathname === '/geocode') return geocodeProxy(url, env);
     // Everything else → static assets (index.html, sw.js, manifest.json, icons, version.json)
     if (env.ASSETS) return env.ASSETS.fetch(req);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
   }
 };
+
+async function geocodeProxy(url, env) {
+  const uid = url.searchParams.get('uid');
+  const address = url.searchParams.get('address');
+  if (!uid || !address) return new Response('{"error":"Missing uid or address"}', { status: 400, headers: { 'content-type': 'application/json' } });
+  try {
+    const profs = await supaGet(env, `profiles?id=eq.${uid}&select=routes_api_key`);
+    const key = profs && profs[0] && profs[0].routes_api_key;
+    if (!key) return new Response('{"error":"No Google API key saved to this profile"}', { status: 400, headers: { 'content-type': 'application/json' } });
+    const googleUrl = 'https://maps.googleapis.com/maps/api/geocode/json'
+      + '?address=' + encodeURIComponent(address)
+      + '&key=' + encodeURIComponent(key);
+    const r = await fetch(googleUrl);
+    const body = await r.text();
+    return new Response(body, { status: r.status, headers: { 'content-type': 'application/json' } });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e && e.message || e) }), { status: 500, headers: { 'content-type': 'application/json' } });
+  }
+}
 
 async function runReminders(env) {
   const jobs = await supaGet(env, 'jobs?done=eq.false&remind_minutes=not.is.null&reminded_at=is.null&select=id,user_id,title,date,time,remind_minutes');

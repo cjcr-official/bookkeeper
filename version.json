@@ -1,1 +1,1 @@
-{"version":114,"note":"Geocoding error toast now shows Google's actual reason instead of the generic \"not enabled\" message — makes it possible to distinguish API-restriction issues from billing, quota, or propagation delays."}
+{"version":115,"note":"Geocoding now proxies through your Bookkeeper Worker (server-side) — Google's Geocoding API rejects browser calls regardless of key restrictions because it sees the Referer header. The Worker uses your saved API key, so no extra setup."}
