@@ -1137,7 +1137,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal" style="width:620px">
     <div class="modal-header"><h2>Invoice Preview</h2>
       <div style="display:flex;gap:.5rem">
-        <button class="btn btn-sm btn-primary" id="inv-share-btn" onclick="shareInvoicePDF()"><i class="ti ti-share"></i> Share PDF</button>
+        <button class="btn btn-sm btn-primary" id="inv-email-btn" onclick="emailInvoice()"><i class="ti ti-mail"></i> Email</button>
+        <button class="btn btn-sm" id="inv-share-btn" onclick="shareInvoicePDF()"><i class="ti ti-share"></i> Share PDF</button>
         <button class="btn btn-sm" id="inv-print-btn" onclick="printInvoice()"><i class="ti ti-printer"></i> Print</button>
         <button class="btn btn-sm" onclick="closeModal('modal-view-invoice')"><i class="ti ti-x"></i></button>
       </div>
@@ -1812,6 +1813,7 @@ async function deleteInvoice(id) {
 let lastInvoiceHTML = '';
 let lastInvoiceTitle = 'Invoice';
 let lastInvoiceNumber = '';
+let lastInvoiceEmailTo = '';
 let lastReportHTML = '';
 let lastReportTitle = 'Report';
 
@@ -1928,6 +1930,46 @@ function printInvoice() {
 }
 function printInvoiceFallback() { return openPDFBlob(buildInvoicePDF); }
 
+// Email the invoice: build the PDF and hand it to our Cloudflare Worker, which
+// sends it through Brevo. From = your business email, To = the client, subject
+// = the invoice number, body = the saved message from Settings, PDF attached.
+async function emailInvoice() {
+  const to = (prompt('Send invoice ' + (lastInvoiceNumber || '') + ' to:', lastInvoiceEmailTo) || '').trim();
+  if (!to) return;
+  const btn = document.getElementById('inv-email-btn');
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
+  try {
+    const { data: sess } = await sb.auth.getSession();
+    const token = sess && sess.session && sess.session.access_token;
+    if (!token) { showToast('Please sign in again.', 'error'); return; }
+    const pdf = await buildInvoicePDF();
+    if (!pdf) { showToast('Could not build the invoice PDF.', 'error'); return; }
+    const pdfBase64 = pdf.output('datauristring').split(',')[1];
+    const fname = (lastInvoiceTitle || 'Invoice').replace(/[^a-z0-9]+/gi,'_') + '.pdf';
+    const res = await fetch('/send-invoice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({
+        to,
+        subject: lastInvoiceNumber || lastInvoiceTitle,
+        body: ((profile && profile.email_message) || '').trim(),
+        fromName: (profile && profile.company) || '',
+        pdfBase64,
+        filename: fname
+      })
+    });
+    const out = await res.json().catch(() => ({}));
+    if (res.ok && out.ok) showToast('Invoice emailed to ' + to, 'success');
+    else showToast(out.error || ('Email failed (' + res.status + ')'), 'error');
+  } catch(e) {
+    console.error(e);
+    showToast('Email failed — check your connection.', 'error');
+  } finally {
+    if (btn) { btn.innerHTML = orig; btn.disabled = false; }
+  }
+}
+
 function viewInvoice(id) {
   const inv = cache.invoices.find(i=>i.id===id); if(!inv) return;
   const p = profile || {};
@@ -2021,6 +2063,7 @@ function viewInvoice(id) {
   lastInvoiceHTML = _invHTML;
   lastInvoiceTitle = 'Invoice ' + (inv.number || '');
   lastInvoiceNumber = inv.number || '';
+  lastInvoiceEmailTo = (cust.email || '').trim();
   openModal('modal-view-invoice');
 }
 

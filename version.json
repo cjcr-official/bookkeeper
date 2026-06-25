@@ -1,1 +1,1 @@
-{"version":131,"note":"Share to Mail now uses the invoice number alone as the subject (was 'Invoice <number>'); body still comes from the saved Settings message."}
+{"version":132,"note":"Real invoice email: the Email button now sends the PDF through the Cloudflare Worker via Brevo — From your business email, To the client, subject = invoice number, body = saved Settings message, PDF attached. Requires BREVO_API_KEY worker secret + a verified Brevo sender."}
