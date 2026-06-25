@@ -851,7 +851,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 </div>
 
 <!-- INVOICE MODAL -->
-<div class="modal-overlay" id="modal-invoice">
+<div class="modal-overlay" id="modal-invoice" data-keep-open>
   <div class="modal">
     <div class="modal-header"><h2 id="inv-modal-title">New Invoice</h2><button class="btn btn-sm" onclick="closeModal('modal-invoice')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
@@ -878,7 +878,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <div class="form-row">
         <div class="form-group"><label>Trips Made</label><input id="inv-trips" type="number" inputmode="numeric" min="0" step="1" value="0" oninput="calcInvMiles()"></div>
         <div class="form-group"><label>Per Trip</label><input id="inv-miles" type="number" readonly style="background:var(--bg2)" placeholder="—"></div>
-        <div class="form-group"><label>Total Miles</label><input id="inv-total-miles" type="number" readonly style="background:var(--bg2);font-weight:700"></div>
+        <div class="form-group"><label>Total Miles</label><input id="inv-total-miles" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
       </div>
       <div id="inv-lines-wrap" style="margin-bottom:1rem"></div>
       <button class="btn btn-sm" onclick="addInvLine()"><i class="ti ti-plus"></i> Add Line</button>
@@ -3273,7 +3273,10 @@ function closeModal(id) {
   // only unlock scroll if no other modal is still open
   if (!document.querySelector('.modal-overlay.open')) document.body.classList.remove('modal-open');
 }
-document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this)closeModal(this.id);}));
+// Backdrop click closes a modal, EXCEPT modals marked data-keep-open (e.g. the
+// invoice editor) — those only close via their X / Cancel / Save buttons so a
+// stray tap can't discard an in-progress edit.
+document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this && !this.hasAttribute('data-keep-open'))closeModal(this.id);}));
 
 // ====== BOOT ======
 async function boot() {
