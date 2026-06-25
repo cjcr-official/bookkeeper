@@ -154,6 +154,9 @@ create table if not exists recurring (
   active boolean default true, data jsonb, created_at timestamptz default now()
 );
 -- + RLS policy "recurring_own" for all using (auth.uid() = user_id)
+-- recurring push reminders (one morning ping on the due date):
+alter table recurring add column if not exists notify boolean default true;
+alter table recurring add column if not exists reminded_date date;  -- last occurrence (next_date) we pushed for
 
 -- jobs (calendar entries with optional push reminders)
 create table if not exists jobs (
@@ -207,6 +210,14 @@ minute until the cache refreshes.
   notification because we don't ship encrypted payloads (RFC 8291 is
   heavyweight). User enables via Settings → Notifications → Enable on this
   device; chatty debug pane surfaces each step's outcome.
+- **Recurring reminders:** in addition to jobs, the Worker cron sends one
+  morning push (>= 8am Denver) on the day a recurring item comes due.
+  `runRecurringReminders()` matches `active AND notify AND next_date <= today
+  (Denver) AND reminded_date <> next_date`, sends the same payload-less push,
+  and stamps `reminded_date = next_date` to dedupe per occurrence (the client
+  advancing `next_date` in `processRecurring()` re-arms the next one). Toggled
+  per item by the "Push reminder on the due date" checkbox in the recurring
+  editor (default on).
 - **Invoices:** status tabs (All/Draft/Sent/Paid/Overdue) + search; pro PDF/print
   modeled on the business Word template; numbers auto-generate **YYNN** (2-digit
   year + sequence, editable). Share builds a real PDF via an off-screen 780px

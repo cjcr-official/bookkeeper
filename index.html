@@ -944,6 +944,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div style="font-size:11px;color:var(--text3)">Posts an expense automatically each period.</div>
       </div>
       <label style="display:flex;align-items:center;gap:.5rem;margin-top:.6rem;font-size:13px"><input type="checkbox" id="recur-active" checked style="width:auto"> Active</label>
+      <label style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;font-size:13px"><input type="checkbox" id="recur-notify" checked style="width:auto"> Push reminder on the due date</label>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-recur-edit')">Cancel</button>
@@ -2810,6 +2811,7 @@ function openRecurEdit(kind, rec) {
   document.getElementById('recur-freq').value = rec?(rec.frequency||'monthly'):'monthly';
   document.getElementById('recur-next').value = rec?(rec.next_date||today()):today();
   document.getElementById('recur-active').checked = rec?!!rec.active:true;
+  document.getElementById('recur-notify').checked = rec?(rec.notify!==false):true;
   const d = (rec&&rec.data)?rec.data:{};
   const invF = document.getElementById('recur-inv-fields'), expF = document.getElementById('recur-exp-fields');
   if (kind==='invoice') {
@@ -2847,7 +2849,7 @@ async function saveRecurring() {
     data = {vendor:document.getElementById('recur-exp-vendor').value,category:document.getElementById('recur-exp-category').value,amount:parseFloat(document.getElementById('recur-exp-amount').value)||0,method:document.getElementById('recur-exp-method').value,description:document.getElementById('recur-exp-desc').value};
     if (!data.vendor) { showToast('Vendor is required','error'); return; }
   }
-  const row = {user_id:currentUser.id,kind:kind,label:document.getElementById('recur-label').value,frequency:document.getElementById('recur-freq').value,next_date:document.getElementById('recur-next').value||today(),active:document.getElementById('recur-active').checked,data:data};
+  const row = {user_id:currentUser.id,kind:kind,label:document.getElementById('recur-label').value,frequency:document.getElementById('recur-freq').value,next_date:document.getElementById('recur-next').value||today(),active:document.getElementById('recur-active').checked,notify:document.getElementById('recur-notify').checked,data:data};
   let err;
   if (id) { const r=await sb.from('recurring').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.recurring.findIndex(x=>x.id===id); if(idx>-1)cache.recurring[idx]={...cache.recurring[idx],...row,id};} }
   else { const r=await sb.from('recurring').insert(row).select().single(); err=r.error; if(!err&&r.data)cache.recurring.unshift(r.data); }

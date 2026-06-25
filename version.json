@@ -1,1 +1,1 @@
-{"version":134,"note":"Reverted the invoice email experiment. Invoices are back to the single Share PDF button (plus Print) — no Email button, no Outlook/Brevo sending."}
+{"version":135,"note":"Recurring invoices/expenses can now send a push reminder on their due date (8am), like jobs. Toggle per item in the recurring editor (on by default)."}
