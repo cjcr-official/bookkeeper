@@ -1,1 +1,1 @@
-{"version":128,"note":"Invoices: new Email button opens a mail draft pre-filled To the client, Subject with the invoice number, and body from a new saved 'Invoice Email Message' in Settings."}
+{"version":129,"note":"Invoice Email button now builds the PDF and opens the share sheet with it attached (subject = invoice number, body = saved message). Pick Mail to send; choose the client there (recipient can't be pre-filled when a file is attached)."}
