@@ -789,6 +789,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- ACCOUNTS -->
       <div id="page-accounts" class="page">
+        <div style="margin-bottom:1rem">
+          <button class="btn btn-primary btn-sm" onclick="openReconcileModal()"><i class="ti ti-scale"></i> Reconcile bank statement</button>
+        </div>
         <div class="card list-card"><div id="accounts-table"></div></div>
       </div>
 
@@ -1147,6 +1150,18 @@ input,select,textarea{border-radius:var(--radius-sm)}
       </div>
     </div>
     <div class="modal-body"><div id="invoice-preview-content"></div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-reconcile">
+  <div class="modal" style="width:680px">
+    <div class="modal-header"><h2>Reconcile Bank Statement</h2><button class="btn btn-sm" onclick="closeModal('modal-reconcile')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Account</label><select id="rec-account"></select></div>
+      <div class="form-group"><label>Bank statement (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf"></div>
+      <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
+      <div id="rec-result" style="margin-top:1rem"></div>
+    </div>
   </div>
 </div>
 
@@ -3094,6 +3109,142 @@ function buildReportPDF() { return htmlToPDF(lastReportHTML, '#report-print-area
 
 function printReport() { printDocInIframe(lastReportHTML, lastReportTitle, '', printReportFallback); }
 function printReportFallback() { return openPDFBlob(buildReportPDF); }
+
+// ====== BANK RECONCILIATION ======
+// Lazy-load pdf.js (only when the user actually reconciles).
+let _pdfjsReady = null;
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve();
+  if (_pdfjsReady) return _pdfjsReady;
+  _pdfjsReady = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch(e){} resolve(); };
+    s.onerror = () => reject(new Error('Could not load the PDF reader.'));
+    document.head.appendChild(s);
+  });
+  return _pdfjsReady;
+}
+// Extract plain text from a PDF File, reconstructing line breaks by y-position.
+async function extractPdfText(file) {
+  await loadPdfJs();
+  const buf = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  let out = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+    let lastY = null, line = '';
+    for (const it of tc.items) {
+      const y = it.transform[5];
+      if (lastY !== null && Math.abs(y - lastY) > 3) { out += line.trim() + '\n'; line = ''; }
+      line += it.str + ' ';
+      lastY = y;
+    }
+    out += line.trim() + '\n\n';
+  }
+  return out;
+}
+
+function openReconcileModal() {
+  const sel = document.getElementById('rec-account');
+  sel.innerHTML = (cache.accounts||[]).map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('') || '<option value="">(no accounts)</option>';
+  document.getElementById('rec-file').value = '';
+  document.getElementById('rec-result').innerHTML = '';
+  openModal('modal-reconcile');
+}
+
+async function runReconcile() {
+  const file = document.getElementById('rec-file').files[0];
+  if (!file) { showToast('Pick a statement PDF first.', 'error'); return; }
+  const acctId = document.getElementById('rec-account').value || null;
+  const btn = document.getElementById('rec-run-btn');
+  const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Reading…';
+  const out = document.getElementById('rec-result');
+  out.innerHTML = '<div style="color:var(--text3);font-size:13px">Reading the statement…</div>';
+  try {
+    const text = await extractPdfText(file);
+    const { data: sess } = await sb.auth.getSession();
+    const token = sess && sess.session && sess.session.access_token;
+    if (!token) { showToast('Please sign in again.', 'error'); return; }
+    const res = await fetch('/reconcile-extract', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ text })
+    });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok || !data.ok) { out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(data.error||('Failed ('+res.status+')'))}</div>`; return; }
+    renderReconcile(data, acctId);
+  } catch(e) {
+    console.error(e);
+    out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Could not read that PDF.')}</div>`;
+  } finally {
+    btn.disabled = false; btn.innerHTML = orig;
+  }
+}
+
+// Compare extracted statement transactions against recorded expenses + invoice
+// payments, by amount (±$0.01) and date (±5 days). Renders matched / missing buckets.
+function renderReconcile(stmt, acctId) {
+  const out = document.getElementById('rec-result');
+  const txns = (stmt.transactions||[]).map(t=>({ ...t, amount: parseFloat(t.amount)||0 }));
+  if (!txns.length) { out.innerHTML = '<div style="color:var(--text3);font-size:13px">No transactions found in that statement.</div>'; return; }
+  const dates = txns.map(t=>t.date).filter(Boolean).sort();
+  const periodStart = stmt.period_start || dates[0];
+  const periodEnd = stmt.period_end || dates[dates.length-1];
+  const inPeriod = d => (!periodStart || d>=periodStart) && (!periodEnd || d<=periodEnd);
+
+  // Build candidate records: expenses (money out) + invoice payments (money in).
+  const recs = [];
+  (cache.expenses||[]).forEach(e=>{
+    if (acctId && e.account_id && e.account_id!==acctId) return;   // honor account link when present
+    recs.push({ kind:'Expense', date:e.date, amount:-(parseFloat(e.amount)||0), label:e.vendor||'Expense' });
+  });
+  (cache.invoices||[]).forEach(i=>{
+    const paid = parseFloat(i.amount_paid)||0;
+    if (paid>0) recs.push({ kind:'Payment', date:i.paid_date||i.date, amount:paid, label:'Invoice '+(i.number||'')+' — '+(i.customer_name||'') });
+  });
+  const recsUsed = new Array(recs.length).fill(false);
+  const dayDiff = (a,b)=>Math.abs((parseDate(a)-parseDate(b))/86400000);
+
+  const matched = [], onBankOnly = [];
+  for (const t of txns) {
+    let bi = -1;
+    for (let i=0;i<recs.length;i++) {
+      if (recsUsed[i]) continue;
+      if (Math.abs(recs[i].amount - t.amount) <= 0.01 && (!t.date || !recs[i].date || dayDiff(t.date, recs[i].date) <= 5)) { bi = i; break; }
+    }
+    if (bi>=0) { recsUsed[bi]=true; matched.push({ t, r:recs[bi] }); }
+    else onBankOnly.push(t);
+  }
+  const inRecordsOnly = recs.filter((r,i)=>!recsUsed[i] && inPeriod(r.date));
+
+  // Balance check.
+  let balanceHtml = '';
+  if (stmt.opening_balance!=null && stmt.closing_balance!=null) {
+    const net = txns.reduce((s,t)=>s+t.amount,0);
+    const expected = (parseFloat(stmt.opening_balance)||0) + net;
+    const diff = expected - (parseFloat(stmt.closing_balance)||0);
+    const ok = Math.abs(diff) <= 0.01;
+    balanceHtml = `<div style="padding:.6rem .75rem;border-radius:var(--radius-sm);margin-bottom:.75rem;background:${ok?'rgba(21,128,61,.12)':'rgba(185,28,28,.12)'};font-size:13px">
+      ${ok?'✅ Statement balances':'⚠️ Statement doesn’t balance'} — opening ${fmt(stmt.opening_balance)} ${net>=0?'+':'−'} ${fmt(Math.abs(net))} = ${fmt(expected)} vs closing ${fmt(stmt.closing_balance)}${ok?'':` (off by ${fmt(Math.abs(diff))})`}</div>`;
+  }
+
+  const row = (d,label,amt,tag)=>`<tr><td style="white-space:nowrap;color:var(--text3);font-size:11.5px">${d?fmtDate(d):'—'}</td><td style="font-size:12.5px">${escHtml(label)}${tag?` <span class="badge badge-gray" style="font-size:9px">${tag}</span>`:''}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;${amt<0?'color:#b91c1c':'color:#15803d'}">${fmt(amt)}</td></tr>`;
+  const tbl = rows => rows.length ? `<table style="width:100%;border-collapse:collapse">${rows.join('')}</table>` : '<div style="color:var(--text3);font-size:12px;padding:.25rem 0">None</div>';
+
+  out.innerHTML = `
+    ${balanceHtml}
+    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem;font-size:12px">
+      <span class="badge badge-green">✅ ${matched.length} matched</span>
+      <span class="badge badge-gray">⚠️ ${inRecordsOnly.length} in your records only</span>
+      <span class="badge badge-gray">❓ ${onBankOnly.length} on statement only</span>
+    </div>
+    <div style="margin-bottom:.6rem"><div style="font-weight:700;font-size:12px;margin-bottom:.25rem">❓ On the statement, not in your records</div>${tbl(onBankOnly.map(t=>row(t.date,t.description||'—',t.amount,'')))}</div>
+    <div style="margin-bottom:.6rem"><div style="font-weight:700;font-size:12px;margin-bottom:.25rem">⚠️ In your records, not on the statement</div>${tbl(inRecordsOnly.map(r=>row(r.date,r.label,r.amount,r.kind)))}</div>
+    <details><summary style="cursor:pointer;font-weight:700;font-size:12px">✅ Matched (${matched.length})</summary>${tbl(matched.map(m=>row(m.t.date,(m.t.description||m.r.label),m.t.amount,m.r.kind)))}</details>
+    <div style="font-size:10.5px;color:var(--text3);margin-top:.6rem">Read by AI from the PDF — double-check anything important. Nothing here changes your records.</div>`;
+}
 
 // ====== SETTINGS ======
 function loadSettingsForm() {

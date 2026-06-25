@@ -1,1 +1,1 @@
-{"version":141,"note":"Setting a customer's miles now also fills in PAID invoices that had no mileage yet (recovering forgotten deductions), while never overwriting a paid invoice that already has a real distance. Unpaid invoices still always follow the customer."}
+{"version":142,"note":"New: Accounts → Reconcile bank statement. Drop in a bank PDF and it extracts the transactions (via AI) and matches them against your recorded expenses and invoice payments, flagging anything missing and checking the ending balance."}
