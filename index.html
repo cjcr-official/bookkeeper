@@ -807,14 +807,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <select id="s-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD ($)</option><option value="AUD">AUD ($)</option></select>
             </div>
             <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
-            <div class="form-group"><label>Invoice Email Message <span style="color:var(--text3);font-weight:400;font-size:11px">(auto-fills the body when you email an invoice)</span></label><textarea id="s-email-message" rows="4" placeholder="Hi,&#10;&#10;Please find your invoice attached. Let me know if you have any questions.&#10;&#10;Thanks!"></textarea></div>
-            <div class="form-group" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">
-              <label>Send Invoices from Outlook</label>
-              <div id="ms-status" style="font-size:13px;color:var(--text2);margin-bottom:.5rem">Loading…</div>
-              <button class="btn" id="ms-connect-btn" onclick="connectOutlook()" style="display:none"><i class="ti ti-brand-windows"></i> Connect Outlook</button>
-              <button class="btn btn-danger" id="ms-disconnect-btn" onclick="disconnectOutlook()" style="display:none"><i class="ti ti-plug-off"></i> Disconnect</button>
-              <div style="font-size:11px;color:var(--text3);margin-top:.5rem;line-height:1.5">Connect your Outlook/Hotmail account once so the Email button sends invoices straight from your mailbox (lands in the inbox, copy saved to your Sent). You'll sign in to Microsoft and grant send permission.</div>
-            </div>
             <div class="form-group" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">
               <label>Notifications</label>
               <div id="push-status" style="font-size:13px;color:var(--text2);margin-bottom:.5rem">Loading…</div>
@@ -1144,8 +1136,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal" style="width:620px">
     <div class="modal-header"><h2>Invoice Preview</h2>
       <div style="display:flex;gap:.5rem">
-        <button class="btn btn-sm btn-primary" id="inv-email-btn" onclick="emailInvoice()"><i class="ti ti-mail"></i> Email</button>
-        <button class="btn btn-sm" id="inv-share-btn" onclick="shareInvoicePDF()"><i class="ti ti-share"></i> Share PDF</button>
+        <button class="btn btn-sm btn-primary" id="inv-share-btn" onclick="shareInvoicePDF()"><i class="ti ti-share"></i> Share PDF</button>
         <button class="btn btn-sm" id="inv-print-btn" onclick="printInvoice()"><i class="ti ti-printer"></i> Print</button>
         <button class="btn btn-sm" onclick="closeModal('modal-view-invoice')"><i class="ti ti-x"></i></button>
       </div>
@@ -1234,7 +1225,6 @@ function parseDate(d) { return d ? new Date(d+'T12:00:00') : new Date(NaN); }
 // Safe localStorage access (no-ops if storage is unavailable, e.g. private mode).
 function lsGet(k, d=null) { try { const v=localStorage.getItem(k); return v===null?d:v; } catch(e){ return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch(e){} }
-function lsDel(k) { try { localStorage.removeItem(k); } catch(e){} }
 function statusBadge(s) {
   const m={draft:'badge-gray',sent:'badge-blue',paid:'badge-green',overdue:'badge-red'};
   return `<span class="badge ${m[s]||'badge-gray'}">${s}</span>`;
@@ -1820,8 +1810,6 @@ async function deleteInvoice(id) {
 
 let lastInvoiceHTML = '';
 let lastInvoiceTitle = 'Invoice';
-let lastInvoiceNumber = '';
-let lastInvoiceEmailTo = '';
 let lastReportHTML = '';
 let lastReportTitle = 'Report';
 
@@ -1872,13 +1860,9 @@ async function shareInvoicePDF() {
     const fname = (lastInvoiceTitle || 'Invoice').replace(/[^a-z0-9]+/gi,'_') + '.pdf';
     const blob = pdf.output('blob');
     const file = new File([blob], fname, { type: 'application/pdf' });
-    // Preferred: native share sheet with the actual file (iOS supports this).
-    // title -> email subject (the invoice number), text -> email body (the
-    // saved message from Settings) when the user shares to Mail.
-    const body = ((profile && profile.email_message) || '').trim();
-    const subject = lastInvoiceNumber || lastInvoiceTitle;
+    // Preferred: native share sheet with the actual file (iOS supports this)
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: subject, text: body });
+      await navigator.share({ files: [file], title: lastInvoiceTitle });
     } else {
       // Fallback: trigger a download of the real PDF file
       const url = URL.createObjectURL(blob);
@@ -1937,121 +1921,6 @@ function printInvoice() {
   printDocInIframe(lastInvoiceHTML, lastInvoiceTitle, invPrintCSS, printInvoiceFallback);
 }
 function printInvoiceFallback() { return openPDFBlob(buildInvoicePDF); }
-
-// ====== OUTLOOK (Microsoft Graph) CONNECTION ======
-// One-time OAuth so the Email button can send straight from the user's mailbox.
-let msConfigCache = null;
-async function getMsConfig() {
-  if (msConfigCache) return msConfigCache;
-  try { msConfigCache = await (await fetch('/ms-config')).json(); } catch(e) { msConfigCache = {}; }
-  return msConfigCache;
-}
-function b64urlBytes(buf) {
-  let s = ''; for (const b of new Uint8Array(buf)) s += String.fromCharCode(b);
-  return btoa(s).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
-}
-async function connectOutlook() {
-  try {
-    const cfg = await getMsConfig();
-    if (!cfg.clientId) { showToast('Outlook isn’t set up on the server yet.', 'error'); return; }
-    const verifier = b64urlBytes(crypto.getRandomValues(new Uint8Array(48)));
-    const challenge = b64urlBytes(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
-    const state = b64urlBytes(crypto.getRandomValues(new Uint8Array(16)));
-    lsSet('bk-ms-verifier', verifier); lsSet('bk-ms-state', state);
-    const u = new URL('https://login.microsoftonline.com/common/oauth2/v2.0/authorize');
-    u.searchParams.set('client_id', cfg.clientId);
-    u.searchParams.set('response_type', 'code');
-    u.searchParams.set('redirect_uri', cfg.redirectUri);
-    u.searchParams.set('response_mode', 'query');
-    u.searchParams.set('scope', cfg.scope);
-    u.searchParams.set('code_challenge', challenge);
-    u.searchParams.set('code_challenge_method', 'S256');
-    u.searchParams.set('state', state);
-    window.location.href = u.toString();
-  } catch(e) { console.error(e); showToast('Could not start Outlook sign-in.', 'error'); }
-}
-// Called on boot: if we landed back from Microsoft with ?code, finish the
-// exchange via the Worker.
-async function maybeHandleOutlookCallback() {
-  const params = new URLSearchParams(location.search);
-  const code = params.get('code'), state = params.get('state');
-  if (!code) return;
-  const verifier = lsGet('bk-ms-verifier'), expect = lsGet('bk-ms-state');
-  history.replaceState({}, '', '/');               // strip the code from the URL
-  if (params.get('error')) { showToast('Outlook sign-in cancelled.', 'error'); return; }
-  if (!verifier || state !== expect) { showToast('Outlook sign-in expired — try again.', 'error'); return; }
-  lsDel('bk-ms-verifier'); lsDel('bk-ms-state');
-  try {
-    const { data: sess } = await sb.auth.getSession();
-    const token = sess && sess.session && sess.session.access_token;
-    const r = await fetch('/ms-exchange', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify({ code, code_verifier: verifier })
-    });
-    const out = await r.json().catch(() => ({}));
-    if (r.ok && out.ok) { if (profile) profile.ms_email = out.email; showToast('Outlook connected: ' + out.email, 'success'); }
-    else showToast(out.error || 'Outlook connection failed.', 'error');
-  } catch(e) { console.error(e); showToast('Outlook connection failed.', 'error'); }
-}
-async function disconnectOutlook() {
-  try {
-    const { data: sess } = await sb.auth.getSession();
-    const token = sess && sess.session && sess.session.access_token;
-    await fetch('/ms-disconnect', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
-    if (profile) profile.ms_email = null;
-    renderMsStatus();
-    showToast('Outlook disconnected');
-  } catch(e) { console.error(e); showToast('Could not disconnect.', 'error'); }
-}
-function renderMsStatus() {
-  const st = document.getElementById('ms-status'); if (!st) return;
-  const cb = document.getElementById('ms-connect-btn'), db = document.getElementById('ms-disconnect-btn');
-  const email = profile && profile.ms_email;
-  if (email) { st.innerHTML = 'Connected as <strong>' + escHtml(email) + '</strong>'; cb.style.display = 'none'; db.style.display = ''; }
-  else { st.textContent = 'Not connected.'; cb.style.display = ''; db.style.display = 'none'; }
-}
-
-// Email the invoice: build the PDF and hand it to our Cloudflare Worker, which
-// sends it from your connected Outlook mailbox via Microsoft Graph. To = the
-// client, subject = the invoice number, body = the saved message from Settings,
-// PDF attached.
-async function emailInvoice() {
-  const to = (prompt('Send invoice ' + (lastInvoiceNumber || '') + ' to:', lastInvoiceEmailTo) || '').trim();
-  if (!to) return;
-  const btn = document.getElementById('inv-email-btn');
-  const orig = btn ? btn.innerHTML : '';
-  if (btn) { btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
-  try {
-    const { data: sess } = await sb.auth.getSession();
-    const token = sess && sess.session && sess.session.access_token;
-    if (!token) { showToast('Please sign in again.', 'error'); return; }
-    const pdf = await buildInvoicePDF();
-    if (!pdf) { showToast('Could not build the invoice PDF.', 'error'); return; }
-    const pdfBase64 = pdf.output('datauristring').split(',')[1];
-    const fname = (lastInvoiceTitle || 'Invoice').replace(/[^a-z0-9]+/gi,'_') + '.pdf';
-    const res = await fetch('/send-invoice', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify({
-        to,
-        subject: lastInvoiceNumber || lastInvoiceTitle,
-        body: ((profile && profile.email_message) || '').trim(),
-        fromName: (profile && profile.company) || '',
-        pdfBase64,
-        filename: fname
-      })
-    });
-    const out = await res.json().catch(() => ({}));
-    if (res.ok && out.ok) showToast('Invoice emailed to ' + to, 'success');
-    else showToast(out.error || ('Email failed (' + res.status + ')'), 'error');
-  } catch(e) {
-    console.error(e);
-    showToast('Email failed — check your connection.', 'error');
-  } finally {
-    if (btn) { btn.innerHTML = orig; btn.disabled = false; }
-  }
-}
 
 function viewInvoice(id) {
   const inv = cache.invoices.find(i=>i.id===id); if(!inv) return;
@@ -2145,8 +2014,6 @@ function viewInvoice(id) {
   document.getElementById('invoice-preview-content').innerHTML = _invHTML;
   lastInvoiceHTML = _invHTML;
   lastInvoiceTitle = 'Invoice ' + (inv.number || '');
-  lastInvoiceNumber = inv.number || '';
-  lastInvoiceEmailTo = (cust.email || '').trim();
   openModal('modal-view-invoice');
 }
 
@@ -3178,10 +3045,8 @@ function loadSettingsForm() {
   document.getElementById('s-phone').value=profile.phone||'';
   document.getElementById('s-currency').value=profile.currency||'USD';
   document.getElementById('s-base-address').value=profile.base_address||'';
-  document.getElementById('s-email-message').value=profile.email_message||'';
   renderLogoState();
   renderPushStatus();
-  renderMsStatus();
   document.getElementById('user-email-display').textContent=currentUser.email;
 }
 
@@ -3250,8 +3115,7 @@ async function saveSettings() {
     phone:   document.getElementById('s-phone').value,
     tax: 0,
     currency: document.getElementById('s-currency').value,
-    base_address: document.getElementById('s-base-address').value,
-    email_message: document.getElementById('s-email-message').value
+    base_address: document.getElementById('s-base-address').value
   };
   const { error } = await sb.from('profiles').upsert({ id: currentUser.id, ...row });
   if (error) { showToast(error.message, 'error'); return; }
@@ -3407,7 +3271,6 @@ async function boot() {
     if (session) {
       currentUser = session.user;
       await loadAllData();
-      await maybeHandleOutlookCallback();
       await processRecurring();
       document.getElementById('user-company-name').textContent = profile.company||'My Business';
       hide();

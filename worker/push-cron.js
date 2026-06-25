@@ -1,20 +1,12 @@
 // Bookkeeper Worker.
-//   /run?key=...        — push reminder cron trigger (per-job, every minute)
-//   /ms-config (GET)    — public OAuth client id + redirect uri for the app
-//   /ms-exchange (POST) — trade an OAuth auth-code for tokens; store refresh token
-//   /ms-disconnect(POST)— forget the stored Outlook tokens
-//   /send-invoice (POST)— email an invoice PDF FROM the user's Outlook mailbox
-//                         via Microsoft Graph (auth'd by the Supabase token)
+//   /run?key=... — push reminder cron trigger (per-job, every minute)
 //   anything else → static assets (index.html, sw.js, manifest.json, version.json, icons)
 //
 // Required Worker secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY,
-// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, MANUAL_KEY,
-// MS_CLIENT_ID, MS_CLIENT_SECRET, MS_REDIRECT_URI.
+// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, MANUAL_KEY.
 
 const TZ = 'America/Denver';
 const FIRE_WINDOW_MS = 30 * 60 * 1000;
-const MS_TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
-const MS_SCOPE = 'openid profile email offline_access User.Read Mail.Send';
 
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(runReminders(env)); },
@@ -24,165 +16,10 @@ export default {
       const summary = await runReminders(env);
       return new Response(JSON.stringify(summary, null, 2), { headers: { 'content-type': 'application/json' } });
     }
-    if (url.pathname === '/ms-config' && req.method === 'GET') {
-      return jsonResp({ clientId: env.MS_CLIENT_ID || '', redirectUri: env.MS_REDIRECT_URI || '', scope: MS_SCOPE });
-    }
-    if (url.pathname === '/ms-exchange' && req.method === 'POST') return msExchange(req, env);
-    if (url.pathname === '/ms-disconnect' && req.method === 'POST') return msDisconnect(req, env);
-    if (url.pathname === '/send-invoice' && req.method === 'POST') return sendInvoice(req, env);
     if (env.ASSETS) return env.ASSETS.fetch(req);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
   }
 };
-
-function jsonResp(obj, status = 200) {
-  return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
-}
-
-// Verify the caller's Supabase access token → { id, email } or null.
-async function authUser(req, env) {
-  const auth = req.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!token) return null;
-  const r = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` }
-  });
-  if (!r.ok) return null;
-  const u = await r.json();
-  return u && u.id ? { id: u.id, email: (u.email || '').trim() } : null;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Microsoft OAuth: connect the user's Outlook mailbox.
-//
-// The browser runs the authorization-code + PKCE redirect and hands us the
-// code; we (the confidential client, holding MS_CLIENT_SECRET) exchange it for
-// tokens server-side. The refresh token is stored in ms_tokens (service-role
-// only — never exposed to the browser); the connected address is mirrored to
-// profiles.ms_email for display.
-async function msExchange(req, env) {
-  const user = await authUser(req, env);
-  if (!user) return jsonResp({ error: 'Not signed in.' }, 401);
-  if (!env.MS_CLIENT_ID || !env.MS_CLIENT_SECRET) return jsonResp({ error: 'Outlook is not configured on the server.' }, 500);
-  let b; try { b = await req.json(); } catch { return jsonResp({ error: 'Bad request.' }, 400); }
-  if (!b.code || !b.code_verifier) return jsonResp({ error: 'Missing authorization code.' }, 400);
-
-  const form = new URLSearchParams({
-    client_id: env.MS_CLIENT_ID,
-    client_secret: env.MS_CLIENT_SECRET,
-    grant_type: 'authorization_code',
-    code: b.code,
-    redirect_uri: env.MS_REDIRECT_URI,
-    code_verifier: b.code_verifier,
-    scope: MS_SCOPE
-  });
-  const r = await fetch(MS_TOKEN_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form });
-  const tok = await r.json().catch(() => ({}));
-  if (!r.ok || !tok.refresh_token) {
-    console.error('ms token exchange failed', r.status, JSON.stringify(tok).slice(0, 300));
-    return jsonResp({ error: tok.error_description || `Outlook sign-in failed (${r.status}).` }, 502);
-  }
-  // Find out which mailbox we just connected.
-  let mailbox = user.email;
-  try {
-    const me = await fetch('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: `Bearer ${tok.access_token}` } });
-    if (me.ok) { const j = await me.json(); mailbox = (j.mail || j.userPrincipalName || mailbox || '').trim(); }
-  } catch {}
-
-  await saveRefreshToken(env, user.id, tok.refresh_token);
-  await supaPatch(env, `profiles?id=eq.${user.id}`, { ms_email: mailbox });
-  return jsonResp({ ok: true, email: mailbox });
-}
-
-async function msDisconnect(req, env) {
-  const user = await authUser(req, env);
-  if (!user) return jsonResp({ error: 'Not signed in.' }, 401);
-  await fetch(`${env.SUPABASE_URL}/rest/v1/ms_tokens?user_id=eq.${user.id}`, {
-    method: 'DELETE',
-    headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' }
-  });
-  await supaPatch(env, `profiles?id=eq.${user.id}`, { ms_email: null });
-  return jsonResp({ ok: true });
-}
-
-async function saveRefreshToken(env, userId, refreshToken) {
-  await fetch(`${env.SUPABASE_URL}/rest/v1/ms_tokens`, {
-    method: 'POST',
-    headers: {
-      apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`,
-      'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal'
-    },
-    body: JSON.stringify({ user_id: userId, refresh_token: refreshToken, updated_at: new Date().toISOString() })
-  });
-}
-
-async function getRefreshToken(env, userId) {
-  const rows = await supaGet(env, `ms_tokens?user_id=eq.${userId}&select=refresh_token`);
-  return rows.length ? rows[0].refresh_token : null;
-}
-
-// Trade the stored refresh token for a fresh access token (and store the
-// rotated refresh token Microsoft returns).
-async function getGraphAccessToken(env, userId) {
-  const refresh = await getRefreshToken(env, userId);
-  if (!refresh) return null;
-  const form = new URLSearchParams({
-    client_id: env.MS_CLIENT_ID,
-    client_secret: env.MS_CLIENT_SECRET,
-    grant_type: 'refresh_token',
-    refresh_token: refresh,
-    scope: MS_SCOPE
-  });
-  const r = await fetch(MS_TOKEN_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form });
-  const tok = await r.json().catch(() => ({}));
-  if (!r.ok || !tok.access_token) {
-    console.error('ms refresh failed', r.status, JSON.stringify(tok).slice(0, 200));
-    return null;
-  }
-  if (tok.refresh_token) await saveRefreshToken(env, userId, tok.refresh_token);
-  return tok.access_token;
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Email an invoice PDF from the user's Outlook mailbox via Microsoft Graph.
-async function sendInvoice(req, env) {
-  const user = await authUser(req, env);
-  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
-
-  let b; try { b = await req.json(); } catch { return jsonResp({ error: 'Bad request.' }, 400); }
-  const to = (b.to || '').trim();
-  const subject = (b.subject || '').trim() || 'Invoice';
-  const body = (b.body || '').toString();
-  const pdfBase64 = (b.pdfBase64 || '').toString();
-  const filename = (b.filename || 'Invoice.pdf').toString();
-  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return jsonResp({ error: 'A valid recipient email is required.' }, 400);
-  if (!pdfBase64) return jsonResp({ error: 'Missing invoice PDF.' }, 400);
-
-  const accessToken = await getGraphAccessToken(env, user.id);
-  if (!accessToken) return jsonResp({ error: 'Outlook isn’t connected. Open Settings and tap Connect Outlook.' }, 412);
-
-  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const message = {
-    message: {
-      subject,
-      body: { contentType: 'HTML', content: '<div style="font-family:sans-serif;white-space:pre-wrap">' + (esc(body) || '&nbsp;') + '</div>' },
-      toRecipients: [{ emailAddress: { address: to } }],
-      attachments: [{ '@odata.type': '#microsoft.graph.fileAttachment', name: filename, contentType: 'application/pdf', contentBytes: pdfBase64 }]
-    },
-    saveToSentItems: true
-  };
-  const r = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(message)
-  });
-  if (!r.ok) {
-    const detail = await r.text().catch(() => '');
-    console.error('graph sendMail failed', r.status, detail);
-    return jsonResp({ error: `Send failed (${r.status}). ${detail.slice(0, 300)}` }, 502);
-  }
-  return jsonResp({ ok: true });
-}
 
 // ──────────────────────────────────────────────────────────────────────
 // Push reminders cron — fires per-job at the user-configured offset.

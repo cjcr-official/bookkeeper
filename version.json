@@ -1,1 +1,1 @@
-{"version":133,"note":"Invoice email now sends from your own Outlook/Hotmail mailbox via Microsoft Graph (inbox delivery, copy in Sent), replacing the Brevo relay. Connect your account once in Settings → Send Invoices from Outlook."}
+{"version":134,"note":"Reverted the invoice email experiment. Invoices are back to the single Share PDF button (plus Print) — no Email button, no Outlook/Brevo sending."}
