@@ -59,9 +59,24 @@ Worker secrets (Cloudflare dashboard → Workers & Pages → `bookkeeper` → Se
 | `VAPID_PRIVATE_KEY` | secret | Web Push signing |
 | `VAPID_SUBJECT` | plaintext (in wrangler.toml) | Web Push contact `mailto:` |
 | `MANUAL_KEY` | secret | gates the `/run` test endpoint |
+| `MS_CLIENT_ID` | plaintext (dashboard) | Microsoft OAuth app (Outlook send) |
+| `MS_CLIENT_SECRET` | secret | Microsoft OAuth token exchange |
+| `MS_REDIRECT_URI` | plaintext (dashboard) | `https://<app>/ms-callback` |
 
 Cron schedule (in `wrangler.toml`): `* * * * *` (every minute) — keeps reminder
 latency under ~60 seconds.
+
+**Invoice email (Outlook send):** the Email button on an invoice builds the PDF
+and POSTs it to the Worker `/send-invoice`, which sends it from the user's own
+Outlook/Hotmail mailbox via Microsoft Graph `me/sendMail` (best deliverability,
+copy in Sent). OAuth is authorization-code + PKCE: the browser redirects to
+Microsoft and returns with a `?code`; `maybeHandleOutlookCallback()` posts it to
+`/ms-exchange`, which (as a confidential client holding `MS_CLIENT_SECRET`) trades
+it for tokens and stores the **refresh token** in the `ms_tokens` table
+(service-role only — never sent to the browser). `/send-invoice` refreshes an
+access token per send. Connect/disconnect UI lives in Settings; the connected
+address is mirrored to `profiles.ms_email` for display. All Worker endpoints are
+gated by the caller's Supabase access token (`authUser()`).
 
 ---
 
@@ -125,6 +140,19 @@ with "could not find the X column in the schema cache"):
 alter table profiles add column if not exists base_address text;
 alter table profiles add column if not exists logo text;
 alter table profiles add column if not exists push_subscription jsonb;
+alter table profiles add column if not exists email_message text;  -- saved invoice email body
+alter table profiles add column if not exists ms_email text;       -- connected Outlook address (display only)
+
+-- ms_tokens: Outlook refresh token, service-role only (NO client RLS policy
+--   so the browser can never read it). The Worker uses the service key, which
+--   bypasses RLS.
+create table if not exists ms_tokens (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  refresh_token text,
+  updated_at timestamptz default now()
+);
+alter table ms_tokens enable row level security;
+-- intentionally no policy: only the service key (Worker) can read/write.
 
 -- invoices: payments + mileage
 alter table invoices add column if not exists amount_paid numeric default 0;

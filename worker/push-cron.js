@@ -1,14 +1,20 @@
 // Bookkeeper Worker.
-//   /run?key=... — push reminder cron trigger (per-job, every minute)
-//   /send-invoice (POST) — emails an invoice PDF via Brevo (auth'd by the
-//                          caller's Supabase access token)
+//   /run?key=...        — push reminder cron trigger (per-job, every minute)
+//   /ms-config (GET)    — public OAuth client id + redirect uri for the app
+//   /ms-exchange (POST) — trade an OAuth auth-code for tokens; store refresh token
+//   /ms-disconnect(POST)— forget the stored Outlook tokens
+//   /send-invoice (POST)— email an invoice PDF FROM the user's Outlook mailbox
+//                         via Microsoft Graph (auth'd by the Supabase token)
 //   anything else → static assets (index.html, sw.js, manifest.json, version.json, icons)
 //
 // Required Worker secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY,
-// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, MANUAL_KEY, BREVO_API_KEY.
+// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, MANUAL_KEY,
+// MS_CLIENT_ID, MS_CLIENT_SECRET, MS_REDIRECT_URI.
 
 const TZ = 'America/Denver';
 const FIRE_WINDOW_MS = 30 * 60 * 1000;
+const MS_TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
+const MS_SCOPE = 'openid profile email offline_access User.Read Mail.Send';
 
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(runReminders(env)); },
@@ -18,72 +24,164 @@ export default {
       const summary = await runReminders(env);
       return new Response(JSON.stringify(summary, null, 2), { headers: { 'content-type': 'application/json' } });
     }
-    if (url.pathname === '/send-invoice' && req.method === 'POST') {
-      return sendInvoice(req, env);
+    if (url.pathname === '/ms-config' && req.method === 'GET') {
+      return jsonResp({ clientId: env.MS_CLIENT_ID || '', redirectUri: env.MS_REDIRECT_URI || '', scope: MS_SCOPE });
     }
+    if (url.pathname === '/ms-exchange' && req.method === 'POST') return msExchange(req, env);
+    if (url.pathname === '/ms-disconnect' && req.method === 'POST') return msDisconnect(req, env);
+    if (url.pathname === '/send-invoice' && req.method === 'POST') return sendInvoice(req, env);
     if (env.ASSETS) return env.ASSETS.fetch(req);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
   }
 };
 
-// ──────────────────────────────────────────────────────────────────────
-// Email an invoice PDF via Brevo. The caller must send its Supabase access
-// token (Authorization: Bearer <token>); we verify it and use the verified
-// account's email as the sender, so the endpoint can't be used to send mail
-// on behalf of arbitrary addresses.
-async function sendInvoice(req, env) {
-  const json = (obj, status = 200) =>
-    new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
+function jsonResp(obj, status = 200) {
+  return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
+}
 
-  if (!env.BREVO_API_KEY) return json({ error: 'Email is not configured (missing BREVO_API_KEY).' }, 500);
-
-  // 1) Authenticate the caller via their Supabase token.
+// Verify the caller's Supabase access token → { id, email } or null.
+async function authUser(req, env) {
   const auth = req.headers.get('Authorization') || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  if (!token) return json({ error: 'Not signed in.' }, 401);
-  const userRes = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+  if (!token) return null;
+  const r = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
     headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${token}` }
   });
-  if (!userRes.ok) return json({ error: 'Session expired — sign in again.' }, 401);
-  const user = await userRes.json();
-  const senderEmail = (user && user.email || '').trim();
-  if (!senderEmail) return json({ error: 'Your account has no email address.' }, 400);
+  if (!r.ok) return null;
+  const u = await r.json();
+  return u && u.id ? { id: u.id, email: (u.email || '').trim() } : null;
+}
 
-  // 2) Read the request.
-  let b;
-  try { b = await req.json(); } catch { return json({ error: 'Bad request.' }, 400); }
+// ──────────────────────────────────────────────────────────────────────
+// Microsoft OAuth: connect the user's Outlook mailbox.
+//
+// The browser runs the authorization-code + PKCE redirect and hands us the
+// code; we (the confidential client, holding MS_CLIENT_SECRET) exchange it for
+// tokens server-side. The refresh token is stored in ms_tokens (service-role
+// only — never exposed to the browser); the connected address is mirrored to
+// profiles.ms_email for display.
+async function msExchange(req, env) {
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Not signed in.' }, 401);
+  if (!env.MS_CLIENT_ID || !env.MS_CLIENT_SECRET) return jsonResp({ error: 'Outlook is not configured on the server.' }, 500);
+  let b; try { b = await req.json(); } catch { return jsonResp({ error: 'Bad request.' }, 400); }
+  if (!b.code || !b.code_verifier) return jsonResp({ error: 'Missing authorization code.' }, 400);
+
+  const form = new URLSearchParams({
+    client_id: env.MS_CLIENT_ID,
+    client_secret: env.MS_CLIENT_SECRET,
+    grant_type: 'authorization_code',
+    code: b.code,
+    redirect_uri: env.MS_REDIRECT_URI,
+    code_verifier: b.code_verifier,
+    scope: MS_SCOPE
+  });
+  const r = await fetch(MS_TOKEN_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form });
+  const tok = await r.json().catch(() => ({}));
+  if (!r.ok || !tok.refresh_token) {
+    console.error('ms token exchange failed', r.status, JSON.stringify(tok).slice(0, 300));
+    return jsonResp({ error: tok.error_description || `Outlook sign-in failed (${r.status}).` }, 502);
+  }
+  // Find out which mailbox we just connected.
+  let mailbox = user.email;
+  try {
+    const me = await fetch('https://graph.microsoft.com/v1.0/me', { headers: { Authorization: `Bearer ${tok.access_token}` } });
+    if (me.ok) { const j = await me.json(); mailbox = (j.mail || j.userPrincipalName || mailbox || '').trim(); }
+  } catch {}
+
+  await saveRefreshToken(env, user.id, tok.refresh_token);
+  await supaPatch(env, `profiles?id=eq.${user.id}`, { ms_email: mailbox });
+  return jsonResp({ ok: true, email: mailbox });
+}
+
+async function msDisconnect(req, env) {
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Not signed in.' }, 401);
+  await fetch(`${env.SUPABASE_URL}/rest/v1/ms_tokens?user_id=eq.${user.id}`, {
+    method: 'DELETE',
+    headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' }
+  });
+  await supaPatch(env, `profiles?id=eq.${user.id}`, { ms_email: null });
+  return jsonResp({ ok: true });
+}
+
+async function saveRefreshToken(env, userId, refreshToken) {
+  await fetch(`${env.SUPABASE_URL}/rest/v1/ms_tokens`, {
+    method: 'POST',
+    headers: {
+      apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+      'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal'
+    },
+    body: JSON.stringify({ user_id: userId, refresh_token: refreshToken, updated_at: new Date().toISOString() })
+  });
+}
+
+async function getRefreshToken(env, userId) {
+  const rows = await supaGet(env, `ms_tokens?user_id=eq.${userId}&select=refresh_token`);
+  return rows.length ? rows[0].refresh_token : null;
+}
+
+// Trade the stored refresh token for a fresh access token (and store the
+// rotated refresh token Microsoft returns).
+async function getGraphAccessToken(env, userId) {
+  const refresh = await getRefreshToken(env, userId);
+  if (!refresh) return null;
+  const form = new URLSearchParams({
+    client_id: env.MS_CLIENT_ID,
+    client_secret: env.MS_CLIENT_SECRET,
+    grant_type: 'refresh_token',
+    refresh_token: refresh,
+    scope: MS_SCOPE
+  });
+  const r = await fetch(MS_TOKEN_URL, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form });
+  const tok = await r.json().catch(() => ({}));
+  if (!r.ok || !tok.access_token) {
+    console.error('ms refresh failed', r.status, JSON.stringify(tok).slice(0, 200));
+    return null;
+  }
+  if (tok.refresh_token) await saveRefreshToken(env, userId, tok.refresh_token);
+  return tok.access_token;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Email an invoice PDF from the user's Outlook mailbox via Microsoft Graph.
+async function sendInvoice(req, env) {
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+
+  let b; try { b = await req.json(); } catch { return jsonResp({ error: 'Bad request.' }, 400); }
   const to = (b.to || '').trim();
   const subject = (b.subject || '').trim() || 'Invoice';
   const body = (b.body || '').toString();
-  const fromName = (b.fromName || '').toString().trim();
   const pdfBase64 = (b.pdfBase64 || '').toString();
   const filename = (b.filename || 'Invoice.pdf').toString();
-  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return json({ error: 'A valid recipient email is required.' }, 400);
-  if (!pdfBase64) return json({ error: 'Missing invoice PDF.' }, 400);
+  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return jsonResp({ error: 'A valid recipient email is required.' }, 400);
+  if (!pdfBase64) return jsonResp({ error: 'Missing invoice PDF.' }, 400);
 
-  // 3) Hand off to Brevo. From = the verified account email; Reply-To too so
-  // replies reach the business inbox.
+  const accessToken = await getGraphAccessToken(env, user.id);
+  if (!accessToken) return jsonResp({ error: 'Outlook isn’t connected. Open Settings and tap Connect Outlook.' }, 412);
+
   const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const payload = {
-    sender: { email: senderEmail, name: fromName || senderEmail },
-    to: [{ email: to }],
-    replyTo: { email: senderEmail, name: fromName || senderEmail },
-    subject,
-    textContent: body || ' ',
-    htmlContent: '<div style="font-family:sans-serif;white-space:pre-wrap">' + (esc(body) || '&nbsp;') + '</div>',
-    attachment: [{ content: pdfBase64, name: filename }]
+  const message = {
+    message: {
+      subject,
+      body: { contentType: 'HTML', content: '<div style="font-family:sans-serif;white-space:pre-wrap">' + (esc(body) || '&nbsp;') + '</div>' },
+      toRecipients: [{ emailAddress: { address: to } }],
+      attachments: [{ '@odata.type': '#microsoft.graph.fileAttachment', name: filename, contentType: 'application/pdf', contentBytes: pdfBase64 }]
+    },
+    saveToSentItems: true
   };
-  const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+  const r = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
     method: 'POST',
-    headers: { 'api-key': env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify(payload)
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(message)
   });
   if (!r.ok) {
     const detail = await r.text().catch(() => '');
-    console.error('brevo send failed', r.status, detail);
-    return json({ error: `Email service error (${r.status}). ${detail.slice(0, 300)}` }, 502);
+    console.error('graph sendMail failed', r.status, detail);
+    return jsonResp({ error: `Send failed (${r.status}). ${detail.slice(0, 300)}` }, 502);
   }
-  return json({ ok: true });
+  return jsonResp({ ok: true });
 }
 
 // ──────────────────────────────────────────────────────────────────────

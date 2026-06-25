@@ -1,1 +1,1 @@
-{"version":132,"note":"Real invoice email: the Email button now sends the PDF through the Cloudflare Worker via Brevo — From your business email, To the client, subject = invoice number, body = saved Settings message, PDF attached. Requires BREVO_API_KEY worker secret + a verified Brevo sender."}
+{"version":133,"note":"Invoice email now sends from your own Outlook/Hotmail mailbox via Microsoft Graph (inbox delivery, copy in Sent), replacing the Brevo relay. Connect your account once in Settings → Send Invoices from Outlook."}
