@@ -1,1 +1,1 @@
-{"version":129,"note":"Invoice Email button now builds the PDF and opens the share sheet with it attached (subject = invoice number, body = saved message). Pick Mail to send; choose the client there (recipient can't be pre-filled when a file is attached)."}
+{"version":130,"note":"Removed the separate Email button. Share PDF now carries the invoice number as the subject and your saved Settings message as the body when shared to Mail."}

@@ -1138,7 +1138,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-header"><h2>Invoice Preview</h2>
       <div style="display:flex;gap:.5rem">
         <button class="btn btn-sm btn-primary" id="inv-share-btn" onclick="shareInvoicePDF()"><i class="ti ti-share"></i> Share PDF</button>
-        <button class="btn btn-sm" id="inv-email-btn" onclick="emailInvoice()"><i class="ti ti-mail"></i> Email</button>
         <button class="btn btn-sm" id="inv-print-btn" onclick="printInvoice()"><i class="ti ti-printer"></i> Print</button>
         <button class="btn btn-sm" onclick="closeModal('modal-view-invoice')"><i class="ti ti-x"></i></button>
       </div>
@@ -1812,8 +1811,6 @@ async function deleteInvoice(id) {
 
 let lastInvoiceHTML = '';
 let lastInvoiceTitle = 'Invoice';
-let lastInvoiceEmailTo = '';
-let lastInvoiceNumber = '';
 let lastReportHTML = '';
 let lastReportTitle = 'Report';
 
@@ -1864,9 +1861,12 @@ async function shareInvoicePDF() {
     const fname = (lastInvoiceTitle || 'Invoice').replace(/[^a-z0-9]+/gi,'_') + '.pdf';
     const blob = pdf.output('blob');
     const file = new File([blob], fname, { type: 'application/pdf' });
-    // Preferred: native share sheet with the actual file (iOS supports this)
+    // Preferred: native share sheet with the actual file (iOS supports this).
+    // title -> email subject (the invoice number), text -> email body (the
+    // saved message from Settings) when the user shares to Mail.
+    const body = ((profile && profile.email_message) || '').trim();
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: lastInvoiceTitle });
+      await navigator.share({ files: [file], title: lastInvoiceTitle, text: body });
     } else {
       // Fallback: trigger a download of the real PDF file
       const url = URL.createObjectURL(blob);
@@ -1925,45 +1925,6 @@ function printInvoice() {
   printDocInIframe(lastInvoiceHTML, lastInvoiceTitle, invPrintCSS, printInvoiceFallback);
 }
 function printInvoiceFallback() { return openPDFBlob(buildInvoicePDF); }
-
-// Email the invoice: build the PDF and open the native share sheet with the
-// PDF attached, the invoice number as the subject (title), and the saved
-// message from Settings as the body (text). Pick Mail in the share sheet —
-// iOS attaches the PDF and fills the subject/body. (mailto: can't carry an
-// attachment, and the share sheet can't pre-fill the recipient, so you choose
-// the client in Mail.) Falls back to downloading the PDF + a mailto draft.
-async function emailInvoice() {
-  const btn = document.getElementById('inv-email-btn');
-  const orig = btn ? btn.innerHTML : '';
-  if (btn) { btn.innerHTML = '<span class="spinner"></span>'; btn.disabled = true; }
-  const subject = 'Invoice ' + (lastInvoiceNumber || '');
-  const body = ((profile && profile.email_message) || '').trim();
-  try {
-    const pdf = await buildInvoicePDF();
-    if (!pdf) { alert('Could not generate the invoice PDF. Try the Print button instead.'); return; }
-    const fname = (lastInvoiceTitle || 'Invoice').replace(/[^a-z0-9]+/gi,'_') + '.pdf';
-    const blob = pdf.output('blob');
-    const file = new File([blob], fname, { type: 'application/pdf' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: subject, text: body });
-    } else {
-      // Fallback: download the PDF, then open a mailto draft to attach manually.
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = fname;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 30000);
-      let href = 'mailto:' + encodeURIComponent(lastInvoiceEmailTo || '') + '?subject=' + encodeURIComponent(subject);
-      if (body) href += '&body=' + encodeURIComponent(body);
-      window.location.href = href;
-    }
-  } catch(e) {
-    if (e && e.name === 'AbortError') { /* user cancelled share — ignore */ }
-    else { console.error(e); alert('Could not open the email. You can use Share PDF or Print instead.'); }
-  } finally {
-    if (btn) { btn.innerHTML = orig; btn.disabled = false; }
-  }
-}
 
 function viewInvoice(id) {
   const inv = cache.invoices.find(i=>i.id===id); if(!inv) return;
@@ -2057,8 +2018,6 @@ function viewInvoice(id) {
   document.getElementById('invoice-preview-content').innerHTML = _invHTML;
   lastInvoiceHTML = _invHTML;
   lastInvoiceTitle = 'Invoice ' + (inv.number || '');
-  lastInvoiceEmailTo = (cust.email || '').trim();
-  lastInvoiceNumber = inv.number || '';
   openModal('modal-view-invoice');
 }
 
