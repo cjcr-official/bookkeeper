@@ -1,1 +1,1 @@
-{"version":138,"note":"Invoice editor: Total Miles now shows its decimal (e.g. 25.0). Tapping outside the invoice popup no longer closes it — only the X, Cancel, or Save do, so a stray tap can't discard an edit."}
+{"version":139,"note":"Mileage now supports 2 decimal places (e.g. 1.32) — per-trip and total miles on invoices, the mileage log, and stats all keep 2 decimals instead of rounding to 1."}

@@ -974,7 +974,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <div class="form-group"><label>Address</label><textarea id="cust-address" rows="2"></textarea></div>
       <div class="form-group"><label>Round-Trip Miles (from your base)</label>
         <div style="display:flex;gap:.5rem;align-items:center">
-          <input id="cust-miles" type="number" min="0" step="0.1" placeholder="e.g. 24" style="flex:1">
+          <input id="cust-miles" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 24.5" style="flex:1">
           <button class="btn btn-sm" type="button" onclick="openInMaps()" title="Open this address in Google Maps"><i class="ti ti-map"></i> Maps</button>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Tap <b>Maps</b> to open the address in the Google Maps app and read the round-trip mileage, then type it here.</div></div>
@@ -998,8 +998,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
       </div>
       <div class="form-group"><label>Client</label><select id="trip-client" onchange="onTripClientChange()"><option value="">Select client...</option></select></div>
       <div class="form-row">
-        <div class="form-group"><label>Miles (per round trip)</label><input id="trip-miles" type="number" min="0" step="0.1" oninput="calcTripMiles()"></div>
-        <div class="form-group"><label>Total Miles</label><input id="trip-total" type="number" readonly style="background:var(--bg2);font-weight:700"></div>
+        <div class="form-group"><label>Miles (per round trip)</label><input id="trip-miles" type="number" min="0" step="0.01" inputmode="decimal" oninput="calcTripMiles()"></div>
+        <div class="form-group"><label>Total Miles</label><input id="trip-total" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Purpose</label><input id="trip-purpose" type="text" placeholder="e.g. On-site repair"></div>
@@ -2198,9 +2198,9 @@ function renderMileage() {
   const monthMiles = all.filter(t=>(t.date||'').slice(0,7)===ym).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
   const yearMiles = all.filter(t=>(t.date||'').slice(0,4)===yr).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
   const totalMiles = all.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
-  document.getElementById('mi-total-miles').textContent = totalMiles.toLocaleString(undefined,{maximumFractionDigits:1});
-  document.getElementById('mi-month-miles').textContent = monthMiles.toLocaleString(undefined,{maximumFractionDigits:1});
-  document.getElementById('mi-year-miles').textContent = yearMiles.toLocaleString(undefined,{maximumFractionDigits:1});
+  document.getElementById('mi-total-miles').textContent = totalMiles.toLocaleString(undefined,{maximumFractionDigits:2});
+  document.getElementById('mi-month-miles').textContent = monthMiles.toLocaleString(undefined,{maximumFractionDigits:2});
+  document.getElementById('mi-year-miles').textContent = yearMiles.toLocaleString(undefined,{maximumFractionDigits:2});
 
   const list = getTripsInRange();
   const el = document.getElementById('mileage-table');
@@ -2218,16 +2218,16 @@ function renderMileage() {
           <div class="m-card-meta">${fmtDate(t.date)}${t.trips>1?' · '+t.trips+' trips':''}</div>
         </div>
         <div class="m-card-right">
-          <div class="m-card-amount">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:1})} mi</div>
+          <div class="m-card-amount">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:2})} mi</div>
           <div class="m-card-actions">
             <button class="btn btn-sm" onclick="event.stopPropagation();editTrip('${t.id}')"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button>
           </div>
         </div>
       </div>`).join('') +
-      `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;font-weight:700"><span>Range Total</span><span>${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} mi</span></div>`;
+      `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;font-weight:700"><span>Range Total</span><span>${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:2})} mi</span></div>`;
   } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Invoice #</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>`<tr><td>${fmtDate(t.date)}</td><td style="font-weight:500">${esc(t.client_name||'—')}</td><td style="color:var(--text2)">${esc(t.purpose||'—')}</td><td style="color:var(--accent)">${esc(t.invoice_number||'—')}</td><td>${t.trips||1}</td><td style="font-weight:600;font-family:'JetBrains Mono',monospace">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:1})}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editTrip('${t.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Range Total: ${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:1})} miles</div>`;
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Invoice #</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>`<tr><td>${fmtDate(t.date)}</td><td style="font-weight:500">${esc(t.client_name||'—')}</td><td style="color:var(--text2)">${esc(t.purpose||'—')}</td><td style="color:var(--accent)">${esc(t.invoice_number||'—')}</td><td>${t.trips||1}</td><td style="font-weight:600;font-family:'JetBrains Mono',monospace">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editTrip('${t.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Range Total: ${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:2})} miles</div>`;
   }
 }
 
@@ -2279,7 +2279,7 @@ function onTripClientChange() {
 function calcTripMiles() {
   const miles = parseFloat(document.getElementById('trip-miles').value)||0;
   const count = parseInt(document.getElementById('trip-count').value)||1;
-  document.getElementById('trip-total').value = (miles*count).toFixed(1);
+  document.getElementById('trip-total').value = (miles*count).toFixed(2);
 }
 
 function calcInvMiles() {
@@ -2288,7 +2288,7 @@ function calcInvMiles() {
   const perTrip = cust ? (parseFloat(cust.miles)||0) : 0;
   const count = parseInt(document.getElementById('inv-trips').value)||0;
   document.getElementById('inv-miles').value = perTrip ? perTrip : '';
-  document.getElementById('inv-total-miles').value = (perTrip*count).toFixed(1);
+  document.getElementById('inv-total-miles').value = (perTrip*count).toFixed(2);
 }
 
 async function saveTrip() {
