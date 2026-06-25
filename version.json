@@ -1,1 +1,1 @@
-{"version":127,"note":"Reverted: all Map buttons now use Apple Maps (maps.apple.com) — same as before v126. Customer form, mobile cards, desktop table, and trip directions all unified on Apple Maps URLs."}
+{"version":128,"note":"Invoices: new Email button opens a mail draft pre-filled To the client, Subject with the invoice number, and body from a new saved 'Invoice Email Message' in Settings."}
