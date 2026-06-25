@@ -763,9 +763,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <div class="tab" onclick="filterInvoices('paid',this)">Paid</div>
           <div class="tab" onclick="filterInvoices('overdue',this)">Overdue</div>
         </div>
-        <div style="position:relative;margin-bottom:1rem">
-          <i class="ti ti-search" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;pointer-events:none"></i>
-          <input type="text" id="inv-search" placeholder="Search by invoice # or customer..." oninput="renderInvoices()" style="padding-left:2.2rem">
+        <div style="display:flex;gap:.5rem;margin-bottom:1rem">
+          <div style="position:relative;flex:1;min-width:0">
+            <i class="ti ti-search" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;pointer-events:none"></i>
+            <input type="text" id="inv-search" placeholder="Search by invoice # or customer..." oninput="renderInvoices()" style="padding-left:2.2rem">
+          </div>
+          <button class="btn" id="inv-sort-btn" onclick="toggleInvSort()" title="Sort by invoice number" style="flex-shrink:0;white-space:nowrap"><i class="ti ti-sort-descending"></i><span style="margin-left:.3rem">#</span></button>
         </div>
         <div class="card list-card"><div id="invoices-table"></div></div>
       </div>
@@ -1184,6 +1187,7 @@ window.addEventListener('orientationchange', () => {
   setTimeout(() => { _lastIsMobile = window.innerWidth <= 768; rerenderCurrentView(); }, 250);
 });
 let invFilter = 'all';
+let invSortDir = 'desc';   // invoices always sort by number; 'desc' = highest (newest) first
 let currentReport = 'pl';
 let editingInvLines = [];
 let editingInvExpenses = [];
@@ -1521,8 +1525,16 @@ function gotoInvoicesSearch(query) {
   const main = document.querySelector('.main'); if (main) main.scrollTop = 0;
 }
 function filterInvoices(f,el) { invFilter=f; document.querySelectorAll('#page-invoices .tab').forEach(t=>t.classList.remove('active')); if(el)el.classList.add('active'); renderInvoices(); }
+function toggleInvSort() { invSortDir = invSortDir==='asc' ? 'desc' : 'asc'; updateInvSortBtn(); renderInvoices(); }
+function updateInvSortBtn() {
+  const btn = document.getElementById('inv-sort-btn'); if (!btn) return;
+  const asc = invSortDir==='asc';
+  btn.querySelector('i').className = 'ti ti-sort-' + (asc?'ascending':'descending');
+  btn.title = 'Invoice # ' + (asc?'ascending (low → high)':'descending (high → low)');
+}
 
 function renderInvoices() {
+  updateInvSortBtn();
   let list = cache.invoices.slice();
   if (invFilter!=='all') list = list.filter(i=>effectiveStatus(i)===invFilter);
   const q = (document.getElementById('inv-search')?.value||'').trim().toLowerCase();
@@ -1530,6 +1542,11 @@ function renderInvoices() {
     (i.number||'').toLowerCase().includes(q) ||
     (i.customer_name||'').toLowerCase().includes(q)
   );
+  // Always sort by invoice number (numeric-aware), direction per invSortDir.
+  list.sort((a,b)=>{
+    const c = String(a.number||'').localeCompare(String(b.number||''), undefined, {numeric:true});
+    return invSortDir==='asc' ? c : -c;
+  });
   const el = document.getElementById('invoices-table');
   if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices found</p></div>`; return; }
   const isMobile = window.innerWidth <= 768;

@@ -1,1 +1,1 @@
-{"version":136,"note":"Fixed the bottom tab bar showing a black cell behind Mileage — it was translucent and revealing scrolled content underneath. The bar is now a solid, uniform color."}
+{"version":137,"note":"Invoices tab now always sorts by invoice number, with a sort button next to search to toggle ascending/descending (defaults to highest number first)."}
