@@ -1811,6 +1811,7 @@ async function deleteInvoice(id) {
 
 let lastInvoiceHTML = '';
 let lastInvoiceTitle = 'Invoice';
+let lastInvoiceNumber = '';
 let lastReportHTML = '';
 let lastReportTitle = 'Report';
 
@@ -1865,8 +1866,9 @@ async function shareInvoicePDF() {
     // title -> email subject (the invoice number), text -> email body (the
     // saved message from Settings) when the user shares to Mail.
     const body = ((profile && profile.email_message) || '').trim();
+    const subject = lastInvoiceNumber || lastInvoiceTitle;
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: lastInvoiceTitle, text: body });
+      await navigator.share({ files: [file], title: subject, text: body });
     } else {
       // Fallback: trigger a download of the real PDF file
       const url = URL.createObjectURL(blob);
@@ -2018,6 +2020,7 @@ function viewInvoice(id) {
   document.getElementById('invoice-preview-content').innerHTML = _invHTML;
   lastInvoiceHTML = _invHTML;
   lastInvoiceTitle = 'Invoice ' + (inv.number || '');
+  lastInvoiceNumber = inv.number || '';
   openModal('modal-view-invoice');
 }
 

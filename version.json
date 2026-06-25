@@ -1,1 +1,1 @@
-{"version":130,"note":"Removed the separate Email button. Share PDF now carries the invoice number as the subject and your saved Settings message as the body when shared to Mail."}
+{"version":131,"note":"Share to Mail now uses the invoice number alone as the subject (was 'Invoice <number>'); body still comes from the saved Settings message."}
