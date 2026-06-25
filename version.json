@@ -1,1 +1,1 @@
-{"version":139,"note":"Mileage now supports 2 decimal places (e.g. 1.32) — per-trip and total miles on invoices, the mileage log, and stats all keep 2 decimals instead of rounding to 1."}
+{"version":140,"note":"Adding/changing a customer's round-trip miles now back-fills their outstanding (unpaid) invoices and the mileage log automatically — no need to reopen and resave each invoice. Paid invoices are left as-is."}

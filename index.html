@@ -2164,11 +2164,45 @@ async function saveCustomer() {
   const id = document.getElementById('cust-id').value;
   const row = {user_id:currentUser.id,name:document.getElementById('cust-name').value,contact:document.getElementById('cust-contact').value,email:document.getElementById('cust-email').value,phone:document.getElementById('cust-phone').value,address:document.getElementById('cust-address').value,miles:parseFloat(document.getElementById('cust-miles').value)||null};
   if (!row.name) { showToast('Name is required','error'); return; }
+  const prevMiles = id ? (parseFloat((cache.customers.find(c=>c.id===id)||{}).miles)||0) : null;
   let err;
   if (id) { const r=await sb.from('customers').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.customers.findIndex(c=>c.id===id);cache.customers[idx]={...cache.customers[idx],...row};} }
   else { const r=await sb.from('customers').insert(row).select().single(); err=r.error; if(!err)cache.customers.push(r.data); }
   if (err) { showToast(err.message,'error'); return; }
-  showToast('Customer saved','success'); closeModal('modal-customer'); renderCustomers();
+  // If the round-trip miles changed, push it onto this customer's outstanding
+  // (unpaid) invoices and their mileage-log trips, so a later-added distance
+  // fills in invoices that were saved before it existed.
+  let updated = 0;
+  if (id) {
+    const newMiles = parseFloat(row.miles)||0;
+    if (newMiles !== prevMiles) updated = await propagateCustomerMiles(cache.customers.find(c=>c.id===id));
+  }
+  showToast('Customer saved'+(updated?` · ${updated} invoice${updated>1?'s':''} updated`:''),'success');
+  closeModal('modal-customer'); renderCustomers();
+}
+
+// Recompute mileage for a customer's unpaid invoices after their per-trip miles
+// changes, and create/update/remove the linked mileage-log trip accordingly.
+// Paid invoices are left untouched as finalized records. Returns the count of
+// invoices changed.
+async function propagateCustomerMiles(cust) {
+  if (!cust || !cust.id) return 0;
+  const perTrip = parseFloat(cust.miles)||0;
+  let count = 0;
+  for (const inv of (cache.invoices||[])) {
+    if (inv.customer_id !== cust.id) continue;
+    const tripCount = parseInt(inv.trips)||0;
+    if (tripCount <= 0) continue;
+    if (effectiveStatus(inv) === 'paid') continue;
+    const newTotal = perTrip * tripCount;
+    if ((parseFloat(inv.miles)||0) === perTrip && (parseFloat(inv.total_miles)||0) === newTotal) continue;
+    const r = await sb.from('invoices').update({ miles: perTrip, total_miles: newTotal }).eq('id', inv.id);
+    if (r.error) continue;
+    inv.miles = perTrip; inv.total_miles = newTotal;
+    await syncInvoiceTrip(inv.id, inv, newTotal, perTrip, tripCount, cust);
+    count++;
+  }
+  return count;
 }
 
 async function deleteCustomer(id) {
