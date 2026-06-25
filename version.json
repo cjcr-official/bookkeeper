@@ -1,1 +1,1 @@
-{"version":140,"note":"Adding/changing a customer's round-trip miles now back-fills their outstanding (unpaid) invoices and the mileage log automatically — no need to reopen and resave each invoice. Paid invoices are left as-is."}
+{"version":141,"note":"Setting a customer's miles now also fills in PAID invoices that had no mileage yet (recovering forgotten deductions), while never overwriting a paid invoice that already has a real distance. Unpaid invoices still always follow the customer."}

@@ -2181,10 +2181,12 @@ async function saveCustomer() {
   closeModal('modal-customer'); renderCustomers();
 }
 
-// Recompute mileage for a customer's unpaid invoices after their per-trip miles
+// Recompute mileage for a customer's invoices after their per-trip miles
 // changes, and create/update/remove the linked mileage-log trip accordingly.
-// Paid invoices are left untouched as finalized records. Returns the count of
-// invoices changed.
+// Unpaid invoices always follow the customer. PAID invoices are finalized
+// records: we only fill one in when it has no mileage yet (recovers a deduction
+// you forgot to set) and never overwrite a paid invoice that already has a real
+// distance. Returns the count of invoices changed.
 async function propagateCustomerMiles(cust) {
   if (!cust || !cust.id) return 0;
   const perTrip = parseFloat(cust.miles)||0;
@@ -2193,7 +2195,9 @@ async function propagateCustomerMiles(cust) {
     if (inv.customer_id !== cust.id) continue;
     const tripCount = parseInt(inv.trips)||0;
     if (tripCount <= 0) continue;
-    if (effectiveStatus(inv) === 'paid') continue;
+    const isPaid = effectiveStatus(inv) === 'paid';
+    const hasMileage = (parseFloat(inv.miles)||0) > 0 || (parseFloat(inv.total_miles)||0) > 0;
+    if (isPaid && (hasMileage || perTrip <= 0)) continue;   // paid: only fill blanks, never overwrite/clear
     const newTotal = perTrip * tripCount;
     if ((parseFloat(inv.miles)||0) === perTrip && (parseFloat(inv.total_miles)||0) === newTotal) continue;
     const r = await sb.from('invoices').update({ miles: perTrip, total_miles: newTotal }).eq('id', inv.id);
