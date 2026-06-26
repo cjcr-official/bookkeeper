@@ -1,1 +1,1 @@
-{"version":151,"note":"Reconcile matching now handles real-world cases: payments that cleared in a different month (date window widened to 45 days) and combined deposits/withdrawals (one bank line matched to several recorded payments/expenses that sum to it, and vice-versa)."}
+{"version":152,"note":"Bank statements are now saved to private Supabase storage when you reconcile. The reconcile window lets you upload a new PDF (archived automatically) or pick a previously saved one to re-run."}

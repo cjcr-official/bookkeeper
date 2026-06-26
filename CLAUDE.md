@@ -193,8 +193,11 @@ create table if not exists jobs (
 alter table jobs enable row level security;
 create policy "jobs_own" on jobs for all using (auth.uid() = user_id);
 
--- Storage: private bucket "receipts" + RLS policies scoped to
--- (storage.foldername(name))[1] = auth.uid()::text  (select/insert/delete)
+-- Storage: private buckets "receipts" and "statements" + RLS policies scoped to
+-- (storage.foldername(name))[1] = auth.uid()::text  (select/insert/delete).
+-- "statements" archives reconciled bank-statement PDFs; the reconcile modal can
+-- upload a new one (saved here) or download/re-run a previously saved one
+-- (sb.storage.from('statements').list/download under <uid>/).
 ```
 
 Note: Supabase caches the schema; after an ALTER, saves may keep failing for ~a

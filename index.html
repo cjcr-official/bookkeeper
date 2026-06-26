@@ -1156,8 +1156,16 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-header"><h2>Reconcile Bank Statement</h2><button class="btn btn-sm" onclick="closeModal('modal-reconcile')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
       <div class="form-group"><label>Account</label><select id="rec-account" onchange="renderAuditBlock(this.value,'','',null)"></select></div>
-      <div class="form-group"><label>Bank statement (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf"></div>
+      <div class="form-group"><label>Upload a bank statement (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf"></div>
       <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
+      <div class="form-group" style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
+        <label>…or pick a saved statement</label>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <select id="rec-saved" style="flex:1;min-width:0"></select>
+          <button class="btn" id="rec-saved-btn" onclick="reconcileSaved()" style="flex-shrink:0"><i class="ti ti-scale"></i> Use</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Statements you upload are saved here (private to your account) so you can re-run any month.</div>
+      </div>
       <div id="rec-result" style="margin-top:1rem"></div>
     </div>
   </div>
@@ -3150,19 +3158,46 @@ function openReconcileModal() {
   document.getElementById('rec-file').value = '';
   document.getElementById('rec-result').innerHTML = '<div id="rec-audit"></div>';
   renderAuditBlock(sel.value, '', '', null);   // show this account's year-to-date checkmarks
+  listSavedStatements();
   openModal('modal-reconcile');
 }
 
-async function runReconcile() {
-  const file = document.getElementById('rec-file').files[0];
-  if (!file) { showToast('Pick a statement PDF first.', 'error'); return; }
-  const acctId = document.getElementById('rec-account').value || null;
-  const btn = document.getElementById('rec-run-btn');
-  const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Reading…';
+// List the user's saved statement PDFs from the private "statements" bucket.
+async function listSavedStatements() {
+  const sel = document.getElementById('rec-saved'); if (!sel) return;
+  try {
+    const { data, error } = await sb.storage.from('statements').list(currentUser.id, { limit: 200, sortBy: { column: 'name', order: 'desc' } });
+    if (error) throw error;
+    const files = (data||[]).filter(f=>f.name && !f.name.startsWith('.'));
+    sel.innerHTML = files.length
+      ? files.map(f=>`<option value="${escHtml(currentUser.id+'/'+f.name)}">${escHtml(f.name)}</option>`).join('')
+      : '<option value="">(none saved yet)</option>';
+  } catch(e) {
+    sel.innerHTML = '<option value="">(none saved yet)</option>';
+  }
+}
+
+// Save a statement PDF to storage under <uid>/<name>, de-duping the name.
+async function saveStatement(file, name) {
+  const clean = (name||'statement.pdf').replace(/[^a-z0-9._-]+/gi,'_');
+  let path = currentUser.id + '/' + clean;
+  let up = await sb.storage.from('statements').upload(path, file, { upsert:false, contentType:'application/pdf' });
+  if (up.error) {                       // name taken (or other) — retry with a timestamp prefix
+    path = currentUser.id + '/' + Date.now() + '__' + clean;
+    up = await sb.storage.from('statements').upload(path, file, { upsert:false, contentType:'application/pdf' });
+  }
+  return up.error ? null : path;
+}
+
+// Core flow: extract text from a PDF (File or Blob), parse via the Worker, render.
+async function reconcileSource(source, acctId, btn, opts) {
+  opts = opts || {};
+  const orig = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Reading…'; }
   const out = document.getElementById('rec-result');
   out.innerHTML = '<div style="color:var(--text3);font-size:13px">Reading the statement…</div>';
   try {
-    const text = await extractPdfText(file);
+    const text = await extractPdfText(source);
     const { data: sess } = await sb.auth.getSession();
     const token = sess && sess.session && sess.session.access_token;
     if (!token) { showToast('Please sign in again.', 'error'); return; }
@@ -3174,9 +3209,36 @@ async function runReconcile() {
     const data = await res.json().catch(()=>({}));
     if (!res.ok || !data.ok) { out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(data.error||('Failed ('+res.status+')'))}</div>`; return; }
     renderReconcile(data, acctId);
+    if (opts.save) {
+      const saved = await saveStatement(source, opts.name);
+      if (saved) { showToast('Statement saved'); listSavedStatements(); }
+      else showToast('Reconciled, but couldn’t save the PDF (storage not set up?)', 'error');
+    }
   } catch(e) {
     console.error(e);
     out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Could not read that PDF.')}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+  }
+}
+
+function runReconcile() {
+  const file = document.getElementById('rec-file').files[0];
+  if (!file) { showToast('Pick a statement PDF first.', 'error'); return; }
+  const acctId = document.getElementById('rec-account').value || null;
+  reconcileSource(file, acctId, document.getElementById('rec-run-btn'), { save:true, name:file.name });
+}
+
+async function reconcileSaved() {
+  const path = document.getElementById('rec-saved').value;
+  if (!path) { showToast('No saved statement selected.', 'error'); return; }
+  const acctId = document.getElementById('rec-account').value || null;
+  const btn = document.getElementById('rec-saved-btn');
+  const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const { data, error } = await sb.storage.from('statements').download(path);
+    if (error || !data) { showToast('Could not load that statement.', 'error'); return; }
+    await reconcileSource(data, acctId, document.getElementById('rec-run-btn'), { save:false });
   } finally {
     btn.disabled = false; btn.innerHTML = orig;
   }
