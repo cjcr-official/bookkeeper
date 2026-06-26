@@ -1,1 +1,1 @@
-{"version":149,"note":"v149: typeset (visible) — card section headings were 13.5px, SMALLER than 14px body. Bumped to 16px so titles like 'Recent Invoices' / 'Upcoming' read as headings across every card."}
+{"version":150,"note":"v150: typeset (fonts) — page titles and modal titles now use the DM Serif Display brand serif (the wordmark font), giving every page header and dialog real brand character against the sans body."}
