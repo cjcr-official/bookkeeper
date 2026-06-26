@@ -138,10 +138,10 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.25rem;position:relative;overflow:hidden;transition:transform .15s,box-shadow .15s}
 .stat-card:hover{transform:translateY(-1px);box-shadow:var(--shadow)}
 .stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;opacity:.5}
-.stat-card:nth-child(1)::before{background:linear-gradient(90deg,var(--accent),var(--cyan))}
-.stat-card:nth-child(2)::before{background:linear-gradient(90deg,var(--red),#f97316)}
-.stat-card:nth-child(3)::before{background:linear-gradient(90deg,var(--green),var(--cyan))}
-.stat-card:nth-child(4)::before{background:linear-gradient(90deg,var(--amber),var(--red))}
+.stat-card:nth-child(1)::before{background:var(--green)}
+.stat-card:nth-child(2)::before{background:var(--red)}
+.stat-card:nth-child(3)::before{background:var(--accent)}
+.stat-card:nth-child(4)::before{background:var(--amber)}
 .stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace;margin-bottom:.5rem}
 .stat-value{font-size:26px;font-weight:800;letter-spacing:-1.2px;line-height:1;font-variant-numeric:tabular-nums}
 .stat-sub{font-size:11px;color:var(--text3);margin-top:.4rem;font-family:'JetBrains Mono',monospace}
@@ -530,8 +530,8 @@ body{
 .btn{border-radius:var(--radius-pill);transition:transform .12s cubic-bezier(.2,.8,.2,1),filter .15s,background .15s,box-shadow .2s,border-color .15s}
 .btn:active{transform:scale(.96)}
 .btn-sm{border-radius:var(--radius-pill)}
-.btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;color:#fff;box-shadow:0 8px 22px var(--accent-glow)}
-.btn-primary:hover{filter:brightness(1.06);box-shadow:0 10px 28px var(--accent-glow)}
+.btn-primary{background:var(--accent);border:none;color:#fff;box-shadow:0 4px 14px var(--accent-glow)}
+.btn-primary:hover{filter:brightness(1.06);box-shadow:0 6px 18px var(--accent-glow)}
 .card,.stat-card{border-radius:var(--radius-lg);box-shadow:var(--shadow);border:1px solid var(--border)}
 .stat-card{padding:1.25rem 1.35rem}
 .stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
@@ -540,10 +540,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
 .badge{border-radius:var(--radius-pill);padding:.25rem .65rem}
 .modal{border-radius:var(--radius-lg)}
 .modal-overlay{backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
-.toast{border-radius:var(--radius-pill);background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.toast{border-radius:var(--radius-pill)}
 .auth-card{border-radius:24px;box-shadow:var(--shadow-lg)}
 .nav-item{transition:background .15s,color .15s}
-.nav-item.active{background:linear-gradient(135deg,var(--accent-bg),transparent);box-shadow:inset 0 0 0 1px var(--accent-bg)}
+.nav-item.active{background:var(--accent-bg);box-shadow:inset 0 0 0 1px var(--accent-bg)}
 .nav-item i{transition:all .15s}
 @media(max-width:768px){
   /* opaque bar (see .sidebar above) — translucent glass let scrolled content
@@ -583,7 +583,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div style="font-family:'DM Serif Display',serif;font-style:italic;font-size:26px;color:var(--text);margin-bottom:.5rem">Update Available</div>
   <div style="font-size:14px;color:var(--text2);max-width:320px;margin-bottom:.4rem">A new version of Bookkeeper is ready.</div>
   <div id="update-note" style="font-size:13px;color:var(--text3);max-width:320px;margin-bottom:1.75rem;font-family:'JetBrains Mono',monospace"></div>
-  <button onclick="doUpdate()" id="update-btn" style="background:#3b82f6;color:#fff;border:none;padding:.85rem 2rem;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;box-shadow:0 0 20px rgba(59,130,246,.4)">
+  <button onclick="doUpdate()" id="update-btn" style="background:#3b82f6;color:#fff;border:none;padding:.85rem 2rem;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;box-shadow:0 4px 14px rgba(59,130,246,.35)">
     <i class="ti ti-refresh"></i> Update Now
   </button>
 </div>

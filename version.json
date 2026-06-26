@@ -1,1 +1,1 @@
-{"version":145,"note":"v145: colorize — fix light theme text3 contrast (2.4→5.2:1); tint light neutrals toward violet brand hue"}
+{"version":146,"note":"v146: cut AI-slop tells — solid semantic stat-card stripes (Revenue now green, not violet→cyan); flatten purple→blue gradient primary button to solid violet; drop decorative glass on toasts; flat active-nav tint; restrained update-button shadow. Functional iOS glass chrome (top bar, bottom nav, modal backdrop) kept."}
