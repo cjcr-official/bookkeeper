@@ -1,1 +1,1 @@
-{"version":147,"note":"v147: layout — cap desktop content at 1200px (centered) so wide monitors stop stretching cards/tables/chart edge-to-edge. Mobile unaffected."}
+{"version":148,"note":"v148: typeset — inputs to 16px (kills iOS focus-zoom + more readable); restore pinch-zoom by dropping user-scalable=no/maximum-scale (accessibility); slightly open badge all-caps tracking."}
