@@ -1,1 +1,1 @@
-{"version":146,"note":"v146: cut AI-slop tells — solid semantic stat-card stripes (Revenue now green, not violet→cyan); flatten purple→blue gradient primary button to solid violet; drop decorative glass on toasts; flat active-nav tint; restrained update-button shadow. Functional iOS glass chrome (top bar, bottom nav, modal backdrop) kept."}
+{"version":147,"note":"v147: layout — cap desktop content at 1200px (centered) so wide monitors stop stretching cards/tables/chart edge-to-edge. Mobile unaffected."}
