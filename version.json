@@ -1,1 +1,1 @@
-{"version":143,"note":"Reconcile now audits month by month: each statement you reconcile records a pass (✅) or needs-review (⚠️) for that month and account, shown as a 12-month grid. A month passes when nothing is unmatched and the balance checks out."}
+{"version":144,"note":"v144: design sweep — remove dead .auth-logo gradient-text CSS; revert stat-card side-stripe to 2px top stripe"}
