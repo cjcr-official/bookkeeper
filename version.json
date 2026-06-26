@@ -1,1 +1,1 @@
-{"version":148,"note":"v148: typeset — inputs to 16px (kills iOS focus-zoom + more readable); restore pinch-zoom by dropping user-scalable=no/maximum-scale (accessibility); slightly open badge all-caps tracking."}
+{"version":149,"note":"v149: typeset (visible) — card section headings were 13.5px, SMALLER than 14px body. Bumped to 16px so titles like 'Recent Invoices' / 'Upcoming' read as headings across every card."}
