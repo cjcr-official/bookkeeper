@@ -67,8 +67,15 @@ POSTs it to the Worker `/reconcile-extract` (gated by the caller's Supabase
 token), which calls the Claude API (`claude-haiku-4-5`) to return structured
 transactions as JSON. The client then matches them against recorded expenses +
 invoice payments (amount ±$0.01, date ±5 days) and shows matched / in-records-only
-/ on-statement-only buckets plus a balance check. Read-only — it never writes to
-the user's data.
+/ on-statement-only buckets plus a balance check. The only thing it writes is a
+per-month audit result: `profiles.audited_months` (jsonb, keyed
+`{accountId: {"YYYY-MM": {passed, at}}}`) — a month "passes" when nothing is
+unmatched and the balance isn't wrong. The modal shows a 12-month grid of
+✅/⚠️/· marks per account. It never touches the user's financial records.
+
+```sql
+alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;
+```
 
 Cron schedule (in `wrangler.toml`): `* * * * *` (every minute) — keeps reminder
 latency under ~60 seconds.

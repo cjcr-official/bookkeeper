@@ -1157,7 +1157,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal" style="width:680px">
     <div class="modal-header"><h2>Reconcile Bank Statement</h2><button class="btn btn-sm" onclick="closeModal('modal-reconcile')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
-      <div class="form-group"><label>Account</label><select id="rec-account"></select></div>
+      <div class="form-group"><label>Account</label><select id="rec-account" onchange="renderAuditBlock(this.value,'','',null)"></select></div>
       <div class="form-group"><label>Bank statement (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf"></div>
       <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
       <div id="rec-result" style="margin-top:1rem"></div>
@@ -3150,7 +3150,8 @@ function openReconcileModal() {
   const sel = document.getElementById('rec-account');
   sel.innerHTML = (cache.accounts||[]).map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('') || '<option value="">(no accounts)</option>';
   document.getElementById('rec-file').value = '';
-  document.getElementById('rec-result').innerHTML = '';
+  document.getElementById('rec-result').innerHTML = '<div id="rec-audit"></div>';
+  renderAuditBlock(sel.value, '', '', null);   // show this account's year-to-date checkmarks
   openModal('modal-reconcile');
 }
 
@@ -3219,21 +3220,28 @@ function renderReconcile(stmt, acctId) {
   }
   const inRecordsOnly = recs.filter((r,i)=>!recsUsed[i] && inPeriod(r.date));
 
-  // Balance check.
-  let balanceHtml = '';
+  // Balance check. balanceOk is true / false / null (unknown — statement had no balances).
+  let balanceHtml = '', balanceOk = null;
   if (stmt.opening_balance!=null && stmt.closing_balance!=null) {
     const net = txns.reduce((s,t)=>s+t.amount,0);
     const expected = (parseFloat(stmt.opening_balance)||0) + net;
     const diff = expected - (parseFloat(stmt.closing_balance)||0);
-    const ok = Math.abs(diff) <= 0.01;
-    balanceHtml = `<div style="padding:.6rem .75rem;border-radius:var(--radius-sm);margin-bottom:.75rem;background:${ok?'rgba(21,128,61,.12)':'rgba(185,28,28,.12)'};font-size:13px">
-      ${ok?'✅ Statement balances':'⚠️ Statement doesn’t balance'} — opening ${fmt(stmt.opening_balance)} ${net>=0?'+':'−'} ${fmt(Math.abs(net))} = ${fmt(expected)} vs closing ${fmt(stmt.closing_balance)}${ok?'':` (off by ${fmt(Math.abs(diff))})`}</div>`;
+    balanceOk = Math.abs(diff) <= 0.01;
+    balanceHtml = `<div style="padding:.6rem .75rem;border-radius:var(--radius-sm);margin-bottom:.75rem;background:${balanceOk?'rgba(21,128,61,.12)':'rgba(185,28,28,.12)'};font-size:13px">
+      ${balanceOk?'✅ Statement balances':'⚠️ Statement doesn’t balance'} — opening ${fmt(stmt.opening_balance)} ${net>=0?'+':'−'} ${fmt(Math.abs(net))} = ${fmt(expected)} vs closing ${fmt(stmt.closing_balance)}${balanceOk?'':` (off by ${fmt(Math.abs(diff))})`}</div>`;
   }
+
+  // Month + pass/fail: passes when nothing is unmatched and the balance isn't wrong.
+  const monthSrc = stmt.period_end || stmt.period_start || dates[Math.floor(dates.length/2)] || '';
+  const monthKey = monthSrc ? monthSrc.slice(0,7) : '';
+  const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
+  const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
 
   const row = (d,label,amt,tag)=>`<tr><td style="white-space:nowrap;color:var(--text3);font-size:11.5px">${d?fmtDate(d):'—'}</td><td style="font-size:12.5px">${escHtml(label)}${tag?` <span class="badge badge-gray" style="font-size:9px">${tag}</span>`:''}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;${amt<0?'color:#b91c1c':'color:#15803d'}">${fmt(amt)}</td></tr>`;
   const tbl = rows => rows.length ? `<table style="width:100%;border-collapse:collapse">${rows.join('')}</table>` : '<div style="color:var(--text3);font-size:12px;padding:.25rem 0">None</div>';
 
   out.innerHTML = `
+    <div id="rec-audit"></div>
     ${balanceHtml}
     <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem;font-size:12px">
       <span class="badge badge-green">✅ ${matched.length} matched</span>
@@ -3243,7 +3251,38 @@ function renderReconcile(stmt, acctId) {
     <div style="margin-bottom:.6rem"><div style="font-weight:700;font-size:12px;margin-bottom:.25rem">❓ On the statement, not in your records</div>${tbl(onBankOnly.map(t=>row(t.date,t.description||'—',t.amount,'')))}</div>
     <div style="margin-bottom:.6rem"><div style="font-weight:700;font-size:12px;margin-bottom:.25rem">⚠️ In your records, not on the statement</div>${tbl(inRecordsOnly.map(r=>row(r.date,r.label,r.amount,r.kind)))}</div>
     <details><summary style="cursor:pointer;font-weight:700;font-size:12px">✅ Matched (${matched.length})</summary>${tbl(matched.map(m=>row(m.t.date,(m.t.description||m.r.label),m.t.amount,m.r.kind)))}</details>
-    <div style="font-size:10.5px;color:var(--text3);margin-top:.6rem">Read by AI from the PDF — double-check anything important. Nothing here changes your records.</div>`;
+    <div style="font-size:10.5px;color:var(--text3);margin-top:.6rem">Read by AI from the PDF — double-check anything important. Only the month's audit check is saved; your records aren't changed.</div>`;
+  recordAudit(acctId, monthKey, passed, monthLabel);
+}
+
+// Save (and display) the pass/fail result for a month, keyed by account.
+async function recordAudit(acctId, monthKey, passed, monthLabel) {
+  const key = acctId || '_';
+  if (monthKey) {
+    if (!profile.audited_months || typeof profile.audited_months !== 'object') profile.audited_months = {};
+    const byAcct = profile.audited_months[key] || {};
+    byAcct[monthKey] = { passed: !!passed, at: new Date().toISOString() };
+    profile.audited_months[key] = byAcct;
+  }
+  renderAuditBlock(acctId, monthKey, monthLabel, passed);
+  if (monthKey) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
+}
+
+// Year grid of audit marks for the selected account (✅ pass · ⚠️ needs review · · not yet).
+function renderAuditBlock(acctId, monthKey, monthLabel, passed) {
+  const el = document.getElementById('rec-audit'); if (!el) return;
+  const byAcct = ((profile.audited_months||{})[acctId||'_']) || {};
+  const yr = (monthKey || today()).slice(0,4);
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const chips = names.map((nm,idx)=>{
+    const k = yr + '-' + String(idx+1).padStart(2,'0');
+    const rec = byAcct[k];
+    const mark = rec ? (rec.passed?'✅':'⚠️') : '·';
+    const cur = k===monthKey;
+    return `<div title="${nm} ${yr}" style="text-align:center;padding:.3rem .1rem;border-radius:6px;background:var(--surface);${cur?'outline:2px solid var(--accent)':''}"><div style="color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace">${nm}</div><div style="font-size:14px;line-height:1.2">${mark}</div></div>`;
+  }).join('');
+  const head = monthKey ? `<div style="font-size:13px;margin-bottom:.5rem">${escHtml(monthLabel||monthKey)}: <strong style="color:${passed?'#15803d':'#b91c1c'}">${passed?'PASSED ✅':'NEEDS REVIEW ⚠️'}</strong></div>` : '';
+  el.innerHTML = `${head}<div style="font-weight:700;font-size:10.5px;color:var(--text3);letter-spacing:.5px;margin-bottom:.3rem">AUDIT — ${yr}</div><div style="display:grid;grid-template-columns:repeat(12,1fr);gap:4px;margin-bottom:.9rem">${chips}</div>`;
 }
 
 // ====== SETTINGS ======
