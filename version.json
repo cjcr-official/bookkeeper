@@ -1,1 +1,1 @@
-{"version":144,"note":"v144: design sweep — remove dead .auth-logo gradient-text CSS; revert stat-card side-stripe to 2px top stripe"}
+{"version":145,"note":"v145: colorize — fix light theme text3 contrast (2.4→5.2:1); tint light neutrals toward violet brand hue"}
