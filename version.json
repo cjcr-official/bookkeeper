@@ -1,1 +1,1 @@
-{"version":150,"note":"v150: typeset (fonts) — page titles and modal titles now use the DM Serif Display brand serif (the wordmark font), giving every page header and dialog real brand character against the sans body."}
+{"version":151,"note":"Reconcile matching now handles real-world cases: payments that cleared in a different month (date window widened to 45 days) and combined deposits/withdrawals (one bank line matched to several recorded payments/expenses that sum to it, and vice-versa)."}

@@ -3203,20 +3203,78 @@ function renderReconcile(stmt, acctId) {
     const paid = parseFloat(i.amount_paid)||0;
     if (paid>0) recs.push({ kind:'Payment', date:i.paid_date||i.date, amount:paid, label:'Invoice '+(i.number||'')+' — '+(i.customer_name||'') });
   });
-  const recsUsed = new Array(recs.length).fill(false);
   const dayDiff = (a,b)=>Math.abs((parseDate(a)-parseDate(b))/86400000);
+  const close = (a,b)=>Math.abs(a-b) <= 0.01;
+  const usedT = new Array(txns.length).fill(false);
+  const usedR = new Array(recs.length).fill(false);
+  const matched = [];   // each: { tIdxs:[...], rIdxs:[...] }
 
-  const matched = [], onBankOnly = [];
-  for (const t of txns) {
-    let bi = -1;
-    for (let i=0;i<recs.length;i++) {
-      if (recsUsed[i]) continue;
-      if (Math.abs(recs[i].amount - t.amount) <= 0.01 && (!t.date || !recs[i].date || dayDiff(t.date, recs[i].date) <= 5)) { bi = i; break; }
+  // Passes 1–2: one-to-one. Tight (±5 days) first, then a loose window (±45
+  // days) so a payment recorded in a different month than the bank cleared it
+  // still matches. Loose pass picks the closest date.
+  for (const win of [5, 45]) {
+    for (let ti=0; ti<txns.length; ti++) {
+      if (usedT[ti]) continue;
+      let best=-1, bestD=Infinity;
+      for (let ri=0; ri<recs.length; ri++) {
+        if (usedR[ri] || !close(txns[ti].amount, recs[ri].amount)) continue;
+        if (txns[ti].date && recs[ri].date) {
+          const d = dayDiff(txns[ti].date, recs[ri].date);
+          if (d > win) continue;
+          if (d < bestD) { bestD = d; best = ri; }
+        } else if (best < 0) { best = ri; bestD = win; }
+      }
+      if (best>=0) { usedT[ti]=true; usedR[best]=true; matched.push({ tIdxs:[ti], rIdxs:[best] }); }
     }
-    if (bi>=0) { recsUsed[bi]=true; matched.push({ t, r:recs[bi] }); }
-    else onBankOnly.push(t);
   }
-  const inRecordsOnly = recs.filter((r,i)=>!recsUsed[i] && inPeriod(r.date));
+
+  // Find a subset (2..maxSize) of pool items summing to target (±$0.01).
+  const findCombo = (pool, target, maxSize) => {
+    let found = null;
+    const rec = (start, remaining, acc) => {
+      if (acc.length>=2 && Math.abs(remaining) <= 0.01) { found = acc.slice(); return true; }
+      if (acc.length>=maxSize) return false;
+      for (let i=start; i<pool.length; i++) {
+        acc.push(pool[i].idx);
+        if (rec(i+1, remaining - pool[i].amount, acc)) return true;
+        acc.pop();
+      }
+      return false;
+    };
+    rec(0, target, []);
+    return found;
+  };
+
+  // Pass 3: one bank line = a combination of several records (e.g. a single
+  // $120 deposit that's two recorded payments of $100 + $20).
+  for (let ti=0; ti<txns.length; ti++) {
+    if (usedT[ti]) continue;
+    const t = txns[ti];
+    const pool = [];
+    for (let ri=0; ri<recs.length; ri++) {
+      if (usedR[ri] || Math.sign(recs[ri].amount)!==Math.sign(t.amount)) continue;
+      if (t.date && recs[ri].date && dayDiff(t.date, recs[ri].date) > 45) continue;
+      pool.push({ idx:ri, amount:recs[ri].amount });
+    }
+    const combo = findCombo(pool, t.amount, 4);
+    if (combo) { usedT[ti]=true; combo.forEach(ri=>usedR[ri]=true); matched.push({ tIdxs:[ti], rIdxs:combo }); }
+  }
+  // Pass 4: the reverse — one record = several bank lines.
+  for (let ri=0; ri<recs.length; ri++) {
+    if (usedR[ri]) continue;
+    const r = recs[ri];
+    const pool = [];
+    for (let ti=0; ti<txns.length; ti++) {
+      if (usedT[ti] || Math.sign(txns[ti].amount)!==Math.sign(r.amount)) continue;
+      if (r.date && txns[ti].date && dayDiff(r.date, txns[ti].date) > 45) continue;
+      pool.push({ idx:ti, amount:txns[ti].amount });
+    }
+    const combo = findCombo(pool, r.amount, 4);
+    if (combo) { usedR[ri]=true; combo.forEach(ti=>usedT[ti]=true); matched.push({ tIdxs:combo, rIdxs:[ri] }); }
+  }
+
+  const onBankOnly = txns.filter((t,i)=>!usedT[i]);
+  const inRecordsOnly = recs.filter((r,i)=>!usedR[i] && inPeriod(r.date));
 
   // Balance check. balanceOk is true / false / null (unknown — statement had no balances).
   let balanceHtml = '', balanceOk = null;
@@ -3235,8 +3293,19 @@ function renderReconcile(stmt, acctId) {
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
 
-  const row = (d,label,amt,tag)=>`<tr><td style="white-space:nowrap;color:var(--text3);font-size:11.5px">${d?fmtDate(d):'—'}</td><td style="font-size:12.5px">${escHtml(label)}${tag?` <span class="badge badge-gray" style="font-size:9px">${tag}</span>`:''}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;${amt<0?'color:#b91c1c':'color:#15803d'}">${fmt(amt)}</td></tr>`;
+  const row = (d,label,amt,tag)=>`<tr><td style="white-space:nowrap;color:var(--text3);font-size:11.5px">${d?fmtDate(d):'—'}</td><td style="font-size:12.5px">${escHtml(label)}${tag?` <span class="badge badge-gray" style="font-size:9px">${escHtml(tag)}</span>`:''}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;${amt<0?'color:#b91c1c':'color:#15803d'}">${fmt(amt)}</td></tr>`;
   const tbl = rows => rows.length ? `<table style="width:100%;border-collapse:collapse">${rows.join('')}</table>` : '<div style="color:var(--text3);font-size:12px;padding:.25rem 0">None</div>';
+  // Render a matched group (handles 1:1 and combined deposits/withdrawals).
+  const grpRow = g => {
+    const ts = g.tIdxs.map(i=>txns[i]), rs = g.rIdxs.map(i=>recs[i]);
+    const amt = ts.reduce((s,t)=>s+t.amount,0);
+    let label;
+    if (ts.length===1 && rs.length===1) label = ts[0].description || rs[0].label;
+    else if (rs.length>1) label = rs.map(r=>r.label).join(' + ');
+    else label = ts.map(t=>t.description||'—').join(' + ') + ' → ' + rs[0].label;
+    const tag = (ts.length>1||rs.length>1) ? 'combined' : rs[0].kind;
+    return row(ts[0].date, label, amt, tag);
+  };
 
   out.innerHTML = `
     <div id="rec-audit"></div>
@@ -3248,7 +3317,7 @@ function renderReconcile(stmt, acctId) {
     </div>
     <div style="margin-bottom:.6rem"><div style="font-weight:700;font-size:12px;margin-bottom:.25rem">❓ On the statement, not in your records</div>${tbl(onBankOnly.map(t=>row(t.date,t.description||'—',t.amount,'')))}</div>
     <div style="margin-bottom:.6rem"><div style="font-weight:700;font-size:12px;margin-bottom:.25rem">⚠️ In your records, not on the statement</div>${tbl(inRecordsOnly.map(r=>row(r.date,r.label,r.amount,r.kind)))}</div>
-    <details><summary style="cursor:pointer;font-weight:700;font-size:12px">✅ Matched (${matched.length})</summary>${tbl(matched.map(m=>row(m.t.date,(m.t.description||m.r.label),m.t.amount,m.r.kind)))}</details>
+    <details><summary style="cursor:pointer;font-weight:700;font-size:12px">✅ Matched (${matched.length})</summary>${tbl(matched.map(grpRow))}</details>
     <div style="font-size:10.5px;color:var(--text3);margin-top:.6rem">Read by AI from the PDF — double-check anything important. Only the month's audit check is saved; your records aren't changed.</div>`;
   recordAudit(acctId, monthKey, passed, monthLabel);
 }
