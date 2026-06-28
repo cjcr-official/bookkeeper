@@ -3250,6 +3250,29 @@ async function viewStatement(path) {
   } catch(e) { console.error(e); out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Failed to read that statement.')}</div>`; }
 }
 
+// Save the current statement's cached extraction (sidecar JSON) after a user edit.
+async function saveStmtSidecar(stmt, path) {
+  if (!path) return;
+  try { await sb.storage.from('statements').upload(path + '.json', new Blob([JSON.stringify(stmt)], { type:'application/json' }), { upsert:true, contentType:'application/json' }); } catch(e) { console.error('sidecar save failed', e); }
+}
+
+// Manually ignore an unmatched item — persists per statement and dismisses it from
+// "needs review." Used for prior-year payments, refunds, and other one-off oddities.
+async function ignoreItem(fp) {
+  const s = _recState; if (!s) return;
+  const cur = new Set(s.stmt.manual_ignore || []);
+  cur.add(fp);
+  s.stmt.manual_ignore = [...cur];
+  await saveStmtSidecar(s.stmt, s.path);
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+async function restoreItem(fp) {
+  const s = _recState; if (!s) return;
+  s.stmt.manual_ignore = (s.stmt.manual_ignore || []).filter(x=>x!==fp);
+  await saveStmtSidecar(s.stmt, s.path);
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // Override the parsed statement month (user correction) and re-record audit.
 let _recState = null;
 async function changeStmtMonth(newM) {
@@ -3343,14 +3366,15 @@ function renderReconcile(stmt, acctId, path) {
   const inPeriod = d => (!periodStart || d>=periodStart) && (!periodEnd || d<=periodEnd);
 
   // Build candidate records: expenses (money out) + invoice payments (money in).
+  // Each record gets a stable fingerprint so the user can ignore it persistently.
   const recs = [];
   (cache.expenses||[]).forEach(e=>{
     if (acctId && e.account_id && e.account_id!==acctId) return;   // honor account link when present
-    recs.push({ kind:'Expense', date:e.date, amount:-(parseFloat(e.amount)||0), label:e.vendor||'Expense' });
+    recs.push({ kind:'Expense', date:e.date, amount:-(parseFloat(e.amount)||0), label:e.vendor||'Expense', fp:'e:'+e.id });
   });
   (cache.invoices||[]).forEach(i=>{
     const paid = parseFloat(i.amount_paid)||0;
-    if (paid>0) recs.push({ kind:'Payment', date:i.paid_date||i.date, amount:paid, label:'Invoice '+(i.number||'')+' — '+(i.customer_name||'') });
+    if (paid>0) recs.push({ kind:'Payment', date:i.paid_date||i.date, amount:paid, label:'Invoice '+(i.number||'')+' — '+(i.customer_name||''), fp:'p:'+i.id });
   });
   const dayDiff = (a,b)=>Math.abs((parseDate(a)-parseDate(b))/86400000);
   const close = (a,b)=>Math.abs(a-b) <= 0.01;
@@ -3422,8 +3446,14 @@ function renderReconcile(stmt, acctId, path) {
     if (combo) { usedR[ri]=true; combo.forEach(ti=>usedT[ti]=true); matched.push({ tIdxs:combo, rIdxs:[ri] }); }
   }
 
-  const onBankOnly = txns.filter((t,i)=>!usedT[i]);
-  const inRecordsOnly = recs.filter((r,i)=>!usedR[i] && inPeriod(r.date));
+  // User's manual-ignore list (persisted in the sidecar). Items in here drop out
+  // of "needs review" and live in a collapsible "Ignored" section instead.
+  const ignored = new Set(stmt.manual_ignore || []);
+  const txnFp = i => 't:'+i;
+  const onBankOnly = []; const onBankIgnored = [];
+  txns.forEach((t,i)=>{ if (usedT[i]) return; (ignored.has(txnFp(i)) ? onBankIgnored : onBankOnly).push({t,fp:txnFp(i)}); });
+  const inRecordsOnly = []; const inRecordsIgnored = [];
+  recs.forEach((r,i)=>{ if (usedR[i] || !inPeriod(r.date)) return; (ignored.has(r.fp) ? inRecordsIgnored : inRecordsOnly).push(r); });
 
   // Balance check. balanceOk is true / false / null (unknown — statement had no balances).
   let balanceHtml = '', balanceOk = null;
@@ -3460,9 +3490,19 @@ function renderReconcile(stmt, acctId, path) {
     return x || (''+s).trim();
   };
   // One clean line: description + small date/tag on the left, amount on the right.
-  const item = (d,label,amt,sub) => `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
-    <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
-    <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div></div>`;
+  // fp = optional fingerprint → renders an "Ignore" button; mode='restore' → renders Restore.
+  const item = (d,label,amt,sub,fp,mode) => {
+    const btn = fp
+      ? (mode==='restore'
+          ? `<button onclick="restoreItem('${fp}')" class="btn btn-sm" style="background:transparent;border:none;color:var(--accent);padding:.1rem .35rem;cursor:pointer;flex-shrink:0" title="Bring back to review"><i class="ti ti-arrow-back-up"></i></button>`
+          : `<button onclick="ignoreItem('${fp}')" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0" title="Ignore (already accounted for)"><i class="ti ti-eye-off"></i></button>`)
+      : '';
+    const dim = mode==='restore' ? 'opacity:.65;' : '';
+    return `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);${dim}">
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div>
+      ${btn}</div>`;
+  };
   const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.4rem 0">Nothing here ✓</div>';
   const grpRow = g => {
     const ts = g.tIdxs.map(i=>txns[i]), rs = g.rIdxs.map(i=>recs[i]);
@@ -3479,18 +3519,20 @@ function renderReconcile(stmt, acctId, path) {
       <span class="badge badge-green">✅ ${matched.length} matched</span>
       <span class="badge badge-gray">⚠️ ${inRecordsOnly.length} only in your books</span>
       <span class="badge badge-gray">❓ ${onBankOnly.length} only on the bank</span>
+      ${(onBankIgnored.length+inRecordsIgnored.length)?`<span class="badge badge-gray">👁‍🗨 ${onBankIgnored.length+inRecordsIgnored.length} ignored</span>`:''}
     </div>
     <div style="margin-bottom:1.1rem">
       <div style="font-weight:700;font-size:13.5px">❓ On the bank, not in your books <span style="color:var(--text3);font-weight:600">(${onBankOnly.length})</span></div>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Add the real ones as expenses. Account-to-account transfers can be ignored.</div>
-      ${list(onBankOnly.map(t=>item(t.date, cleanDesc(t.description), t.amount, '')))}
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Add the real ones as expenses. Refunds, transfers, prior-year payments → use the 👁 icon to ignore.</div>
+      ${list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp)))}
     </div>
     <div style="margin-bottom:1.1rem">
       <div style="font-weight:700;font-size:13.5px">⚠️ In your books, not on this statement <span style="color:var(--text3);font-weight:600">(${inRecordsOnly.length})</span></div>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Usually a payment that hasn’t cleared on a statement yet.</div>
-      ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind)))}
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Usually a payment that hasn’t cleared on a statement yet. Use 👁 to ignore.</div>
+      ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp)))}
     </div>
     <details><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">✅ Matched (${matched.length})</summary><div style="margin-top:.3rem">${list(matched.map(grpRow))}</div></details>
+    ${(onBankIgnored.length+inRecordsIgnored.length)?`<details style="margin-top:.5rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">👁‍🗨 Ignored (${onBankIgnored.length+inRecordsIgnored.length})</summary><div style="margin-top:.3rem">${list([...onBankIgnored.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, 'bank', x.fp, 'restore')), ...inRecordsIgnored.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, 'restore'))])}</div></details>`:''}
     <div style="font-size:10.5px;color:var(--text3);margin-top:.9rem;line-height:1.5">Read by AI from the PDF — double-check anything important. Only the month’s audit check is saved; your records aren’t changed.</div>`;
   recordAudit(acctId, monthKey, passed, monthLabel);
 }

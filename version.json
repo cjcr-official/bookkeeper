@@ -1,1 +1,1 @@
-{"version":159,"note":"v159: reconcile — statements list now uses the same median-transaction-date heuristic as the reconcile view, so the Period column matches reality (Jan no longer labeled Feb, etc.)."}
+{"version":160,"note":"v160: reconcile — each unmatched line now has an 👁 Ignore button. Prior-year payments, refunds, transfers, and other one-offs drop into a collapsible Ignored section, the month passes, and your choices persist with the statement."}
