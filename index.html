@@ -3377,8 +3377,10 @@ function renderReconcile(stmt, acctId) {
     const expected = (parseFloat(stmt.opening_balance)||0) + net;
     const diff = expected - (parseFloat(stmt.closing_balance)||0);
     balanceOk = Math.abs(diff) <= 0.01;
-    balanceHtml = `<div style="padding:.6rem .75rem;border-radius:var(--radius-sm);margin-bottom:.75rem;background:${balanceOk?'rgba(21,128,61,.12)':'rgba(185,28,28,.12)'};font-size:13px">
-      ${balanceOk?'✅ Statement balances':'⚠️ Statement doesn’t balance'} — opening ${fmt(stmt.opening_balance)} ${net>=0?'+':'−'} ${fmt(Math.abs(net))} = ${fmt(expected)} vs closing ${fmt(stmt.closing_balance)}${balanceOk?'':` (off by ${fmt(Math.abs(diff))})`}</div>`;
+    balanceHtml = `<div style="display:flex;align-items:center;gap:.65rem;padding:.7rem .85rem;border-radius:12px;margin-bottom:.9rem;background:${balanceOk?'rgba(22,163,74,.12)':'rgba(220,38,38,.12)'}">
+      <span style="font-size:20px;line-height:1">${balanceOk?'✅':'⚠️'}</span>
+      <div style="font-size:13.5px"><strong>${balanceOk?'Statement balances':'Off by '+fmt(Math.abs(diff))}</strong><div style="font-size:11.5px;color:var(--text2);margin-top:.12rem">Opening ${fmt(stmt.opening_balance)} &nbsp;·&nbsp; Closing ${fmt(stmt.closing_balance)}</div></div>
+    </div>`;
   }
 
   // Month + pass/fail: passes when nothing is unmatched and the balance isn't wrong.
@@ -3387,32 +3389,49 @@ function renderReconcile(stmt, acctId) {
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
 
-  const row = (d,label,amt,tag)=>`<tr><td style="white-space:nowrap;color:var(--text3);font-size:11.5px">${d?fmtDate(d):'—'}</td><td style="font-size:12.5px">${escHtml(label)}${tag?` <span class="badge badge-gray" style="font-size:9px">${escHtml(tag)}</span>`:''}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-size:12px;${amt<0?'color:#b91c1c':'color:#15803d'}">${fmt(amt)}</td></tr>`;
-  const tbl = rows => rows.length ? `<table style="width:100%;border-collapse:collapse">${rows.join('')}</table>` : '<div style="color:var(--text3);font-size:12px;padding:.25rem 0">None</div>';
-  // Render a matched group (handles 1:1 and combined deposits/withdrawals).
+  // Tidy a noisy bank description down to the readable part.
+  const cleanDesc = s => {
+    let x = (''+(s||'')).trim(); if (!x) return '—';
+    x = x.replace(/^(DBT CRD|DDA|POS|ACH|DEBIT|CREDIT|CHECK\s*CARD|CHK CARD|B\/P)\b[\s:]*/i,'');
+    x = x.replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,' ');   // embedded dates
+    x = x.replace(/\b\d{6,}\b/g,' ');                       // long reference numbers
+    x = x.replace(/\bC#\s*\d+\b/ig,' ');
+    x = x.replace(/\b\d{3}-\d{3}-\d{4}\b/g,' ');            // phone numbers
+    x = x.replace(/[*#]+/g,' ').replace(/\s{2,}/g,' ').trim();
+    return x || (''+s).trim();
+  };
+  // One clean line: description + small date/tag on the left, amount on the right.
+  const item = (d,label,amt,sub) => `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
+    <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div></div>`;
+  const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.4rem 0">Nothing here ✓</div>';
   const grpRow = g => {
     const ts = g.tIdxs.map(i=>txns[i]), rs = g.rIdxs.map(i=>recs[i]);
     const amt = ts.reduce((s,t)=>s+t.amount,0);
-    let label;
-    if (ts.length===1 && rs.length===1) label = ts[0].description || rs[0].label;
-    else if (rs.length>1) label = rs.map(r=>r.label).join(' + ');
-    else label = ts.map(t=>t.description||'—').join(' + ') + ' → ' + rs[0].label;
-    const tag = (ts.length>1||rs.length>1) ? 'combined' : rs[0].kind;
-    return row(ts[0].date, label, amt, tag);
+    const label = rs.length>1 ? rs.map(r=>r.label).join(' + ') : rs[0].label;
+    return item(ts[0].date, label, amt, (ts.length>1||rs.length>1) ? 'combined' : rs[0].kind);
   };
 
   out.innerHTML = `
     <div id="rec-audit"></div>
     ${balanceHtml}
-    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem;font-size:12px">
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1.1rem">
       <span class="badge badge-green">✅ ${matched.length} matched</span>
-      <span class="badge badge-gray">⚠️ ${inRecordsOnly.length} in your records only</span>
-      <span class="badge badge-gray">❓ ${onBankOnly.length} on statement only</span>
+      <span class="badge badge-gray">⚠️ ${inRecordsOnly.length} only in your books</span>
+      <span class="badge badge-gray">❓ ${onBankOnly.length} only on the bank</span>
     </div>
-    <div style="margin-bottom:.6rem"><div style="font-weight:700;font-size:12px;margin-bottom:.25rem">❓ On the statement, not in your records</div>${tbl(onBankOnly.map(t=>row(t.date,t.description||'—',t.amount,'')))}</div>
-    <div style="margin-bottom:.6rem"><div style="font-weight:700;font-size:12px;margin-bottom:.25rem">⚠️ In your records, not on the statement</div>${tbl(inRecordsOnly.map(r=>row(r.date,r.label,r.amount,r.kind)))}</div>
-    <details><summary style="cursor:pointer;font-weight:700;font-size:12px">✅ Matched (${matched.length})</summary>${tbl(matched.map(grpRow))}</details>
-    <div style="font-size:10.5px;color:var(--text3);margin-top:.6rem">Read by AI from the PDF — double-check anything important. Only the month's audit check is saved; your records aren't changed.</div>`;
+    <div style="margin-bottom:1.1rem">
+      <div style="font-weight:700;font-size:13.5px">❓ On the bank, not in your books <span style="color:var(--text3);font-weight:600">(${onBankOnly.length})</span></div>
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Add the real ones as expenses. Account-to-account transfers can be ignored.</div>
+      ${list(onBankOnly.map(t=>item(t.date, cleanDesc(t.description), t.amount, '')))}
+    </div>
+    <div style="margin-bottom:1.1rem">
+      <div style="font-weight:700;font-size:13.5px">⚠️ In your books, not on this statement <span style="color:var(--text3);font-weight:600">(${inRecordsOnly.length})</span></div>
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Usually a payment that hasn’t cleared on a statement yet.</div>
+      ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind)))}
+    </div>
+    <details><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">✅ Matched (${matched.length})</summary><div style="margin-top:.3rem">${list(matched.map(grpRow))}</div></details>
+    <div style="font-size:10.5px;color:var(--text3);margin-top:.9rem;line-height:1.5">Read by AI from the PDF — double-check anything important. Only the month’s audit check is saved; your records aren’t changed.</div>`;
   recordAudit(acctId, monthKey, passed, monthLabel);
 }
 
