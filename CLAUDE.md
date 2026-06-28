@@ -159,9 +159,10 @@ alter table expenses add column if not exists receipt_path text;
 -- customers: per-customer round-trip miles (user-typed; no more auto-calc)
 alter table customers add column if not exists miles numeric;
 
--- trips (mileage log): link back to the invoice
+-- trips (mileage log): link back to the invoice or an expense
 alter table trips add column if not exists invoice_id uuid references invoices(id) on delete cascade;
 alter table trips add column if not exists invoice_number text;
+alter table trips add column if not exists expense_id uuid references expenses(id) on delete set null;
 
 -- recurring invoices/expenses
 create table if not exists recurring (

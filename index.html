@@ -997,7 +997,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Date</label><input id="trip-date" type="date"></div>
         <div class="form-group"><label>Round Trips</label><input id="trip-count" type="number" min="1" step="1" value="1" oninput="calcTripMiles()"></div>
       </div>
-      <div class="form-group"><label>Client</label><select id="trip-client" onchange="onTripClientChange()"><option value="">Select client...</option></select></div>
+      <div class="form-row">
+        <div class="form-group"><label>Client</label><select id="trip-client" onchange="onTripClientChange()"><option value="">— none —</option></select></div>
+        <div class="form-group"><label>Or Linked Expense</label><select id="trip-expense"><option value="">— none —</option></select></div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:-.35rem;margin-bottom:.5rem">Pick a client <b>or</b> an expense to anchor this trip.</div>
       <div class="form-row">
         <div class="form-group"><label>Miles (per round trip)</label><input id="trip-miles" type="number" min="0" step="0.01" inputmode="decimal" oninput="calcTripMiles()"></div>
         <div class="form-group"><label>Total Miles</label><input id="trip-total" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
@@ -2259,13 +2263,18 @@ function renderMileage() {
   const rangeTotal = list.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
 
   const esc = escHtml;
+  const expFor = (t)=> t.expense_id ? (cache.expenses||[]).find(e=>e.id===t.expense_id) : null;
+  const expLabel = (e)=> e ? `${e.vendor||e.category||'Expense'} · $${parseFloat(e.amount||0).toFixed(2)}` : '';
   if (window.innerWidth <= 768) {
-    el.innerHTML = list.map(t=>`
+    el.innerHTML = list.map(t=>{
+      const e=expFor(t);
+      return `
       <div class="m-card" onclick="editTrip('${t.id}')">
         <div class="m-card-main">
-          <div class="m-card-title">${esc(t.client_name||'—')}</div>
+          <div class="m-card-title">${esc(t.client_name|| (e?expLabel(e):'—'))}</div>
           ${t.purpose?`<div class="m-card-sub" style="color:var(--text2);font-size:12px">${esc(t.purpose)}</div>`:''}
           ${t.invoice_number?`<div class="m-card-sub" style="color:var(--accent);font-size:12px">Invoice #${esc(t.invoice_number)}</div>`:''}
+          ${e&&t.client_name?`<div class="m-card-sub" style="color:var(--accent);font-size:12px">Expense: ${esc(expLabel(e))}</div>`:''}
           <div class="m-card-meta">${fmtDate(t.date)}${t.trips>1?' · '+t.trips+' trips':''}</div>
         </div>
         <div class="m-card-right">
@@ -2275,16 +2284,21 @@ function renderMileage() {
             <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button>
           </div>
         </div>
-      </div>`).join('') +
+      </div>`;}).join('') +
       `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;font-weight:700"><span>Range Total</span><span>${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:2})} mi</span></div>`;
   } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Invoice #</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>`<tr><td>${fmtDate(t.date)}</td><td style="font-weight:500">${esc(t.client_name||'—')}</td><td style="color:var(--text2)">${esc(t.purpose||'—')}</td><td style="color:var(--accent)">${esc(t.invoice_number||'—')}</td><td>${t.trips||1}</td><td style="font-weight:600;font-family:'JetBrains Mono',monospace">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editTrip('${t.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Range Total: ${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:2})} miles</div>`;
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Linked</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>{
+      const e=expFor(t);
+      const linked = t.invoice_number ? `Inv #${esc(t.invoice_number)}` : (e?`Exp: ${esc(expLabel(e))}`:'—');
+      return `<tr><td>${fmtDate(t.date)}</td><td style="font-weight:500">${esc(t.client_name||'—')}</td><td style="color:var(--text2)">${esc(t.purpose||'—')}</td><td style="color:var(--accent)">${linked}</td><td>${t.trips||1}</td><td style="font-weight:600;font-family:'JetBrains Mono',monospace">${parseFloat(t.total_miles||0).toLocaleString(undefined,{maximumFractionDigits:2})}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="editTrip('${t.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteTrip('${t.id}')"><i class="ti ti-trash"></i></button></td></tr>`;}).join('')}</tbody></table><div style="padding:1rem 1.25rem;border-top:1px solid var(--border);font-weight:600;text-align:right">Range Total: ${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:2})} miles</div>`;
   }
 }
 
 function openTripModal(trip) {
   const sel = document.getElementById('trip-client');
-  sel.innerHTML = '<option value="">Select client...</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+  sel.innerHTML = '<option value="">— none —</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+  const expSel = document.getElementById('trip-expense');
+  expSel.innerHTML = '<option value="">— none —</option>' + (cache.expenses||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(e=>`<option value="${e.id}">${fmtDate(e.date)} · ${escHtml(e.vendor||e.category||'Expense')} · $${parseFloat(e.amount||0).toFixed(2)}</option>`).join('');
   document.getElementById('trip-maps-link').innerHTML = '';
   if (trip) {
     document.getElementById('trip-title').textContent = 'Edit Trip';
@@ -2295,6 +2309,7 @@ function openTripModal(trip) {
     document.getElementById('trip-count').value = trip.trips||1;
     document.getElementById('trip-purpose').value = trip.purpose||'';
     document.getElementById('trip-invoice').value = trip.invoice_number||'';
+    document.getElementById('trip-expense').value = trip.expense_id||'';
   } else {
     document.getElementById('trip-title').textContent = 'Log Trip';
     document.getElementById('trip-id').value = '';
@@ -2304,6 +2319,7 @@ function openTripModal(trip) {
     document.getElementById('trip-count').value = 1;
     document.getElementById('trip-purpose').value = '';
     document.getElementById('trip-invoice').value = '';
+    document.getElementById('trip-expense').value = '';
   }
   calcTripMiles();
   openModal('modal-trip');
@@ -2346,20 +2362,22 @@ async function saveTrip() {
   const id = document.getElementById('trip-id').value;
   const cid = document.getElementById('trip-client').value;
   const c = cache.customers.find(x=>x.id===cid);
+  const expId = document.getElementById('trip-expense').value || null;
   const miles = parseFloat(document.getElementById('trip-miles').value)||0;
   const count = parseInt(document.getElementById('trip-count').value)||1;
-  if (!cid) { showToast('Select a client','error'); return; }
+  if (!cid && !expId) { showToast('Select a client or linked expense','error'); return; }
   if (!miles) { showToast('Enter miles','error'); return; }
   const row = {
     user_id:currentUser.id,
     date:document.getElementById('trip-date').value,
-    customer_id:cid,
+    customer_id:cid||null,
     client_name:c?c.name:'',
     miles:miles,
     trips:count,
     total_miles:miles*count,
     purpose:document.getElementById('trip-purpose').value,
-    invoice_number:document.getElementById('trip-invoice').value
+    invoice_number:document.getElementById('trip-invoice').value,
+    expense_id:expId
   };
   let err;
   if (id) { const r=await sb.from('trips').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.trips.findIndex(t=>t.id===id);cache.trips[idx]={...cache.trips[idx],...row};} }
@@ -2762,6 +2780,7 @@ async function deleteExpense(id) {
   if (error) { showToast(error.message,'error'); return; }
   if (exp && exp.receipt_path) sb.storage.from('receipts').remove([exp.receipt_path]);
   cache.expenses = cache.expenses.filter(e=>e.id!==id);
+  (cache.trips||[]).forEach(t=>{ if(t.expense_id===id) t.expense_id=null; });
   // if this expense was billed on an invoice, recompute that invoice's totals
   if (linkedInvId) { await recomputeInvoiceTotals(linkedInvId); }
   // if the invoice editor is open, drop the stale row + retotal

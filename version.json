@@ -1,1 +1,1 @@
-{"version":155,"note":"Reconcile results redesigned for readability: cleaner balance banner, plainer section labels with one-line hints, tidy line items (noisy bank descriptions stripped of reference/card/date junk), amounts right-aligned and color-coded."}
+{"version":156,"note":"v156: mileage — trip modal shows Client and Linked Expense as peers; pick either to anchor a trip. Trips can now connect to an expense (parts pickups, supplier runs) without a fake customer."}
