@@ -1,1 +1,1 @@
-{"version":156,"note":"v156: mileage — trip modal shows Client and Linked Expense as peers; pick either to anchor a trip. Trips can now connect to an expense (parts pickups, supplier runs) without a fake customer."}
+{"version":157,"note":"v157: reconcile — editable Statement Month in the reconcile view (override when the bank's cycle date crossed months, so e.g. January no longer slots under February); statements list now sorts and labels by statement period, not just upload date."}

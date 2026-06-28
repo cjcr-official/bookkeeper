@@ -3216,7 +3216,7 @@ async function runReconcile() {
   const btn = document.getElementById('rec-run-btn');
   const orig = btn.innerHTML; btn.disabled = true;
   const out = document.getElementById('rec-result');
-  let last = null;
+  let last = null, lastPath = null;
   for (let n=0; n<files.length; n++) {
     const f = files[n];
     btn.innerHTML = `<span class="spinner"></span> ${n+1}/${files.length}`;
@@ -3224,14 +3224,15 @@ async function runReconcile() {
     try {
       const saved = await saveStatement(f, f.name);
       if (saved.error) showToast('Couldn’t save ' + f.name + ': ' + saved.error, 'error');
-      last = await getStatement(f, saved.path || null);
+      lastPath = saved.path || null;
+      last = await getStatement(f, lastPath);
     } catch(e) {
       console.error(e); showToast('Failed on ' + f.name + ': ' + (e.message||''), 'error');
     }
   }
   btn.disabled = false; btn.innerHTML = orig;
   document.getElementById('rec-file').value = '';
-  if (last) renderReconcile(last, null);
+  if (last) renderReconcile(last, null, lastPath);
   if (files.length > 1) showToast(`Imported ${files.length} statements`, 'success');
   renderStatementsTable();
 }
@@ -3245,8 +3246,25 @@ async function viewStatement(path) {
     const dl = await sb.storage.from('statements').download(path);
     if (dl.error || !dl.data) { out.innerHTML = '<div style="color:#b91c1c;font-size:13px">Could not load that statement.</div>'; return; }
     const stmt = await getStatement(dl.data, path);
-    renderReconcile(stmt, null);
+    renderReconcile(stmt, null, path);
   } catch(e) { console.error(e); out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Failed to read that statement.')}</div>`; }
+}
+
+// Override the parsed statement month (user correction) and re-record audit.
+let _recState = null;
+async function changeStmtMonth(newM) {
+  const s = _recState; if (!s) return;
+  const key = s.acctId || '_';
+  if (newM === s.monthKey) return;
+  if (profile.audited_months && profile.audited_months[key]) {
+    delete profile.audited_months[key][s.monthKey];
+  }
+  s.stmt.statement_month = newM;
+  if (s.path) {
+    try { await sb.storage.from('statements').upload(s.path + '.json', new Blob([JSON.stringify(s.stmt)], { type:'application/json' }), { upsert:true, contentType:'application/json' }); } catch(e){}
+  }
+  renderReconcile(s.stmt, s.acctId, s.path);
+  renderStatementsTable();
 }
 
 // Open the raw PDF in a new tab via a short-lived signed URL.
@@ -3278,12 +3296,25 @@ async function renderStatementsTable() {
   if (!files.length) { el.innerHTML = `<div class="empty"><i class="ti ti-file-dollar"></i><p>No statements yet</p><p style="font-size:12px;color:var(--text3)">Tap “Reconcile bank statement” to add one.</p></div>`; return; }
   const esc = escHtml;
   const rows = files.map(f => ({ name:f.name, path:currentUser.id+'/'+f.name, when:f.created_at?fmtDate(f.created_at.slice(0,10)):'' }));
+  // Look up each statement's period (from its cached extraction sidecar) in parallel,
+  // then sort by it desc so months read chronologically regardless of upload order.
+  const periods = await Promise.all(rows.map(async r => {
+    try {
+      const dl = await sb.storage.from('statements').download(r.path + '.json');
+      if (!dl.data) return '';
+      const j = JSON.parse(await dl.data.text());
+      return j.statement_month || (j.period_end||'').slice(0,7) || (j.period_start||'').slice(0,7) || '';
+    } catch(e) { return ''; }
+  }));
+  rows.forEach((r,i)=>r.period = periods[i]);
+  rows.sort((a,b)=> (b.period||'').localeCompare(a.period||'') || (b.when||'').localeCompare(a.when||''));
+  const perLabel = p => p ? parseDate(p+'-01').toLocaleDateString(undefined,{month:'short',year:'numeric'}) : '—';
   if (window.innerWidth <= 768) {
     el.innerHTML = rows.map(r=>`
       <div class="m-card" onclick="viewStatement('${r.path}')">
         <div class="m-card-main">
           <div class="m-card-title" style="word-break:break-all">${esc(r.name)}</div>
-          <div class="m-card-meta">${r.when}</div>
+          <div class="m-card-meta">${perLabel(r.period)} · uploaded ${r.when}</div>
         </div>
         <div class="m-card-right"><div class="m-card-actions">
           <button class="btn btn-sm" onclick="event.stopPropagation();viewStatementPdf('${r.path}')" title="View PDF"><i class="ti ti-file-text"></i></button>
@@ -3291,13 +3322,13 @@ async function renderStatementsTable() {
         </div></div>
       </div>`).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Statement</th><th>Uploaded</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr style="cursor:pointer" onclick="viewStatement('${r.path}')"><td style="font-weight:500;word-break:break-all">${esc(r.name)}</td><td>${r.when}</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-sm" style="margin-right:4px" onclick="viewStatement('${r.path}')" title="Reconcile / view transactions"><i class="ti ti-scale"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="viewStatementPdf('${r.path}')" title="View PDF"><i class="ti ti-file-text"></i></button><button class="btn btn-sm btn-danger" onclick="deleteStatement('${r.path}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Period</th><th>Statement</th><th>Uploaded</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr style="cursor:pointer" onclick="viewStatement('${r.path}')"><td style="font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--accent);white-space:nowrap">${perLabel(r.period)}</td><td style="font-weight:500;word-break:break-all">${esc(r.name)}</td><td>${r.when}</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-sm" style="margin-right:4px" onclick="viewStatement('${r.path}')" title="Reconcile / view transactions"><i class="ti ti-scale"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="viewStatementPdf('${r.path}')" title="View PDF"><i class="ti ti-file-text"></i></button><button class="btn btn-sm btn-danger" onclick="deleteStatement('${r.path}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
 // Compare extracted statement transactions against recorded expenses + invoice
 // payments, by amount (±$0.01) and date (±5 days). Renders matched / missing buckets.
-function renderReconcile(stmt, acctId) {
+function renderReconcile(stmt, acctId, path) {
   const out = document.getElementById('rec-result');
   const txns = (stmt.transactions||[]).map(t=>({ ...t, amount: parseFloat(t.amount)||0 }));
   if (!txns.length) { out.innerHTML = '<div style="color:var(--text3);font-size:13px">No transactions found in that statement.</div>'; return; }
@@ -3403,10 +3434,13 @@ function renderReconcile(stmt, acctId) {
   }
 
   // Month + pass/fail: passes when nothing is unmatched and the balance isn't wrong.
-  const monthSrc = stmt.period_end || stmt.period_start || dates[Math.floor(dates.length/2)] || '';
+  // User can override (statement_month) when the bank's cycle date crosses month boundaries.
+  const monthSrc = stmt.statement_month || stmt.period_end || stmt.period_start || dates[Math.floor(dates.length/2)] || '';
   const monthKey = monthSrc ? monthSrc.slice(0,7) : '';
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
+  _recState = { stmt, acctId, path, monthKey };
+  const monthPicker = `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><span style="color:var(--text3);font-size:11px">(override if the cycle date crossed months)</span></div>`;
 
   // Tidy a noisy bank description down to the readable part.
   const cleanDesc = s => {
@@ -3433,6 +3467,7 @@ function renderReconcile(stmt, acctId) {
 
   out.innerHTML = `
     <div id="rec-audit"></div>
+    ${monthPicker}
     ${balanceHtml}
     <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1.1rem">
       <span class="badge badge-green">✅ ${matched.length} matched</span>
