@@ -3434,8 +3434,9 @@ function renderReconcile(stmt, acctId, path) {
   }
 
   // Month + pass/fail: passes when nothing is unmatched and the balance isn't wrong.
-  // User can override (statement_month) when the bank's cycle date crosses month boundaries.
-  const monthSrc = stmt.statement_month || stmt.period_end || stmt.period_start || dates[Math.floor(dates.length/2)] || '';
+  // Prefer median transaction date (most robust when the bank's close date crosses
+  // into the next month, e.g. "1/01 thru 2/01"). User override wins over everything.
+  const monthSrc = stmt.statement_month || dates[Math.floor(dates.length/2)] || stmt.period_start || stmt.period_end || '';
   const monthKey = monthSrc ? monthSrc.slice(0,7) : '';
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
