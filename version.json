@@ -1,1 +1,1 @@
-{"version":161,"note":"v161: reconcile — manual fix/split/match. Checkbox any unmatched bank line(s) + record(s), Match to pair them (1↔N, N↔1, N↔M). Pencil on bank lines fixes a wrong AI amount. Matched manual pairs show Unlink. Replaces the ignore feature."}
+{"version":162,"note":"v162: reconcile — fix checkbox blowing out the row width. Global input{width:100%} was making each checkbox fill its flex slot and squashing the label to a single column."}

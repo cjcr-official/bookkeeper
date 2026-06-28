@@ -3540,8 +3540,9 @@ function renderReconcile(stmt, acctId, path) {
     return x || (''+s).trim();
   };
   // Unmatched item row: checkbox + (bank-only) pencil to fix the AI's amount + amount.
+  // width:auto + flex:0 0 18px override the global "input{width:100%}" rule.
   const item = (d,label,amt,sub,fp,editTxnIdx) => {
-    const check = fp ? `<input type="checkbox" class="rec-check" data-fp="${fp}" data-amt="${amt}" onchange="updateMatchBar()" style="margin:.5rem 0 0;flex-shrink:0;cursor:pointer">` : '';
+    const check = fp ? `<input type="checkbox" class="rec-check" data-fp="${fp}" data-amt="${amt}" onchange="updateMatchBar()" style="width:18px;flex:0 0 18px;margin:.5rem 0 0;cursor:pointer;padding:0">` : '';
     const edit = (editTxnIdx!=null) ? `<button onclick="editTxnAmt(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Fix amount"><i class="ti ti-pencil"></i></button>` : '';
     return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
       ${check}
