@@ -1,1 +1,1 @@
-{"version":158,"note":"v158: reconcile — auto-detect the statement's month from the median transaction date instead of the period close date, so e.g. a January statement that closes on Feb 1 no longer gets miskeyed to February."}
+{"version":159,"note":"v159: reconcile — statements list now uses the same median-transaction-date heuristic as the reconcile view, so the Period column matches reality (Jan no longer labeled Feb, etc.)."}

@@ -3303,7 +3303,12 @@ async function renderStatementsTable() {
       const dl = await sb.storage.from('statements').download(r.path + '.json');
       if (!dl.data) return '';
       const j = JSON.parse(await dl.data.text());
-      return j.statement_month || (j.period_end||'').slice(0,7) || (j.period_start||'').slice(0,7) || '';
+      if (j.statement_month) return j.statement_month;
+      // Same heuristic as renderReconcile: median transaction date beats period_end
+      // (banks like Glacier label Jan's statement "1/01 thru 2/01" — period_end is Feb).
+      const ds = (j.transactions||[]).map(t=>t.date).filter(Boolean).sort();
+      if (ds.length) return ds[Math.floor(ds.length/2)].slice(0,7);
+      return (j.period_start||'').slice(0,7) || (j.period_end||'').slice(0,7) || '';
     } catch(e) { return ''; }
   }));
   rows.forEach((r,i)=>r.period = periods[i]);
