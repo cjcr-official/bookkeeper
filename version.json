@@ -1,1 +1,1 @@
-{"version":153,"note":"Reconcile: the 'couldn't save statement' message now shows the real Supabase storage error (e.g. Bucket not found) so setup problems are clear."}
+{"version":154,"note":"Statements hub: the Accounts page is now a list of your uploaded bank-statement PDFs. Upload multiple at once, click a row to view its reconciled transactions, open the PDF, or delete it. Removed the add-account button and the per-account picker."}

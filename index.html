@@ -654,7 +654,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="nav-section">Money Out</div>
     <div class="nav-item" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
     <div class="nav-section">Finance</div>
-    <div class="nav-item" onclick="showPage('accounts',this)"><i class="ti ti-credit-card"></i><span>Accounts</span></div>
+    <div class="nav-item" onclick="showPage('accounts',this)"><i class="ti ti-file-dollar"></i><span>Statements</span></div>
     <div class="nav-item" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
     </div>
     <div style="margin-top:auto" class="sidebar-bottom">
@@ -785,7 +785,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="card list-card"><div id="expenses-table"></div></div>
       </div>
 
-      <!-- ACCOUNTS -->
+      <!-- STATEMENTS (Accounts page) -->
       <div id="page-accounts" class="page">
         <div style="margin-bottom:1rem">
           <button class="btn btn-primary btn-sm" onclick="openReconcileModal()"><i class="ti ti-scale"></i> Reconcile bank statement</button>
@@ -1155,17 +1155,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal" style="width:680px">
     <div class="modal-header"><h2>Reconcile Bank Statement</h2><button class="btn btn-sm" onclick="closeModal('modal-reconcile')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
-      <div class="form-group"><label>Account</label><select id="rec-account" onchange="renderAuditBlock(this.value,'','',null)"></select></div>
-      <div class="form-group"><label>Upload a bank statement (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf"></div>
+      <div class="form-group"><label>Upload bank statement(s) (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf" multiple></div>
       <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
-      <div class="form-group" style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--border)">
-        <label>…or pick a saved statement</label>
-        <div style="display:flex;gap:.5rem;align-items:center">
-          <select id="rec-saved" style="flex:1;min-width:0"></select>
-          <button class="btn" id="rec-saved-btn" onclick="reconcileSaved()" style="flex-shrink:0"><i class="ti ti-scale"></i> Use</button>
-        </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Statements you upload are saved here (private to your account) so you can re-run any month.</div>
-      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:.5rem">Each PDF is saved privately to your account so you can re-open it any time from the Statements list. Pick several to import a batch.</div>
       <div id="rec-result" style="margin-top:1rem"></div>
     </div>
   </div>
@@ -1190,7 +1182,7 @@ let currentPage = 'dashboard';
 
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
-const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccounts, mileage: renderMileage, settings: loadSettingsForm };
+const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderStatementsTable, mileage: renderMileage, settings: loadSettingsForm };
 let _viewResizeTimer = null;
 let _lastIsMobile = window.innerWidth <= 768;
 function rerenderCurrentView() {
@@ -1359,7 +1351,7 @@ function showPage(page, el) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   if (el) { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
-  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Chart of Accounts',mileage:'Mileage',settings:'Settings'};
+  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',settings:'Settings'};
   document.getElementById('page-title').textContent = titles[page]||page;
   updateTopbarLogo();
   const bc = document.getElementById('topbar-breadcrumb-page');
@@ -1368,7 +1360,7 @@ function showPage(page, el) {
     invoices:`<button class="btn" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> <span>New Invoice</span></button>`,
     customers:`<button class="btn btn-primary" onclick="openCustomerModal()"><i class="ti ti-plus"></i> <span>New Customer</span></button>`,
     expenses:`<button class="btn" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
-    accounts:`<button class="btn btn-primary" onclick="openAccountModal()"><i class="ti ti-plus"></i> <span>New Account</span></button>`,
+    accounts:`<button class="btn btn-primary" onclick="openReconcileModal()"><i class="ti ti-scale"></i> <span>Reconcile</span></button>`,
     mileage:`<button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
@@ -3153,28 +3145,10 @@ async function extractPdfText(file) {
 }
 
 function openReconcileModal() {
-  const sel = document.getElementById('rec-account');
-  sel.innerHTML = (cache.accounts||[]).map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('') || '<option value="">(no accounts)</option>';
   document.getElementById('rec-file').value = '';
   document.getElementById('rec-result').innerHTML = '<div id="rec-audit"></div>';
-  renderAuditBlock(sel.value, '', '', null);   // show this account's year-to-date checkmarks
-  listSavedStatements();
+  renderAuditBlock(null, '', '', null);   // show year-to-date audit checkmarks
   openModal('modal-reconcile');
-}
-
-// List the user's saved statement PDFs from the private "statements" bucket.
-async function listSavedStatements() {
-  const sel = document.getElementById('rec-saved'); if (!sel) return;
-  try {
-    const { data, error } = await sb.storage.from('statements').list(currentUser.id, { limit: 200, sortBy: { column: 'name', order: 'desc' } });
-    if (error) throw error;
-    const files = (data||[]).filter(f=>f.name && !f.name.startsWith('.'));
-    sel.innerHTML = files.length
-      ? files.map(f=>`<option value="${escHtml(currentUser.id+'/'+f.name)}">${escHtml(f.name)}</option>`).join('')
-      : '<option value="">(none saved yet)</option>';
-  } catch(e) {
-    sel.innerHTML = '<option value="">(none saved yet)</option>';
-  }
 }
 
 // Save a statement PDF to storage under <uid>/<name>, de-duping the name.
@@ -3191,58 +3165,114 @@ async function saveStatement(file, name) {
   return { path };
 }
 
-// Core flow: extract text from a PDF (File or Blob), parse via the Worker, render.
-async function reconcileSource(source, acctId, btn, opts) {
-  opts = opts || {};
-  const orig = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Reading…'; }
-  const out = document.getElementById('rec-result');
-  out.innerHTML = '<div style="color:var(--text3);font-size:13px">Reading the statement…</div>';
-  try {
-    const text = await extractPdfText(source);
-    const { data: sess } = await sb.auth.getSession();
-    const token = sess && sess.session && sess.session.access_token;
-    if (!token) { showToast('Please sign in again.', 'error'); return; }
-    const res = await fetch('/reconcile-extract', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify({ text })
-    });
-    const data = await res.json().catch(()=>({}));
-    if (!res.ok || !data.ok) { out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(data.error||('Failed ('+res.status+')'))}</div>`; return; }
-    renderReconcile(data, acctId);
-    if (opts.save) {
-      const saved = await saveStatement(source, opts.name);
-      if (saved.path) { showToast('Statement saved'); listSavedStatements(); }
-      else showToast('Couldn’t save the PDF: ' + (saved.error||'unknown'), 'error');
-    }
-  } catch(e) {
-    console.error(e);
-    out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Could not read that PDF.')}</div>`;
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = orig; }
+// Get the parsed statement for a PDF: reuse the cached extraction (sibling
+// <path>.json) when present so re-opening is free; otherwise call the AI once
+// and cache the result. `source` is the PDF File/Blob; `pdfPath` enables caching.
+async function getStatement(source, pdfPath) {
+  if (pdfPath) {
+    try {
+      const dl = await sb.storage.from('statements').download(pdfPath + '.json');
+      if (dl.data) return JSON.parse(await dl.data.text());
+    } catch(e) { /* no cache yet */ }
   }
+  const text = await extractPdfText(source);
+  const { data: sess } = await sb.auth.getSession();
+  const token = sess && sess.session && sess.session.access_token;
+  if (!token) throw new Error('Please sign in again.');
+  const res = await fetch('/reconcile-extract', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ text })
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || ('Failed (' + res.status + ')'));
+  if (pdfPath) { try { await sb.storage.from('statements').upload(pdfPath + '.json', new Blob([JSON.stringify(data)], { type:'application/json' }), { upsert:true, contentType:'application/json' }); } catch(e){} }
+  return data;
 }
 
-function runReconcile() {
-  const file = document.getElementById('rec-file').files[0];
-  if (!file) { showToast('Pick a statement PDF first.', 'error'); return; }
-  const acctId = document.getElementById('rec-account').value || null;
-  reconcileSource(file, acctId, document.getElementById('rec-run-btn'), { save:true, name:file.name });
+// Upload one or more PDFs: save each, reconcile each, render the last one.
+async function runReconcile() {
+  const files = [...document.getElementById('rec-file').files];
+  if (!files.length) { showToast('Pick at least one PDF first.', 'error'); return; }
+  const btn = document.getElementById('rec-run-btn');
+  const orig = btn.innerHTML; btn.disabled = true;
+  const out = document.getElementById('rec-result');
+  let last = null;
+  for (let n=0; n<files.length; n++) {
+    const f = files[n];
+    btn.innerHTML = `<span class="spinner"></span> ${n+1}/${files.length}`;
+    out.innerHTML = `<div style="color:var(--text3);font-size:13px">Reading ${escHtml(f.name)} (${n+1} of ${files.length})…</div>`;
+    try {
+      const saved = await saveStatement(f, f.name);
+      if (saved.error) showToast('Couldn’t save ' + f.name + ': ' + saved.error, 'error');
+      last = await getStatement(f, saved.path || null);
+    } catch(e) {
+      console.error(e); showToast('Failed on ' + f.name + ': ' + (e.message||''), 'error');
+    }
+  }
+  btn.disabled = false; btn.innerHTML = orig;
+  document.getElementById('rec-file').value = '';
+  if (last) renderReconcile(last, null);
+  if (files.length > 1) showToast(`Imported ${files.length} statements`, 'success');
+  renderStatementsTable();
 }
 
-async function reconcileSaved() {
-  const path = document.getElementById('rec-saved').value;
-  if (!path) { showToast('No saved statement selected.', 'error'); return; }
-  const acctId = document.getElementById('rec-account').value || null;
-  const btn = document.getElementById('rec-saved-btn');
-  const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+// Open a saved statement in the reconcile view (uses the cached extraction).
+async function viewStatement(path) {
+  openModal('modal-reconcile');
+  const out = document.getElementById('rec-result');
+  out.innerHTML = '<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">Loading…</div>';
   try {
-    const { data, error } = await sb.storage.from('statements').download(path);
-    if (error || !data) { showToast('Could not load that statement.', 'error'); return; }
-    await reconcileSource(data, acctId, document.getElementById('rec-run-btn'), { save:false });
-  } finally {
-    btn.disabled = false; btn.innerHTML = orig;
+    const dl = await sb.storage.from('statements').download(path);
+    if (dl.error || !dl.data) { out.innerHTML = '<div style="color:#b91c1c;font-size:13px">Could not load that statement.</div>'; return; }
+    const stmt = await getStatement(dl.data, path);
+    renderReconcile(stmt, null);
+  } catch(e) { console.error(e); out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Failed to read that statement.')}</div>`; }
+}
+
+// Open the raw PDF in a new tab via a short-lived signed URL.
+async function viewStatementPdf(path) {
+  const { data, error } = await sb.storage.from('statements').createSignedUrl(path, 3600);
+  if (error || !data) { showToast('Could not open the PDF.', 'error'); return; }
+  window.open(data.signedUrl, '_blank');
+}
+
+async function deleteStatement(path) {
+  if (!confirm('Delete this saved statement? (Your records aren’t affected.)')) return;
+  await sb.storage.from('statements').remove([path, path + '.json']);
+  showToast('Statement deleted');
+  renderStatementsTable();
+}
+
+// The "Bank Statements" page: list saved PDFs like the app's other tables.
+async function renderStatementsTable() {
+  const el = document.getElementById('accounts-table'); if (!el) return;
+  el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:.5rem .25rem">Loading…</div>';
+  let files = [];
+  try {
+    const { data, error } = await sb.storage.from('statements').list(currentUser.id, { limit: 500, sortBy: { column: 'created_at', order: 'desc' } });
+    if (error) throw error;
+    files = (data||[]).filter(f => f.name && /\.pdf$/i.test(f.name));
+  } catch(e) {
+    el.innerHTML = `<div class="empty"><i class="ti ti-file-dollar"></i><p>Statement storage isn’t set up yet</p></div>`; return;
+  }
+  if (!files.length) { el.innerHTML = `<div class="empty"><i class="ti ti-file-dollar"></i><p>No statements yet</p><p style="font-size:12px;color:var(--text3)">Tap “Reconcile bank statement” to add one.</p></div>`; return; }
+  const esc = escHtml;
+  const rows = files.map(f => ({ name:f.name, path:currentUser.id+'/'+f.name, when:f.created_at?fmtDate(f.created_at.slice(0,10)):'' }));
+  if (window.innerWidth <= 768) {
+    el.innerHTML = rows.map(r=>`
+      <div class="m-card" onclick="viewStatement('${r.path}')">
+        <div class="m-card-main">
+          <div class="m-card-title" style="word-break:break-all">${esc(r.name)}</div>
+          <div class="m-card-meta">${r.when}</div>
+        </div>
+        <div class="m-card-right"><div class="m-card-actions">
+          <button class="btn btn-sm" onclick="event.stopPropagation();viewStatementPdf('${r.path}')" title="View PDF"><i class="ti ti-file-text"></i></button>
+          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteStatement('${r.path}')"><i class="ti ti-trash"></i></button>
+        </div></div>
+      </div>`).join('');
+  } else {
+    el.innerHTML = `<table><thead><tr><th>Statement</th><th>Uploaded</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr style="cursor:pointer" onclick="viewStatement('${r.path}')"><td style="font-weight:500;word-break:break-all">${esc(r.name)}</td><td>${r.when}</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-sm" style="margin-right:4px" onclick="viewStatement('${r.path}')" title="Reconcile / view transactions"><i class="ti ti-scale"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="viewStatementPdf('${r.path}')" title="View PDF"><i class="ti ti-file-text"></i></button><button class="btn btn-sm btn-danger" onclick="deleteStatement('${r.path}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
