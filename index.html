@@ -3178,15 +3178,17 @@ async function listSavedStatements() {
 }
 
 // Save a statement PDF to storage under <uid>/<name>, de-duping the name.
+// Returns { path } on success or { error } with the real Supabase message.
 async function saveStatement(file, name) {
   const clean = (name||'statement.pdf').replace(/[^a-z0-9._-]+/gi,'_');
   let path = currentUser.id + '/' + clean;
   let up = await sb.storage.from('statements').upload(path, file, { upsert:false, contentType:'application/pdf' });
-  if (up.error) {                       // name taken (or other) — retry with a timestamp prefix
+  if (up.error && /exists|duplicate/i.test(up.error.message||'')) {   // name taken — retry with a timestamp
     path = currentUser.id + '/' + Date.now() + '__' + clean;
     up = await sb.storage.from('statements').upload(path, file, { upsert:false, contentType:'application/pdf' });
   }
-  return up.error ? null : path;
+  if (up.error) { console.error('statement save failed:', up.error); return { error: up.error.message || 'upload failed' }; }
+  return { path };
 }
 
 // Core flow: extract text from a PDF (File or Blob), parse via the Worker, render.
@@ -3211,8 +3213,8 @@ async function reconcileSource(source, acctId, btn, opts) {
     renderReconcile(data, acctId);
     if (opts.save) {
       const saved = await saveStatement(source, opts.name);
-      if (saved) { showToast('Statement saved'); listSavedStatements(); }
-      else showToast('Reconciled, but couldn’t save the PDF (storage not set up?)', 'error');
+      if (saved.path) { showToast('Statement saved'); listSavedStatements(); }
+      else showToast('Couldn’t save the PDF: ' + (saved.error||'unknown'), 'error');
     }
   } catch(e) {
     console.error(e);

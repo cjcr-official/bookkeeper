@@ -1,1 +1,1 @@
-{"version":152,"note":"Bank statements are now saved to private Supabase storage when you reconcile. The reconcile window lets you upload a new PDF (archived automatically) or pick a previously saved one to re-run."}
+{"version":153,"note":"Reconcile: the 'couldn't save statement' message now shows the real Supabase storage error (e.g. Bucket not found) so setup problems are clear."}
