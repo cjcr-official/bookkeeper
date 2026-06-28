@@ -3256,19 +3256,62 @@ async function saveStmtSidecar(stmt, path) {
   try { await sb.storage.from('statements').upload(path + '.json', new Blob([JSON.stringify(stmt)], { type:'application/json' }), { upsert:true, contentType:'application/json' }); } catch(e) { console.error('sidecar save failed', e); }
 }
 
-// Manually ignore an unmatched item — persists per statement and dismisses it from
-// "needs review." Used for prior-year payments, refunds, and other one-off oddities.
-async function ignoreItem(fp) {
+// Update the floating "Match" bar based on current selections in the reconcile view.
+function updateMatchBar() {
+  const bar = document.getElementById('rec-match-bar'); if (!bar) return;
+  const checked = [...document.querySelectorAll('#rec-result .rec-check:checked')];
+  if (!checked.length) { bar.style.display = 'none'; return; }
+  let bankN=0, recN=0, bankSum=0, recSum=0;
+  checked.forEach(c => {
+    const amt = parseFloat(c.dataset.amt||0);
+    if ((c.dataset.fp||'').startsWith('t:')) { bankN++; bankSum += amt; } else { recN++; recSum += amt; }
+  });
+  const ok = bankN>0 && recN>0;
+  const balanced = Math.abs(bankSum-recSum) <= 0.01;
+  const status = !ok ? 'Pick at least 1 bank + 1 record' : (balanced ? `Balanced (${fmt(bankSum)})` : `Off by ${fmt(Math.abs(bankSum-recSum))}`);
+  const color = !ok ? 'var(--text3)' : (balanced ? '#15803d' : '#b45309');
+  bar.innerHTML = `<div style="flex:1;font-size:12.5px"><strong>${bankN} bank · ${recN} record${recN===1?'':'s'}</strong> &nbsp;·&nbsp; <span style="color:${color}">${status}</span></div>
+    <button class="btn btn-sm" onclick="clearMatchSel()">Clear</button>
+    <button class="btn btn-sm btn-primary" onclick="matchSelected()" ${ok?'':'disabled'}><i class="ti ti-link"></i> Match</button>`;
+  bar.style.display = 'flex';
+}
+function clearMatchSel() {
+  document.querySelectorAll('#rec-result .rec-check:checked').forEach(c=>c.checked=false);
+  updateMatchBar();
+}
+
+// Group the currently-checked bank lines + records into a manual match and persist.
+async function matchSelected() {
   const s = _recState; if (!s) return;
-  const cur = new Set(s.stmt.manual_ignore || []);
-  cur.add(fp);
-  s.stmt.manual_ignore = [...cur];
+  const checked = [...document.querySelectorAll('#rec-result .rec-check:checked')];
+  const tIdxs = []; const rFps = [];
+  checked.forEach(el => {
+    const fp = el.dataset.fp || '';
+    if (fp.startsWith('t:')) tIdxs.push(parseInt(fp.slice(2),10));
+    else rFps.push(fp);
+  });
+  if (!tIdxs.length || !rFps.length) { showToast('Pick at least one bank line and one record','error'); return; }
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs, rFps }]);
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
 }
-async function restoreItem(fp) {
+async function unmatchManual(idx) {
   const s = _recState; if (!s) return;
-  s.stmt.manual_ignore = (s.stmt.manual_ignore || []).filter(x=>x!==fp);
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).filter((_,i)=>i!==idx);
+  await saveStmtSidecar(s.stmt, s.path);
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
+// Fix the AI's parsed amount for a bank line (PDF extraction errors).
+// Negative = debit. Persists in the sidecar so the next open uses the corrected number.
+async function editTxnAmt(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const v = prompt(`Edit amount for "${(t.description||'').slice(0,60)}". Negative for a debit.`, t.amount);
+  if (v == null) return;
+  const n = parseFloat(v);
+  if (!isFinite(n)) { showToast('Not a number','error'); return; }
+  t.amount = n;
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
 }
@@ -3380,7 +3423,19 @@ function renderReconcile(stmt, acctId, path) {
   const close = (a,b)=>Math.abs(a-b) <= 0.01;
   const usedT = new Array(txns.length).fill(false);
   const usedR = new Array(recs.length).fill(false);
-  const matched = [];   // each: { tIdxs:[...], rIdxs:[...] }
+  const matched = [];   // each: { tIdxs:[...], rIdxs:[...], manualIdx? }
+
+  // Pass 0: user's manual matches consume slots before any auto-match passes run.
+  // Manual matches let the user pair anything to anything (1↔N, N↔1, fix/split cases).
+  const recFpIdx = {}; recs.forEach((r,i)=>{ recFpIdx[r.fp] = i; });
+  (stmt.manual_matches||[]).forEach((m, mi) => {
+    const tIdxs = (m.tIdxs||[]).filter(i => i < txns.length && !usedT[i]);
+    const rIdxs = (m.rFps||[]).map(fp => recFpIdx[fp]).filter(i => i!=null && !usedR[i]);
+    if (!tIdxs.length && !rIdxs.length) return;
+    tIdxs.forEach(i => usedT[i] = true);
+    rIdxs.forEach(i => usedR[i] = true);
+    matched.push({ tIdxs, rIdxs, manualIdx: mi });
+  });
 
   // Passes 1–2: one-to-one. Tight (±5 days) first, then a loose window (±45
   // days) so a payment recorded in a different month than the bank cleared it
@@ -3446,14 +3501,9 @@ function renderReconcile(stmt, acctId, path) {
     if (combo) { usedR[ri]=true; combo.forEach(ti=>usedT[ti]=true); matched.push({ tIdxs:combo, rIdxs:[ri] }); }
   }
 
-  // User's manual-ignore list (persisted in the sidecar). Items in here drop out
-  // of "needs review" and live in a collapsible "Ignored" section instead.
-  const ignored = new Set(stmt.manual_ignore || []);
   const txnFp = i => 't:'+i;
-  const onBankOnly = []; const onBankIgnored = [];
-  txns.forEach((t,i)=>{ if (usedT[i]) return; (ignored.has(txnFp(i)) ? onBankIgnored : onBankOnly).push({t,fp:txnFp(i)}); });
-  const inRecordsOnly = []; const inRecordsIgnored = [];
-  recs.forEach((r,i)=>{ if (usedR[i] || !inPeriod(r.date)) return; (ignored.has(r.fp) ? inRecordsIgnored : inRecordsOnly).push(r); });
+  const onBankOnly = []; txns.forEach((t,i)=>{ if (!usedT[i]) onBankOnly.push({t,fp:txnFp(i)}); });
+  const inRecordsOnly = recs.filter((r,i)=>!usedR[i] && inPeriod(r.date));
 
   // Balance check. balanceOk is true / false / null (unknown — statement had no balances).
   let balanceHtml = '', balanceOk = null;
@@ -3489,50 +3539,52 @@ function renderReconcile(stmt, acctId, path) {
     x = x.replace(/[*#]+/g,' ').replace(/\s{2,}/g,' ').trim();
     return x || (''+s).trim();
   };
-  // One clean line: description + small date/tag on the left, amount on the right.
-  // fp = optional fingerprint → renders an "Ignore" button; mode='restore' → renders Restore.
-  const item = (d,label,amt,sub,fp,mode) => {
-    const btn = fp
-      ? (mode==='restore'
-          ? `<button onclick="restoreItem('${fp}')" class="btn btn-sm" style="background:transparent;border:none;color:var(--accent);padding:.1rem .35rem;cursor:pointer;flex-shrink:0" title="Bring back to review"><i class="ti ti-arrow-back-up"></i></button>`
-          : `<button onclick="ignoreItem('${fp}')" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0" title="Ignore (already accounted for)"><i class="ti ti-eye-off"></i></button>`)
-      : '';
-    const dim = mode==='restore' ? 'opacity:.65;' : '';
-    return `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);${dim}">
+  // Unmatched item row: checkbox + (bank-only) pencil to fix the AI's amount + amount.
+  const item = (d,label,amt,sub,fp,editTxnIdx) => {
+    const check = fp ? `<input type="checkbox" class="rec-check" data-fp="${fp}" data-amt="${amt}" onchange="updateMatchBar()" style="margin:.5rem 0 0;flex-shrink:0;cursor:pointer">` : '';
+    const edit = (editTxnIdx!=null) ? `<button onclick="editTxnAmt(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Fix amount"><i class="ti ti-pencil"></i></button>` : '';
+    return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
+      ${check}
       <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div>
-      ${btn}</div>`;
+      ${edit}</div>`;
   };
   const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.4rem 0">Nothing here ✓</div>';
+  // Matched group row. Manual matches get an Unlink button so the user can reverse.
   const grpRow = g => {
     const ts = g.tIdxs.map(i=>txns[i]), rs = g.rIdxs.map(i=>recs[i]);
-    const amt = ts.reduce((s,t)=>s+t.amount,0);
-    const label = rs.length>1 ? rs.map(r=>r.label).join(' + ') : rs[0].label;
-    return item(ts[0].date, label, amt, (ts.length>1||rs.length>1) ? 'combined' : rs[0].kind);
+    const amt = ts.length ? ts.reduce((s,t)=>s+t.amount,0) : rs.reduce((s,r)=>s+r.amount,0);
+    const label = rs.length ? (rs.length>1 ? rs.map(r=>r.label).join(' + ') : rs[0].label) : ts.map(t=>cleanDesc(t.description)).join(' + ');
+    const date = (ts[0]&&ts[0].date) || (rs[0]&&rs[0].date) || '';
+    const tag = (g.manualIdx!=null) ? 'manual' : ((ts.length>1||rs.length>1) ? 'combined' : (rs[0]?rs[0].kind:''));
+    const unlink = (g.manualIdx!=null) ? `<button onclick="unmatchManual(${g.manualIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0" title="Unlink"><i class="ti ti-unlink"></i></button>` : '';
+    return `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${date?fmtDate(date):'—'} · ${escHtml(tag)}</div></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div>
+      ${unlink}</div>`;
   };
 
   out.innerHTML = `
     <div id="rec-audit"></div>
     ${monthPicker}
     ${balanceHtml}
+    <div id="rec-match-bar" style="display:none;position:sticky;top:0;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:.55rem .75rem;margin-bottom:.75rem;z-index:10;align-items:center;gap:.6rem;flex-wrap:wrap"></div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1.1rem">
       <span class="badge badge-green">✅ ${matched.length} matched</span>
       <span class="badge badge-gray">⚠️ ${inRecordsOnly.length} only in your books</span>
       <span class="badge badge-gray">❓ ${onBankOnly.length} only on the bank</span>
-      ${(onBankIgnored.length+inRecordsIgnored.length)?`<span class="badge badge-gray">👁‍🗨 ${onBankIgnored.length+inRecordsIgnored.length} ignored</span>`:''}
     </div>
     <div style="margin-bottom:1.1rem">
       <div style="font-weight:700;font-size:13.5px">❓ On the bank, not in your books <span style="color:var(--text3);font-weight:600">(${onBankOnly.length})</span></div>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Add the real ones as expenses. Refunds, transfers, prior-year payments → use the 👁 icon to ignore.</div>
-      ${list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp)))}
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes here + on the books side, then Match. Pencil edits the AI's amount.</div>
+      ${list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t))))}
     </div>
     <div style="margin-bottom:1.1rem">
       <div style="font-weight:700;font-size:13.5px">⚠️ In your books, not on this statement <span style="color:var(--text3);font-weight:600">(${inRecordsOnly.length})</span></div>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Usually a payment that hasn’t cleared on a statement yet. Use 👁 to ignore.</div>
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line).</div>
       ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp)))}
     </div>
-    <details><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">✅ Matched (${matched.length})</summary><div style="margin-top:.3rem">${list(matched.map(grpRow))}</div></details>
-    ${(onBankIgnored.length+inRecordsIgnored.length)?`<details style="margin-top:.5rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">👁‍🗨 Ignored (${onBankIgnored.length+inRecordsIgnored.length})</summary><div style="margin-top:.3rem">${list([...onBankIgnored.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, 'bank', x.fp, 'restore')), ...inRecordsIgnored.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, 'restore'))])}</div></details>`:''}
+    <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">✅ Matched (${matched.length})</summary><div style="margin-top:.3rem">${list(matched.map(grpRow))}</div></details>
     <div style="font-size:10.5px;color:var(--text3);margin-top:.9rem;line-height:1.5">Read by AI from the PDF — double-check anything important. Only the month’s audit check is saved; your records aren’t changed.</div>`;
   recordAudit(acctId, monthKey, passed, monthLabel);
 }

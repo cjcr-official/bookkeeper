@@ -1,1 +1,1 @@
-{"version":160,"note":"v160: reconcile — each unmatched line now has an 👁 Ignore button. Prior-year payments, refunds, transfers, and other one-offs drop into a collapsible Ignored section, the month passes, and your choices persist with the statement."}
+{"version":161,"note":"v161: reconcile — manual fix/split/match. Checkbox any unmatched bank line(s) + record(s), Match to pair them (1↔N, N↔1, N↔M). Pencil on bank lines fixes a wrong AI amount. Matched manual pairs show Unlink. Replaces the ignore feature."}
