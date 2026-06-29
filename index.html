@@ -3372,6 +3372,24 @@ async function unmatchManual(idx) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// Unlink any matched group by its position in the rendered Matched list.
+// Manual pair → just remove from manual_matches (items go back to the auto pool).
+// Auto pair → park both sides in stmt.unmatch_t/unmatch_r so passes 1-4 won't
+// re-form the same wrong pair. User can then check + Match them to other items.
+async function unmatchByIdx(i) {
+  const s = _recState; if (!s) return;
+  const g = (s.matchedGroups||[])[i]; if (!g) return;
+  if (g.manualIdx != null) return unmatchManual(g.manualIdx);
+  const curT = new Set(s.stmt.unmatch_t || []);
+  const curR = new Set(s.stmt.unmatch_r || []);
+  (g.tIdxs||[]).forEach(idx => curT.add(idx));
+  (g.rIdxs||[]).forEach(ri => { const r = s.recs[ri]; if (r && r.fp) curR.add(r.fp); });
+  s.stmt.unmatch_t = [...curT];
+  s.stmt.unmatch_r = [...curR];
+  await saveStmtSidecar(s.stmt, s.path);
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // Record a bank deposit as a payment for a prior-year invoice that was never in
 // the app. Creates a back-dated invoice (Dec 31 of the prior year) marked fully
 // paid on the bank line's date, so it auto-matches on re-render and the income
@@ -3663,10 +3681,10 @@ function renderReconcile(stmt, acctId, path) {
   // still matches. Loose pass picks the closest date.
   for (const win of [5, 45]) {
     for (let ti=0; ti<txns.length; ti++) {
-      if (usedT[ti]) continue;
+      if (usedT[ti] || blockedT.has(ti)) continue;
       let best=-1, bestD=Infinity;
       for (let ri=0; ri<recs.length; ri++) {
-        if (usedR[ri] || !close(txns[ti].amount, recs[ri].amount)) continue;
+        if (usedR[ri] || blockedR.has(recs[ri].fp) || !close(txns[ti].amount, recs[ri].amount)) continue;
         if (txns[ti].date && recs[ri].date) {
           const d = dayDiff(txns[ti].date, recs[ri].date);
           if (d > win) continue;
@@ -3697,11 +3715,11 @@ function renderReconcile(stmt, acctId, path) {
   // Pass 3: one bank line = a combination of several records (e.g. a single
   // $120 deposit that's two recorded payments of $100 + $20).
   for (let ti=0; ti<txns.length; ti++) {
-    if (usedT[ti]) continue;
+    if (usedT[ti] || blockedT.has(ti)) continue;
     const t = txns[ti];
     const pool = [];
     for (let ri=0; ri<recs.length; ri++) {
-      if (usedR[ri] || Math.sign(recs[ri].amount)!==Math.sign(t.amount)) continue;
+      if (usedR[ri] || blockedR.has(recs[ri].fp) || Math.sign(recs[ri].amount)!==Math.sign(t.amount)) continue;
       if (t.date && recs[ri].date && dayDiff(t.date, recs[ri].date) > 45) continue;
       pool.push({ idx:ri, amount:recs[ri].amount });
     }
@@ -3710,11 +3728,11 @@ function renderReconcile(stmt, acctId, path) {
   }
   // Pass 4: the reverse — one record = several bank lines.
   for (let ri=0; ri<recs.length; ri++) {
-    if (usedR[ri]) continue;
+    if (usedR[ri] || blockedR.has(recs[ri].fp)) continue;
     const r = recs[ri];
     const pool = [];
     for (let ti=0; ti<txns.length; ti++) {
-      if (usedT[ti] || Math.sign(txns[ti].amount)!==Math.sign(r.amount)) continue;
+      if (usedT[ti] || blockedT.has(ti) || Math.sign(txns[ti].amount)!==Math.sign(r.amount)) continue;
       if (r.date && txns[ti].date && dayDiff(r.date, txns[ti].date) > 45) continue;
       pool.push({ idx:ti, amount:txns[ti].amount });
     }
@@ -3722,6 +3740,12 @@ function renderReconcile(stmt, acctId, path) {
     if (combo) { usedR[ri]=true; combo.forEach(ti=>usedT[ti]=true); matched.push({ tIdxs:combo, rIdxs:[ri] }); }
   }
 
+  // User-blocked auto-matches: bank indices / record fingerprints that the user
+  // unlinked from an earlier auto-pair. They stay OUT of passes 1-4 (so the same
+  // wrong pair doesn't get re-formed on every render) but Pass 0 (manual_matches)
+  // still consumes them when the user explicitly pairs them.
+  const blockedT = new Set(stmt.unmatch_t || []);
+  const blockedR = new Set(stmt.unmatch_r || []);
   const txnFp = i => 't:'+i;
   const onBankOnly = []; txns.forEach((t,i)=>{ if (!usedT[i]) onBankOnly.push({t,fp:txnFp(i)}); });
   const inRecordsOnly = recs.filter((r,i)=>!usedR[i] && inPeriod(r.date));
@@ -3750,7 +3774,7 @@ function renderReconcile(stmt, acctId, path) {
   const monthKey = monthSrc ? monthSrc.slice(0,7) : '';
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
-  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {} };
+  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs };
   const monthPicker = `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><span style="color:var(--text3);font-size:11px">(override if the cycle date crossed months)</span></div>`;
 
   // Tidy a noisy bank description down to the readable part.
@@ -3781,14 +3805,16 @@ function renderReconcile(stmt, acctId, path) {
       ${bankBtns}</div>`;
   };
   const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.4rem 0">Nothing here ✓</div>';
-  // Matched group row. Manual matches get an Unlink button so the user can reverse.
-  const grpRow = g => {
+  // Matched group row. Every match (manual + auto) has an Unlink button so the
+  // user can fix wrong AI pairings. Index used by unmatchByIdx is the position
+  // in `matched` at render time (captured in _recState.matchedGroups).
+  const grpRow = (g, idx) => {
     const ts = g.tIdxs.map(i=>txns[i]), rs = g.rIdxs.map(i=>recs[i]);
     const amt = ts.length ? ts.reduce((s,t)=>s+t.amount,0) : rs.reduce((s,r)=>s+r.amount,0);
     const label = rs.length ? (rs.length>1 ? rs.map(r=>r.label).join(' + ') : rs[0].label) : ts.map(t=>cleanDesc(t.description)).join(' + ');
     const date = (ts[0]&&ts[0].date) || (rs[0]&&rs[0].date) || '';
     const tag = (g.manualIdx!=null) ? 'manual' : ((ts.length>1||rs.length>1) ? 'combined' : (rs[0]?rs[0].kind:''));
-    const unlink = (g.manualIdx!=null) ? `<button onclick="unmatchManual(${g.manualIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0" title="Unlink"><i class="ti ti-unlink"></i></button>` : '';
+    const unlink = `<button onclick="unmatchByIdx(${idx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0" title="Unlink this match"><i class="ti ti-unlink"></i></button>`;
     return `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
       <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${date?fmtDate(date):'—'} · ${escHtml(tag)}</div></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div>
@@ -3828,7 +3854,7 @@ function renderReconcile(stmt, acctId, path) {
       <input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin-bottom:.5rem">
       <div id="rec-search-results"></div>
     </div>
-    <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">✅ Matched (${matched.length})</summary><div style="margin-top:.3rem">${list(matched.map(grpRow))}</div></details>
+    <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">✅ Matched (${matched.length})</summary><div style="margin-top:.3rem">${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>
     <div style="font-size:10.5px;color:var(--text3);margin-top:.9rem;line-height:1.5">Read by AI from the PDF — double-check anything important. Only the month’s audit check is saved; your records aren’t changed.</div>`;
   recordAudit(acctId, monthKey, passed, monthLabel);
 }

@@ -1,1 +1,1 @@
-{"version":167,"note":"v167: reconcile — fix splits/edits/matches not persisting. The sidecar JSON's upsert was silently failing when the storage policy only allows insert+delete (no update). Now falls back to delete-then-insert, and surfaces a real error toast instead of failing silently."}
+{"version":168,"note":"v168: reconcile — unlink AI matches too. Every matched row now has the unlink button. Unlinking an auto-match parks both sides so the matcher won't immediately re-form the same wrong pair; then check + Match them yourself the right way."}
