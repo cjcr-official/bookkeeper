@@ -1,1 +1,1 @@
-{"version":183,"note":"v183: reconcile cleanup — opening a statement loads each sidecar once (not twice), changeStmtMonth uses the fallback-aware sidecar saver, and the month audit row is only rewritten when its pass/fail result actually changes."}
+{"version":184,"note":"v184: reconcile fix — a record is no longer stolen by an adjacent month's loose auto-match. Auto-matches from other statements only suppress out-of-period records; the month that actually owns a record (e.g. a recurring $14.99 charge) keeps it. Manual matches still block everywhere."}
