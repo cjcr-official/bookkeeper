@@ -3302,6 +3302,36 @@ async function unmatchManual(idx) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// Split a bank line into N parts (e.g. one $200 charge that was really $150 + $50,
+// so each piece can match its own record). Parts inherit the original date and
+// description (with " part k/N"). Manual_matches that referenced the original index
+// get shifted; entries that pointed AT the split line are dropped.
+async function splitTxn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const v = prompt(`Split ${fmt(t.amount)} ("${(t.description||'').slice(0,40)}") into comma-separated amounts.\nNegative for a debit. Example: -150, -50`, '');
+  if (v == null || !v.trim()) return;
+  const parts = v.split(',').map(p=>parseFloat(p.trim())).filter(n=>isFinite(n));
+  if (parts.length < 2) { showToast('Enter at least 2 amounts', 'error'); return; }
+  const sum = parts.reduce((a,b)=>a+b, 0);
+  if (Math.abs(sum - t.amount) > 0.01) {
+    if (!confirm(`Sum is ${fmt(sum)} but original is ${fmt(t.amount)} (off by ${fmt(Math.abs(sum-t.amount))}). The balance check will reflect this. Continue?`)) return;
+  }
+  const newTxns = parts.map((amt, k) => ({
+    date: t.date,
+    description: (t.description||'split') + ` · part ${k+1}/${parts.length}`,
+    amount: amt
+  }));
+  s.stmt.transactions.splice(idx, 1, ...newTxns);
+  const shift = newTxns.length - 1;
+  s.stmt.manual_matches = (s.stmt.manual_matches||[]).map(m => ({
+    rFps: m.rFps || [],
+    tIdxs: (m.tIdxs||[]).map(i => i > idx ? i + shift : (i === idx ? null : i)).filter(i => i != null)
+  })).filter(m => m.tIdxs.length && m.rFps.length);
+  await saveStmtSidecar(s.stmt, s.path);
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // Fix the AI's parsed amount for a bank line (PDF extraction errors).
 // Negative = debit. Persists in the sidecar so the next open uses the corrected number.
 async function editTxnAmt(idx) {
@@ -3539,16 +3569,18 @@ function renderReconcile(stmt, acctId, path) {
     x = x.replace(/[*#]+/g,' ').replace(/\s{2,}/g,' ').trim();
     return x || (''+s).trim();
   };
-  // Unmatched item row: checkbox + (bank-only) pencil to fix the AI's amount + amount.
+  // Unmatched item row: checkbox + (bank-only) pencil/split + amount.
   // width:auto + flex:0 0 18px override the global "input{width:100%}" rule.
   const item = (d,label,amt,sub,fp,editTxnIdx) => {
     const check = fp ? `<input type="checkbox" class="rec-check" data-fp="${fp}" data-amt="${amt}" onchange="updateMatchBar()" style="width:18px;flex:0 0 18px;margin:.5rem 0 0;cursor:pointer;padding:0">` : '';
-    const edit = (editTxnIdx!=null) ? `<button onclick="editTxnAmt(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Fix amount"><i class="ti ti-pencil"></i></button>` : '';
+    const bankBtns = (editTxnIdx!=null) ? `
+      <button onclick="splitTxn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Split into multiple amounts"><i class="ti ti-arrows-split"></i></button>
+      <button onclick="editTxnAmt(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Fix amount"><i class="ti ti-pencil"></i></button>` : '';
     return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
       ${check}
       <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div>
-      ${edit}</div>`;
+      ${bankBtns}</div>`;
   };
   const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.4rem 0">Nothing here ✓</div>';
   // Matched group row. Manual matches get an Unlink button so the user can reverse.

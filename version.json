@@ -1,1 +1,1 @@
-{"version":162,"note":"v162: reconcile — fix checkbox blowing out the row width. Global input{width:100%} was making each checkbox fill its flex slot and squashing the label to a single column."}
+{"version":163,"note":"v163: reconcile — split a bank line into N parts. One $200 charge that was really $150 + $50 of separate purchases? Click the split icon, enter \"-150, -50\", each piece becomes its own row and can match its own expense."}
