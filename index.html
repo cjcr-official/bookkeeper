@@ -3292,6 +3292,21 @@ async function saveStmtSidecar(stmt, path) {
   try { await sb.storage.from('statements').upload(path + '.json', new Blob([JSON.stringify(stmt)], { type:'application/json' }), { upsert:true, contentType:'application/json' }); } catch(e) { console.error('sidecar save failed', e); }
 }
 
+// Search across the other-month unmatched records. Renders matching rows with the
+// same checkbox/fingerprint scheme, so Match works the same as on in-period rows.
+function searchOtherRecs() {
+  const el = document.getElementById('rec-search-results'); if (!el) return;
+  const s = _recState; if (!s || !s.otherUnmatched) { el.innerHTML=''; return; }
+  const q = (document.getElementById('rec-rec-search').value || '').trim().toLowerCase();
+  if (!q) { el.innerHTML = '<div style="color:var(--text3);font-size:11.5px;padding:.3rem 0">Type to search across all other months…</div>'; return; }
+  const num = parseFloat(q);
+  const matches = s.otherUnmatched.filter(r => {
+    if (!isNaN(num) && Math.abs(Math.abs(parseFloat(r.amount)||0) - Math.abs(num)) <= 0.01) return true;
+    return (r.label||'').toLowerCase().includes(q);
+  }).slice(0, 50);
+  el.innerHTML = matches.length ? matches.map(r => s.renderedOther[r.fp]).join('') : '<div style="color:var(--text3);font-size:11.5px;padding:.3rem 0">No matches in other months.</div>';
+}
+
 // Update the floating "Match" bar based on current selections in the reconcile view.
 function updateMatchBar() {
   const bar = document.getElementById('rec-match-bar'); if (!bar) return;
@@ -3659,6 +3674,10 @@ function renderReconcile(stmt, acctId, path) {
   const txnFp = i => 't:'+i;
   const onBankOnly = []; txns.forEach((t,i)=>{ if (!usedT[i]) onBankOnly.push({t,fp:txnFp(i)}); });
   const inRecordsOnly = recs.filter((r,i)=>!usedR[i] && inPeriod(r.date));
+  // Unmatched records OUTSIDE this statement's period — searchable for cross-month
+  // matches (prior-year payments cleared this month, etc.). recFpIdx already maps
+  // their fp's so checking + Match works the same as in-period rows.
+  const otherUnmatched = recs.filter((r,i)=>!usedR[i] && !inPeriod(r.date));
 
   // Balance check. balanceOk is true / false / null (unknown — statement had no balances).
   let balanceHtml = '', balanceOk = null;
@@ -3680,7 +3699,7 @@ function renderReconcile(stmt, acctId, path) {
   const monthKey = monthSrc ? monthSrc.slice(0,7) : '';
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
-  _recState = { stmt, acctId, path, monthKey };
+  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {} };
   const monthPicker = `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><span style="color:var(--text3);font-size:11px">(override if the cycle date crossed months)</span></div>`;
 
   // Tidy a noisy bank description down to the readable part.
@@ -3722,6 +3741,13 @@ function renderReconcile(stmt, acctId, path) {
       ${unlink}</div>`;
   };
 
+  // Pre-render out-of-period rec rows so the search handler doesn't need access
+  // to the item() closure — it just picks lines by fingerprint.
+  otherUnmatched.forEach(r => {
+    const periodTag = r.date ? parseDate(r.date+'').toLocaleDateString(undefined,{month:'short',year:'numeric'}) : '';
+    _recState.renderedOther[r.fp] = item(r.date, r.label, r.amount, r.kind + (periodTag?' · '+periodTag:''), r.fp);
+  });
+
   out.innerHTML = `
     <div id="rec-audit"></div>
     ${monthPicker}
@@ -3741,6 +3767,12 @@ function renderReconcile(stmt, acctId, path) {
       <div style="font-weight:700;font-size:13.5px">⚠️ In your books, not on this statement <span style="color:var(--text3);font-weight:600">(${inRecordsOnly.length})</span></div>
       <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line).</div>
       ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp)))}
+    </div>
+    <div style="margin-bottom:1.1rem">
+      <div style="font-weight:700;font-size:13.5px">🔎 Search records in other months <span style="color:var(--text3);font-weight:600">(${otherUnmatched.length} unmatched elsewhere)</span></div>
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">For prior-year payments, refunds, or anything that lives in a different month. Type text or an amount.</div>
+      <input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin-bottom:.5rem">
+      <div id="rec-search-results"></div>
     </div>
     <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">✅ Matched (${matched.length})</summary><div style="margin-top:.3rem">${list(matched.map(grpRow))}</div></details>
     <div style="font-size:10.5px;color:var(--text3);margin-top:.9rem;line-height:1.5">Read by AI from the PDF — double-check anything important. Only the month’s audit check is saved; your records aren’t changed.</div>`;

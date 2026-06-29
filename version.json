@@ -1,1 +1,1 @@
-{"version":164,"note":"v164: owner activity — log Owner Contributions (money you put in from personal) and Owner Draws (money you took out) on the Accounts page. They reconcile against the bank but don't pollute revenue/expense totals."}
+{"version":165,"note":"v165: reconcile — search records across all other months. A bank line that's actually paying a prior-year invoice? Type its amount or the customer name, pick the result, match. Same checkbox UX as the in-period list."}
