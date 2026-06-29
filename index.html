@@ -2686,8 +2686,11 @@ function renderExpenses() {
   const el = document.getElementById('expenses-table');
   if (!cache.expenses.length) { el.innerHTML = `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`; return; }
   const esc = escHtml;
+  // Always show newest-dated first, so a freshly added (or back-dated) expense
+  // lands in the right spot instead of jumping to the top of the list.
+  const rows = cache.expenses.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'') || (b.created_at||'').localeCompare(a.created_at||''));
   if (window.innerWidth <= 768) {
-    el.innerHTML = cache.expenses.map(e=>`
+    el.innerHTML = rows.map(e=>`
       <div class="m-card" onclick="editExpense('${e.id}')">
         <div class="m-card-main">
           <div class="m-card-title">${esc(e.vendor)}</div>
@@ -2704,16 +2707,28 @@ function renderExpenses() {
         </div>
       </div>`).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${cache.expenses.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${rows.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
 function getCategories() {
   const DEFAULT_CATS = ['Advertising','Bank Fees','Contract Labor','Equipment','Insurance','Meals & Entertainment','Office Supplies','Professional Services','Rent','Software & Subscriptions','Travel','Utilities','Other'];
+  // Source of truth is the synced profile copy (survives iOS clearing the PWA's
+  // local storage + syncs across devices). localStorage is just a local cache.
+  if (profile && Array.isArray(profile.expense_categories) && profile.expense_categories.length) return profile.expense_categories.slice();
   try { const s = lsGet('bk-expense-cats'); if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch(e){}
   return DEFAULT_CATS.slice();
 }
-function saveCategories(arr) { lsSet('bk-expense-cats', JSON.stringify(arr)); }
+// Persist to the profile (durable + synced) and cache locally. Fire-and-forget;
+// works in-session even before the DB column migration is run (see CLAUDE.md).
+async function saveCategories(arr) {
+  if (profile) profile.expense_categories = arr.slice();
+  lsSet('bk-expense-cats', JSON.stringify(arr));
+  try {
+    const { error } = await sb.from('profiles').upsert({ id: currentUser.id, expense_categories: arr });
+    if (error) console.error('category save failed', error);
+  } catch(e) { console.error('category save crashed', e); }
+}
 
 function renderCategoryOptions(selected) {
   const sel = document.getElementById('exp-category');

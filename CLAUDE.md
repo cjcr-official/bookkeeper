@@ -142,6 +142,9 @@ with "could not find the X column in the schema cache"):
 alter table profiles add column if not exists base_address text;
 alter table profiles add column if not exists logo text;
 alter table profiles add column if not exists push_subscription jsonb;
+-- expense_categories: user-editable spending categories (jsonb array of strings).
+-- Source of truth; localStorage bk-expense-cats is now just a local cache.
+alter table profiles add column if not exists expense_categories jsonb;
 
 -- invoices: payments + mileage
 alter table invoices add column if not exists amount_paid numeric default 0;
@@ -281,7 +284,9 @@ minute until the cache refreshes.
 - **Recurring (invoices/expenses):** `recurring` table; `processRecurring()` runs
   on boot, catches up missed periods, generates invoices as DRAFTS and auto-posts
   expenses. Keep monthly billing day ≤ 28 (JS month rollover).
-- **Expenses:** user-editable categories (localStorage `bk-expense-cats`);
+- **Expenses:** list sorts by date (newest first). User-editable categories saved
+  to `profiles.expense_categories` (synced/durable; localStorage `bk-expense-cats`
+  is a local cache + fallback);
   "Reimbursed by customer" flag excludes from net profit / P&L / chart (green
   Reimbursed badge); "Link to Invoice"; receipt photo upload to private
   `receipts` bucket (signed URLs; paperclip indicator; removed on delete).
