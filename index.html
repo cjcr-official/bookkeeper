@@ -4189,7 +4189,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp)))}
     </div>
     <div style="margin-bottom:1.1rem">
-      <div style="font-weight:700;font-size:13.5px">🔎 Search records in other months <span style="color:var(--text3);font-weight:600">(${otherUnmatched.length} unmatched elsewhere)</span></div>
+      <div style="font-weight:700;font-size:13.5px">🔎 Search records in other months</div>
       <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">For prior-year payments, refunds, or anything that lives in a different month. Type text or an amount.</div>
       <input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin-bottom:.5rem">
       <div id="rec-search-results"></div>

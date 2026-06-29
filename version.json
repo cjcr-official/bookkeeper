@@ -1,1 +1,1 @@
-{"version":180,"note":"v180: reconcile — hide the Statement Month picker by default. The median-date auto-detection (v158) gets it right almost always; the picker now only appears if you previously set a manual override, with a 'Use auto' button to clear it."}
+{"version":181,"note":"v181: reconcile — drop the misleading 'N unmatched elsewhere' count. It tallied every record outside the current period including ones from months that were never reconciled, so the number was always huge and meaningless."}
