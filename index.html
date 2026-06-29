@@ -3353,6 +3353,38 @@ async function unmatchManual(idx) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// Record a bank deposit as a payment for a prior-year invoice that was never in
+// the app. Creates a back-dated invoice (Dec 31 of the prior year) marked fully
+// paid on the bank line's date, so it auto-matches on re-render and the income
+// lands in last year's books — not this year's.
+async function recordPriorPayment(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  if (!(t.amount > 0)) { showToast('Use this on a deposit (positive amount).', 'error'); return; }
+  const cust = prompt(`Record ${fmt(t.amount)} on ${fmtDate(t.date)} ("${(t.description||'').slice(0,60)}") as a payment for a prior-year invoice.\n\nCustomer name?`, '');
+  if (cust == null || !cust.trim()) return;
+  const yr = parseInt((t.date||today()).slice(0,4)) || (new Date().getFullYear());
+  const invDate = (yr - 1) + '-12-31';
+  const amount = t.amount;
+  const row = {
+    user_id: currentUser.id,
+    number: nextInvoiceNumber(),
+    customer_id: null,
+    customer_name: cust.trim(),
+    date: invDate, due: invDate, status: 'paid',
+    lines: [{desc:'Prior-year service', qty:1, rate:amount, amount:amount}],
+    subtotal: amount, tax: 0, total: amount,
+    notes: 'Recorded retroactively during reconciliation',
+    miles: 0, trips: 0, total_miles: 0,
+    amount_paid: amount, paid_date: t.date || today(), payment_method: 'bank'
+  };
+  const r = await sb.from('invoices').insert(row).select().single();
+  if (r.error) { showToast(r.error.message, 'error'); return; }
+  cache.invoices.unshift(r.data);
+  showToast('Prior payment recorded','success');
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // Split a bank line into N parts (e.g. one $200 charge that was really $150 + $50,
 // so each piece can match its own record). Parts inherit the original date and
 // description (with " part k/N"). Manual_matches that referenced the original index
@@ -3717,7 +3749,10 @@ function renderReconcile(stmt, acctId, path) {
   // width:auto + flex:0 0 18px override the global "input{width:100%}" rule.
   const item = (d,label,amt,sub,fp,editTxnIdx) => {
     const check = fp ? `<input type="checkbox" class="rec-check" data-fp="${fp}" data-amt="${amt}" onchange="updateMatchBar()" style="width:18px;flex:0 0 18px;margin:.5rem 0 0;cursor:pointer;padding:0">` : '';
+    const priorBtn = (editTxnIdx!=null && amt > 0) ? `
+      <button onclick="recordPriorPayment(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as a prior-year payment (creates a back-dated invoice marked paid)"><i class="ti ti-calendar-plus"></i></button>` : '';
     const bankBtns = (editTxnIdx!=null) ? `
+      ${priorBtn}
       <button onclick="splitTxn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Split into multiple amounts"><i class="ti ti-arrows-split"></i></button>
       <button onclick="editTxnAmt(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Fix amount"><i class="ti ti-pencil"></i></button>` : '';
     return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)">

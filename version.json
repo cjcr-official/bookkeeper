@@ -1,1 +1,1 @@
-{"version":165,"note":"v165: reconcile — search records across all other months. A bank line that's actually paying a prior-year invoice? Type its amount or the customer name, pick the result, match. Same checkbox UX as the in-period list."}
+{"version":166,"note":"v166: reconcile — one-click \"Record as prior-year payment\" on bank deposits. Creates a back-dated invoice (Dec 31 of the prior year) marked paid on the bank line's date, so the deposit auto-matches and the income lands in last year's books."}
