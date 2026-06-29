@@ -1,1 +1,1 @@
-{"version":188,"note":"v188: reconcile — opening any statement now re-checks pass/fail for ALL months against the current books and repaints the whole audit grid, instead of only updating the month you opened. Matching logic was factored into one shared core so the grid and the open view never disagree."}
+{"version":189,"note":"v189: mobile bottom tab bar sits lower — trimmed the empty home-indicator space it reserved below the icons (kept a small cushion) so it no longer floats high above the screen edge."}
