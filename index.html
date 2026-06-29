@@ -3311,6 +3311,7 @@ async function runReconcile() {
   if (last) {
     const sidecars = await loadSidecars();
     renderReconcile(last, null, lastPath, fpsFromSidecars(sidecars, lastPath), monthMapFromSidecars(sidecars));
+    refreshAllAudits(sidecars);   // refresh pass/fail for ALL months, not just this one
   }
   if (files.length > 1) showToast(`Imported ${files.length} statements`, 'success');
   renderStatementsTable();
@@ -3329,6 +3330,7 @@ async function viewStatement(path) {
     if (dl.error || !dl.data) { out.innerHTML = '<div style="color:#b91c1c;font-size:13px">Could not load that statement.</div>'; return; }
     const stmt = await getStatement(dl.data, path);
     renderReconcile(stmt, null, path, fpsFromSidecars(sidecars, path), monthMapFromSidecars(sidecars));
+    refreshAllAudits(sidecars);   // refresh pass/fail for ALL months, not just this one
   } catch(e) { console.error(e); out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Failed to read that statement.')}</div>`; }
 }
 
@@ -3952,16 +3954,16 @@ async function renderStatementsTable() {
   }
 }
 
-// Compare extracted statement transactions against recorded expenses + invoice
-// payments, by amount (±$0.01) and date (±5 days). Renders matched / missing buckets.
-// globalMatchedFps = { manual, owned } record-fp sets claimed in OTHER statements.
-// Manual claims block everywhere; owned (tight ±5-day matches) only block this
-// statement's loose/combo passes, so the month that tight-matches a record keeps
-// it while still letting a genuine cross-month record match where it belongs.
-function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
-  const out = document.getElementById('rec-result');
+// Pure matching core (no DOM) shared by the reconcile VIEW and the audit refresh.
+// Compares the statement's transactions against recorded expenses + invoice
+// payments + owner activity + gift cards, by amount (±$0.01) and date, and returns
+// the matched/unmatched buckets, balance check, resolved month, and pass/fail.
+// gFps = { manual, owned } record-fp sets claimed in OTHER statements. Manual claims
+// block everywhere; owned (tight ±5-day matches) only block this statement's
+// loose/combo passes, so the month that tight-matches a record keeps it while still
+// letting a genuine cross-month record match where it belongs.
+function reconcileMatch(stmt, acctId, gFps) {
   const txns = (stmt.transactions||[]).map(t=>({ ...t, amount: parseFloat(t.amount)||0 }));
-  if (!txns.length) { out.innerHTML = '<div style="color:var(--text3);font-size:13px">No transactions found in that statement.</div>'; return; }
   const dates = txns.map(t=>t.date).filter(Boolean).sort();
   const periodStart = stmt.period_start || dates[0];
   const periodEnd = stmt.period_end || dates[dates.length-1];
@@ -4029,9 +4031,8 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   //     month. The TIGHT pass below is NOT suppressed: every statement can always
   //     tight-match its own record, regardless of the AI's period guess (which is
   //     why this replaces the old, fragile in-period test).
-  const gFps = globalMatchedFps || (_recState && _recState.globalMatchedFps) || {};
-  const gManual = gFps.manual || new Set();
-  const gOwned = gFps.owned || new Set();
+  const gManual = (gFps && gFps.manual) || new Set();
+  const gOwned = (gFps && gFps.owned) || new Set();
   recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
   const ownedElsewhere = i => gOwned.has(recs[i].fp);
   const tightFps = [];   // records THIS render claimed via a ±5-day one-to-one match
@@ -4136,6 +4137,17 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const monthKey = monthSrc ? monthSrc.slice(0,7) : '';
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
+  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, balanceOk, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned };
+}
+
+// Reconcile VIEW: compute matches, stash view state, persist tight-match ownership,
+// then render the buckets + the audit grid for this statement's month.
+function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
+  const out = document.getElementById('rec-result');
+  const gFps = globalMatchedFps || (_recState && _recState.globalMatchedFps) || {};
+  const comp = reconcileMatch(stmt, acctId, gFps);
+  if (!comp.txns.length) { out.innerHTML = '<div style="color:var(--text3);font-size:13px">No transactions found in that statement.</div>'; return; }
+  const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned } = comp;
   _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs, globalMatchedFps: { manual: gManual, owned: gOwned }, monthMap: monthMap || (_recState && _recState.monthMap) || {} };
 
   // Persist the fps this statement TIGHT-matched (±5 days), so other statements'
@@ -4260,6 +4272,38 @@ async function recordAudit(acctId, monthKey, passed, monthLabel) {
     }
   }
   renderAuditBlock(acctId, monthKey, monthLabel, passed);
+  if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
+}
+
+// Re-evaluate pass/fail for EVERY saved statement against the current books, so the
+// audit grid is right across all months — not just the one that's open. Read-only
+// on the sidecars; the currently-open statement is left to recordAudit (above).
+// Persists profile.audited_months once if anything changed, then repaints the grid.
+async function refreshAllAudits(sidecars) {
+  if (!Array.isArray(sidecars) || !sidecars.length) return;
+  if (!profile.audited_months || typeof profile.audited_months !== 'object') profile.audited_months = {};
+  const key = '_';
+  const byAcct = profile.audited_months[key] || (profile.audited_months[key] = {});
+  const curPath = _recState && _recState.path;
+  let changed = false;
+  for (const { pdfPath, json } of sidecars) {
+    if (pdfPath === curPath) continue;   // the open statement is handled by recordAudit
+    try {
+      const comp = reconcileMatch(json, null, fpsFromSidecars(sidecars, pdfPath));
+      if (!comp.txns.length || !comp.monthKey) continue;
+      const prev = byAcct[comp.monthKey];
+      if (!prev || prev.passed !== !!comp.passed) {
+        byAcct[comp.monthKey] = { passed: !!comp.passed, at: new Date().toISOString() };
+        changed = true;
+      }
+    } catch(e) { console.error('audit refresh failed for', pdfPath, e); }
+  }
+  // Repaint the grid, keeping the open statement's month + result in the header.
+  if (_recState && _recState.monthKey) {
+    const cur = byAcct[_recState.monthKey];
+    const lbl = parseDate(_recState.monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'});
+    renderAuditBlock(_recState.acctId, _recState.monthKey, lbl, cur ? cur.passed : null);
+  }
   if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
 }
 
