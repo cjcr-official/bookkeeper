@@ -1,1 +1,1 @@
-{"version":178,"note":"v178: reconcile — audit grid chips are now buttons. Click any month with a saved statement and the reconcile view jumps to it. Months with no statement are dimmed."}
+{"version":179,"note":"v179: reconcile — prior-year expense refund. On a bank deposit, the new receipt-refund icon prompts for the vendor, creates a Dec-31-prior-year negative expense (reduces last year's expenses), and pairs the bank line to it."}

@@ -3483,6 +3483,40 @@ async function unmatchByIdx(i) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// Record a bank deposit as a refund/reimbursement of a prior-year expense.
+// Mirror of recordPriorPayment but for the expense side: creates a Dec-31 of
+// the prior year expense with a NEGATIVE amount (so last year's expense total
+// is reduced, mirroring the IRS treatment of a recovered expense), and
+// explicit-pairs the deposit to it via manual_matches.
+async function recordPriorRefund(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  if (!(t.amount > 0)) { showToast('Use this on a deposit (positive amount).', 'error'); return; }
+  const vendor = prompt(`Record ${fmt(t.amount)} on ${fmtDate(t.date)} ("${(t.description||'').slice(0,60)}") as a refund of a prior-year expense.\n\nVendor / source?`, '');
+  if (vendor == null || !vendor.trim()) return;
+  const yr = parseInt((t.date||today()).slice(0,4)) || (new Date().getFullYear());
+  const expDate = (yr - 1) + '-12-31';
+  const row = {
+    user_id: currentUser.id,
+    date: expDate,
+    vendor: vendor.trim(),
+    category: 'Prior-year refund',
+    amount: -Math.abs(parseFloat(t.amount)||0),
+    method: 'bank',
+    description: 'Refund cleared ' + (t.date||today()) + (t.description?' — '+t.description.slice(0,40):''),
+    reimbursed: false,
+    invoice_id: null
+  };
+  const r = await sb.from('expenses').insert(row).select().single();
+  if (r.error) { showToast(r.error.message, 'error'); return; }
+  cache.expenses.unshift(r.data);
+  const fp = 'e:' + r.data.id;
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx], rFps:[fp] }]);
+  await saveStmtSidecar(s.stmt, s.path);
+  showToast('Prior-year refund recorded','success');
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // Split a bank line into the kept portion + a portion that was returned for a
 // gift card / store credit (not a bank refund). Creates a store_credit record
 // for the gift-card portion and explicitly pairs it to the new split child.
@@ -4075,7 +4109,8 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     const check = fp ? `<input type="checkbox" class="rec-check" data-fp="${fp}" data-amt="${amt}" onchange="updateMatchBar()" style="width:18px;flex:0 0 18px;margin:.5rem 0 0;cursor:pointer;padding:0">` : '';
     const txn = (editTxnIdx!=null) ? txns[editTxnIdx] : null;
     const priorBtn = (editTxnIdx!=null && amt > 0) ? `
-      <button onclick="recordPriorPayment(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as a prior-year payment (creates a back-dated invoice marked paid)"><i class="ti ti-calendar-plus"></i></button>` : '';
+      <button onclick="recordPriorPayment(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as a prior-year invoice payment (income)"><i class="ti ti-calendar-plus"></i></button>
+      <button onclick="recordPriorRefund(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as a refund of a prior-year expense (reduces last year's expenses)"><i class="ti ti-receipt-refund"></i></button>` : '';
     const isLegacySplit = txn && !txn.splitGroup && /· part \d+\/\d+$/.test(txn.description||'');
     const rejoinArg = txn && txn.splitGroup ? `'${txn.splitGroup}'` : (isLegacySplit ? String(editTxnIdx) : '');
     const rejoinBtn = (txn && (txn.splitGroup || isLegacySplit)) ? `
