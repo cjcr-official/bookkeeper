@@ -3473,10 +3473,16 @@ async function splitTxn(idx) {
   if (Math.abs(sum - t.amount) > 0.01) {
     if (!confirm(`Sum is ${fmt(sum)} but original is ${fmt(t.amount)} (off by ${fmt(Math.abs(sum-t.amount))}). The balance check will reflect this. Continue?`)) return;
   }
+  // Tag children with a group id so they can be rejoined later if the user
+  // changes their mind. splitOriginalDesc lets us restore the parent label.
+  const groupId = 'g' + Date.now() + '_' + Math.floor(Math.random()*1000);
+  const origDesc = t.splitOriginalDesc || t.description || 'split';
   const newTxns = parts.map((amt, k) => ({
     date: t.date,
-    description: (t.description||'split') + ` · part ${k+1}/${parts.length}`,
-    amount: amt
+    description: origDesc + ` · part ${k+1}/${parts.length}`,
+    amount: amt,
+    splitGroup: groupId,
+    splitOriginalDesc: origDesc
   }));
   s.stmt.transactions.splice(idx, 1, ...newTxns);
   const shift = newTxns.length - 1;
@@ -3484,6 +3490,38 @@ async function splitTxn(idx) {
     rFps: m.rFps || [],
     tIdxs: (m.tIdxs||[]).map(i => i > idx ? i + shift : (i === idx ? null : i)).filter(i => i != null)
   })).filter(m => m.tIdxs.length && m.rFps.length);
+  s.stmt.unmatch_t = (s.stmt.unmatch_t||[]).map(i => i > idx ? i + shift : i);
+  await saveStmtSidecar(s.stmt, s.path);
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
+// Undo a split: collect every txn carrying the same splitGroup, sum their
+// amounts, and replace them with the original single transaction. manual_matches
+// and unmatch_t indices are remapped so any prior pairing folds onto the rejoined
+// line (rather than dangling references to removed indices).
+async function rejoinSplit(groupId) {
+  const s = _recState; if (!s) return;
+  const txns = s.stmt.transactions || [];
+  const indices = [];
+  txns.forEach((t, i) => { if (t.splitGroup === groupId) indices.push(i); });
+  if (indices.length < 2) { showToast('Nothing to rejoin', 'error'); return; }
+  const firstIdx = indices[0];
+  const removeCount = indices.length;
+  const first = txns[firstIdx];
+  const totalAmount = indices.reduce((acc, i) => acc + (parseFloat(txns[i].amount)||0), 0);
+  const combined = {
+    date: first.date,
+    description: first.splitOriginalDesc || (first.description||'').replace(/ · part \d+\/\d+$/, ''),
+    amount: totalAmount
+  };
+  txns.splice(firstIdx, removeCount, combined);
+  const shift = removeCount - 1;
+  const shiftIdx = i => (i >= firstIdx && i < firstIdx + removeCount) ? firstIdx : (i >= firstIdx + removeCount ? i - shift : i);
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).map(m => ({
+    rFps: m.rFps || [],
+    tIdxs: [...new Set((m.tIdxs || []).map(shiftIdx))]
+  })).filter(m => m.tIdxs.length && (m.rFps||[]).length);
+  s.stmt.unmatch_t = [...new Set((s.stmt.unmatch_t || []).map(shiftIdx))];
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
 }
@@ -3846,10 +3884,14 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps) {
   // width:auto + flex:0 0 18px override the global "input{width:100%}" rule.
   const item = (d,label,amt,sub,fp,editTxnIdx) => {
     const check = fp ? `<input type="checkbox" class="rec-check" data-fp="${fp}" data-amt="${amt}" onchange="updateMatchBar()" style="width:18px;flex:0 0 18px;margin:.5rem 0 0;cursor:pointer;padding:0">` : '';
+    const txn = (editTxnIdx!=null) ? txns[editTxnIdx] : null;
     const priorBtn = (editTxnIdx!=null && amt > 0) ? `
       <button onclick="recordPriorPayment(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as a prior-year payment (creates a back-dated invoice marked paid)"><i class="ti ti-calendar-plus"></i></button>` : '';
+    const rejoinBtn = (txn && txn.splitGroup) ? `
+      <button onclick="rejoinSplit('${txn.splitGroup}')" class="btn btn-sm" style="background:transparent;border:none;color:var(--accent);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Rejoin split parts back into one line"><i class="ti ti-arrows-join-2"></i></button>` : '';
     const bankBtns = (editTxnIdx!=null) ? `
       ${priorBtn}
+      ${rejoinBtn}
       <button onclick="splitTxn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Split into multiple amounts"><i class="ti ti-arrows-split"></i></button>
       <button onclick="editTxnAmt(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Fix amount"><i class="ti ti-pencil"></i></button>` : '';
     return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)">

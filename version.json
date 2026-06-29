@@ -1,1 +1,1 @@
-{"version":173,"note":"v173: reconcile — prior-year payment now explicitly pairs the bank line to the new invoice via manual_matches, not just relying on the auto-matcher to notice. Splits especially — each part is paired explicitly so neither slips into \"in your books\" unmatched."}
+{"version":174,"note":"v174: reconcile — undo a split. Each split child carries a group id; a new merge icon appears on any split row that rejoins all parts back into one line (and folds any prior pairings onto the rejoined line)."}
