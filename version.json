@@ -1,1 +1,1 @@
-{"version":175,"note":"v175: reconcile — rejoin works on legacy splits too. Splits made before v174 don't carry the splitGroup tag, so the merge icon now also fires for any row whose description ends with \"· part k/N\" — it gathers siblings by description prefix + date."}
+{"version":176,"note":"v176: reconcile — partial return → gift card. On any bank debit, the gift icon prompts for the returned-to-credit amount + merchant, splits the bank line, creates a Store Credit record, and pairs the gift-card portion. New Store Credits section on Accounts page to manage them."}

@@ -795,6 +795,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace">Owner Activity</h3>
         <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Money you moved between the business and your personal funds. Contributions show as deposits in reconcile; draws show as withdrawals.</div>
         <div class="card list-card"><div id="owner-tx-table"></div></div>
+        <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace">Gift Cards / Store Credits</h3>
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Credits gained from partial returns where the merchant gave you a gift card instead of refunding the bank. They reconcile against the original bank charge so books aren't overstated as expenses.</div>
+        <div class="card list-card"><div id="store-credits-table"></div></div>
       </div>
 
       <!-- SETTINGS -->
@@ -1023,6 +1026,26 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
+<!-- STORE CREDIT (GIFT CARD) MODAL -->
+<div class="modal-overlay" id="modal-store-credit">
+  <div class="modal">
+    <div class="modal-header"><h2 id="sc-title">Edit Gift Card Credit</h2><button class="btn btn-sm" onclick="closeModal('modal-store-credit')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <input type="hidden" id="sc-id">
+      <div class="form-row">
+        <div class="form-group"><label>Date</label><input id="sc-date" type="date"></div>
+        <div class="form-group"><label>Amount</label><input id="sc-amount" type="number" min="0" step="0.01" inputmode="decimal"></div>
+      </div>
+      <div class="form-group"><label>Merchant</label><input id="sc-merchant" type="text" placeholder="Amazon, Home Depot, …"></div>
+      <div class="form-group"><label>Note</label><input id="sc-note" type="text" placeholder="optional"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-store-credit')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveStoreCredit()"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- OWNER ACTIVITY MODAL -->
 <div class="modal-overlay" id="modal-owner-tx">
   <div class="modal">
@@ -1214,13 +1237,13 @@ const VAPID_PUBLIC_KEY = 'BERMR7TzR5rf0fQt_BcTOyOwiHIujwdr_S5dbutJhl1o_FyntPXRe7
 // ====== STATE ======
 let currentUser = null;
 let profile = {};
-let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[]};
+let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[],store_credits:[]};
 let currentPage = 'dashboard';
 
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
 const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, settings: loadSettingsForm };
-function renderAccountsPage() { renderStatementsTable(); renderOwnerTx(); }
+function renderAccountsPage() { renderStatementsTable(); renderOwnerTx(); renderStoreCredits(); }
 let _viewResizeTimer = null;
 let _lastIsMobile = window.innerWidth <= 768;
 function rerenderCurrentView() {
@@ -1354,7 +1377,7 @@ async function doResetPassword() {
 
 async function doLogout() {
   await sb.auth.signOut();
-  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[]};
+  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[],store_credits:[]};
   document.getElementById('app').style.display = 'none';
   document.getElementById('auth-wrap').style.display = 'flex';
 }
@@ -1363,7 +1386,7 @@ async function doLogout() {
 async function loadAllData() {
   // Each query wrapped so one missing table (e.g. trips before SQL is run) can't hang the whole load
   const safe = (q) => q.then(r=>r).catch(e=>({data:null,error:e}));
-  const [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx] = await Promise.all([
+  const [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx, storeCredits] = await Promise.all([
     safe(sb.from('profiles').select('*').eq('id', currentUser.id).single()),
     safe(sb.from('customers').select('*').eq('user_id', currentUser.id).order('name')),
     safe(sb.from('invoices').select('*').eq('user_id', currentUser.id).order('created_at', {ascending:false})),
@@ -1373,6 +1396,7 @@ async function loadAllData() {
     safe(sb.from('recurring').select('*').eq('user_id', currentUser.id).order('next_date')),
     safe(sb.from('jobs').select('*').eq('user_id', currentUser.id).order('date')),
     safe(sb.from('owner_transactions').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
+    safe(sb.from('store_credits').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
   ]);
   profile = prof.data || {};
   cache.customers = customers.data || [];
@@ -1383,6 +1407,7 @@ async function loadAllData() {
   cache.recurring = recurring.data || [];
   cache.jobs = jobs.data || [];
   cache.owner_transactions = ownerTx.data || [];
+  cache.store_credits = storeCredits.data || [];
 }
 
 // ====== NAVIGATION ======
@@ -3420,6 +3445,48 @@ async function unmatchByIdx(i) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// Split a bank line into the kept portion + a portion that was returned for a
+// gift card / store credit (not a bank refund). Creates a store_credit record
+// for the gift-card portion and explicitly pairs it to the new split child.
+async function recordPartialReturn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const orig = Math.abs(parseFloat(t.amount)||0);
+  if (!orig) return;
+  const creditStr = prompt(`Original charge: ${fmt(t.amount)}.\nHow much was returned to a gift card / store credit? (positive number)`, '');
+  if (creditStr == null || !creditStr.trim()) return;
+  const credit = parseFloat(creditStr.trim());
+  if (!isFinite(credit) || credit <= 0 || credit > orig + 0.01) { showToast('Invalid credit amount', 'error'); return; }
+  const merchant = prompt('Merchant for the gift card?', (t.description||'').split(/\s+/).slice(0,2).join(' '));
+  if (merchant == null || !merchant.trim()) return;
+  const sign = Math.sign(t.amount) || -1;
+  const keptPart = sign * (orig - credit);
+  const creditPart = sign * credit;
+  const groupId = 'g' + Date.now() + '_' + Math.floor(Math.random()*1000);
+  const origDesc = t.splitOriginalDesc || t.description || 'split';
+  const newTxns = [
+    { date:t.date, description:origDesc+' · kept', amount:keptPart, splitGroup:groupId, splitOriginalDesc:origDesc },
+    { date:t.date, description:origDesc+' · gift card', amount:creditPart, splitGroup:groupId, splitOriginalDesc:origDesc }
+  ];
+  s.stmt.transactions.splice(idx, 1, ...newTxns);
+  const shift = newTxns.length - 1;
+  s.stmt.manual_matches = (s.stmt.manual_matches||[]).map(m => ({
+    rFps: m.rFps || [],
+    tIdxs: (m.tIdxs||[]).map(i => i > idx ? i + shift : (i === idx ? null : i)).filter(i => i != null)
+  })).filter(m => m.tIdxs.length && m.rFps.length);
+  s.stmt.unmatch_t = (s.stmt.unmatch_t||[]).map(i => i > idx ? i + shift : i);
+  // Insert the gift card record + pair to the second new child (idx+1).
+  const row = { user_id:currentUser.id, date:t.date||today(), merchant:merchant.trim(), amount:credit, note:'From return on '+(t.description||'').slice(0,60) };
+  const r = await sb.from('store_credits').insert(row).select().single();
+  if (r.error) { showToast(r.error.message, 'error'); return; }
+  cache.store_credits.unshift(r.data);
+  const fp = 'sc:' + r.data.id;
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx+1], rFps:[fp] }]);
+  await saveStmtSidecar(s.stmt, s.path);
+  showToast('Split + gift card credit recorded','success');
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // Record a bank deposit as a payment for a prior-year invoice that was never in
 // the app. Creates a back-dated invoice (Dec 31 of the prior year) marked fully
 // paid on the bank line's date, so it auto-matches on re-render and the income
@@ -3632,6 +3699,65 @@ async function deleteOwnerTx(id) {
   showToast('Deleted'); renderOwnerTx(); refreshReconcileIfOpen();
 }
 
+// ====== STORE CREDITS / GIFT CARDS ======
+function renderStoreCredits() {
+  const el = document.getElementById('store-credits-table'); if (!el) return;
+  const rows = (cache.store_credits||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if (!rows.length) { el.innerHTML = `<div class="empty"><i class="ti ti-gift"></i><p>No gift card credits yet</p><p style="font-size:12px;color:var(--text3)">Created when you mark a portion of a bank charge as returned to gift card.</p></div>`; return; }
+  const esc = escHtml;
+  if (window.innerWidth <= 768) {
+    el.innerHTML = rows.map(r=>`
+      <div class="m-card" onclick="editStoreCredit('${r.id}')">
+        <div class="m-card-main">
+          <div class="m-card-title">${esc(r.merchant||'Merchant')}${r.note?` <span style="color:var(--text3);font-weight:400">· ${esc(r.note)}</span>`:''}</div>
+          <div class="m-card-meta">${fmtDate(r.date)}</div>
+        </div>
+        <div class="m-card-right">
+          <div class="m-card-amount" style="color:#16a34a">${fmt(parseFloat(r.amount||0))}</div>
+          <div class="m-card-actions">
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteStoreCredit('${r.id}')"><i class="ti ti-trash"></i></button>
+          </div>
+        </div>
+      </div>`).join('');
+  } else {
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Merchant</th><th>Note</th><th>Amount</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr style="cursor:pointer" onclick="editStoreCredit('${r.id}')"><td>${fmtDate(r.date)}</td><td style="font-weight:500">${esc(r.merchant||'—')}</td><td style="color:var(--text2)">${esc(r.note||'—')}</td><td style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#16a34a">${fmt(parseFloat(r.amount||0))}</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-sm" onclick="editStoreCredit('${r.id}')" style="margin-right:4px"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteStoreCredit('${r.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+  }
+}
+function editStoreCredit(id) {
+  const c = (cache.store_credits||[]).find(x=>x.id===id); if (!c) return;
+  document.getElementById('sc-id').value = c.id;
+  document.getElementById('sc-date').value = c.date;
+  document.getElementById('sc-amount').value = c.amount;
+  document.getElementById('sc-merchant').value = c.merchant||'';
+  document.getElementById('sc-note').value = c.note||'';
+  openModal('modal-store-credit');
+}
+async function saveStoreCredit() {
+  const id = document.getElementById('sc-id').value;
+  const amount = parseFloat(document.getElementById('sc-amount').value)||0;
+  if (!amount) { showToast('Enter an amount','error'); return; }
+  const row = {
+    user_id: currentUser.id,
+    date: document.getElementById('sc-date').value || today(),
+    merchant: document.getElementById('sc-merchant').value.trim() || 'merchant',
+    amount: amount,
+    note: document.getElementById('sc-note').value || ''
+  };
+  const r = await sb.from('store_credits').update(row).eq('id', id);
+  if (r.error) { showToast(r.error.message, 'error'); return; }
+  const idx = cache.store_credits.findIndex(t=>t.id===id);
+  if (idx > -1) cache.store_credits[idx] = {...cache.store_credits[idx], ...row};
+  showToast('Saved','success'); closeModal('modal-store-credit'); renderStoreCredits(); refreshReconcileIfOpen();
+}
+async function deleteStoreCredit(id) {
+  if (!confirm('Delete this gift card credit?')) return;
+  const { data, error } = await sb.from('store_credits').delete().eq('id', id).select();
+  if (error) { showToast(error.message, 'error'); return; }
+  if (!data || !data.length) { showToast('Nothing was deleted — refresh and try again.', 'error'); return; }
+  cache.store_credits = (cache.store_credits||[]).filter(t=>t.id!==id);
+  showToast('Deleted'); renderStoreCredits(); refreshReconcileIfOpen();
+}
+
 // If the reconcile modal is open, re-render it so a cache change (an edited
 // expense, deleted owner activity, etc.) is reflected without a full reopen.
 function refreshReconcileIfOpen() {
@@ -3754,6 +3880,14 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps) {
     const amt = s * (parseFloat(o.amount)||0);
     const label = (o.kind==='contribution' ? 'Owner Contribution' : 'Owner Draw') + (o.note ? ' — '+o.note : '');
     recs.push({ kind: o.kind==='contribution'?'Owner+':'Owner−', date:o.date, amount:amt, label, fp:'o:'+o.id });
+  });
+  // Store credits / gift cards received from returns. Bank shows the original
+  // outflow; the credit represents the portion converted to merchant credit
+  // instead of refunded to the bank. Negative for reconcile (mirrors the bank).
+  (cache.store_credits||[]).forEach(c=>{
+    const amt = -(parseFloat(c.amount)||0);
+    const label = 'Gift card credit — ' + (c.merchant||'merchant') + (c.note?' ('+c.note+')':'');
+    recs.push({ kind:'Gift Card', date:c.date, amount:amt, label, fp:'sc:'+c.id });
   });
   const dayDiff = (a,b)=>Math.abs((parseDate(a)-parseDate(b))/86400000);
   const close = (a,b)=>Math.abs(a-b) <= 0.01;
@@ -3901,8 +4035,11 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps) {
     const rejoinArg = txn && txn.splitGroup ? `'${txn.splitGroup}'` : (isLegacySplit ? String(editTxnIdx) : '');
     const rejoinBtn = (txn && (txn.splitGroup || isLegacySplit)) ? `
       <button onclick="rejoinSplit(${rejoinArg})" class="btn btn-sm" style="background:transparent;border:none;color:var(--accent);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Rejoin split parts back into one line"><i class="ti ti-arrows-join-2"></i></button>` : '';
+    const giftBtn = (editTxnIdx!=null && amt < 0) ? `
+      <button onclick="recordPartialReturn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Mark portion as returned to a gift card / store credit"><i class="ti ti-gift"></i></button>` : '';
     const bankBtns = (editTxnIdx!=null) ? `
       ${priorBtn}
+      ${giftBtn}
       ${rejoinBtn}
       <button onclick="splitTxn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Split into multiple amounts"><i class="ti ti-arrows-split"></i></button>
       <button onclick="editTxnAmt(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Fix amount"><i class="ti ti-pencil"></i></button>` : '';

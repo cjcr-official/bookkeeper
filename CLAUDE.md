@@ -210,6 +210,21 @@ create table if not exists owner_transactions (
 alter table owner_transactions enable row level security;
 create policy "owner_tx_own" on owner_transactions for all using (auth.uid() = user_id);
 
+-- store_credits: gift card / merchant credit gained from a partial return where
+-- the bank wasn't credited. Reconciles against the original bank charge so the
+-- books don't overstate expenses. Amount stored positive (the credit gained).
+create table if not exists store_credits (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  date date not null,
+  merchant text not null,
+  amount numeric not null,
+  note text,
+  created_at timestamptz default now()
+);
+alter table store_credits enable row level security;
+create policy "store_credits_own" on store_credits for all using (auth.uid() = user_id);
+
 -- Storage: private buckets "receipts" and "statements" + RLS policies scoped to
 -- (storage.foldername(name))[1] = auth.uid()::text  (select/insert/delete).
 -- "statements" archives reconciled bank-statement PDFs; the reconcile modal can
