@@ -4107,9 +4107,10 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     const expected = (parseFloat(stmt.opening_balance)||0) + net;
     const diff = expected - (parseFloat(stmt.closing_balance)||0);
     balanceOk = Math.abs(diff) <= 0.01;
-    balanceHtml = `<div style="display:flex;align-items:center;gap:.65rem;padding:.7rem .85rem;border-radius:12px;margin-bottom:.9rem;background:${balanceOk?'rgba(22,163,74,.12)':'rgba(220,38,38,.12)'}">
-      <span style="font-size:20px;line-height:1">${balanceOk?'✅':'⚠️'}</span>
-      <div style="font-size:13.5px"><strong>${balanceOk?'Statement balances':'Off by '+fmt(Math.abs(diff))}</strong><div style="font-size:11.5px;color:var(--text2);margin-top:.12rem">Opening ${fmt(stmt.opening_balance)} &nbsp;·&nbsp; Closing ${fmt(stmt.closing_balance)}</div></div>
+    // Quiet when it balances (a thin line); only tint when it's actually off.
+    balanceHtml = `<div style="display:flex;align-items:center;gap:.55rem;padding:${balanceOk?'.5rem 0':'.6rem .75rem'};${balanceOk?'border-bottom:1px solid var(--border)':'border-radius:10px;background:rgba(220,38,38,.1)'};margin-bottom:.9rem">
+      <i class="ti ti-${balanceOk?'circle-check':'alert-triangle'}" style="font-size:16px;color:${balanceOk?'#16a34a':'#dc2626'}"></i>
+      <div style="font-size:13px;flex:1"><span style="font-weight:600">${balanceOk?'Statement balances':'Off by '+fmt(Math.abs(diff))}</span> <span style="font-size:11.5px;color:var(--text3)">Opening ${fmt(stmt.opening_balance)} · Closing ${fmt(stmt.closing_balance)}</span></div>
     </div>`;
   }
 
@@ -4174,7 +4175,10 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div>
       ${bankBtns}</div>`;
   };
-  const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.4rem 0">Nothing here ✓</div>';
+  const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.4rem 0">Nothing here</div>';
+  // Section header: title + count. An empty bucket recedes (muted) so a clean
+  // statement reads calm; a non-empty one stays at full strength.
+  const secHead = (title, n) => `<div style="font-weight:700;font-size:13.5px;color:${n?'var(--text)':'var(--text3)'}">${title} <span style="font-weight:600;color:var(--text3)">${n}</span></div>`;
   // Matched group row. Every match (manual + auto) has an Unlink button so the
   // user can fix wrong AI pairings. Index used by unmatchByIdx is the position
   // in `matched` at render time (captured in _recState.matchedGroups).
@@ -4203,28 +4207,23 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     ${monthPicker}
     ${balanceHtml}
     <div id="rec-match-bar" style="display:none;position:sticky;top:0;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:.55rem .75rem;margin-bottom:.75rem;z-index:10;align-items:center;gap:.6rem;flex-wrap:wrap"></div>
-    <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:1.1rem">
-      <span class="badge badge-green">✅ ${matched.length} matched</span>
-      <span class="badge badge-gray">⚠️ ${inRecordsOnly.length} only in your books</span>
-      <span class="badge badge-gray">❓ ${onBankOnly.length} only on the bank</span>
-    </div>
     <div style="margin-bottom:1.1rem">
-      <div style="font-weight:700;font-size:13.5px">❓ On the bank, not in your books <span style="color:var(--text3);font-weight:600">(${onBankOnly.length})</span></div>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes here + on the books side, then Match. Pencil edits the AI's amount.</div>
+      ${secHead('On the bank, not in your books', onBankOnly.length)}
+      ${onBankOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes here + on the books side, then Match. Pencil edits the AI's amount.</div>`:''}
       ${list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t))))}
     </div>
     <div style="margin-bottom:1.1rem">
-      <div style="font-weight:700;font-size:13.5px">⚠️ In your books, not on this statement <span style="color:var(--text3);font-weight:600">(${inRecordsOnly.length})</span></div>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line).</div>
+      ${secHead('In your books, not on this statement', inRecordsOnly.length)}
+      ${inRecordsOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line).</div>`:''}
       ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp)))}
     </div>
     <div style="margin-bottom:1.1rem">
-      <div style="font-weight:700;font-size:13.5px">🔎 Search records in other months</div>
+      <div style="font-weight:700;font-size:13.5px;color:var(--text3)">Search records in other months</div>
       <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">For prior-year payments, refunds, or anything that lives in a different month. Type text or an amount.</div>
       <input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin-bottom:.5rem">
       <div id="rec-search-results"></div>
     </div>
-    <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">✅ Matched (${matched.length})</summary><div style="margin-top:.3rem">${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>
+    <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">Matched <span style="color:var(--text3);font-weight:600">${matched.length}</span></summary><div style="margin-top:.3rem">${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>
     <div style="font-size:10.5px;color:var(--text3);margin-top:.9rem;line-height:1.5">Read by AI from the PDF — double-check anything important. Only the month’s audit check is saved; your records aren’t changed.</div>`;
   recordAudit(acctId, monthKey, passed, monthLabel);
 }
@@ -4259,14 +4258,17 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed) {
   const chips = names.map((nm,idx)=>{
     const k = yr + '-' + String(idx+1).padStart(2,'0');
     const rec = byAcct[k];
-    const mark = rec ? (rec.passed?'✅':'⚠️') : '·';
     const cur = k===monthKey;
     const hasStmt = !!monthMap[k];
     const clickable = hasStmt && !cur;
     const click = clickable ? ` onclick="jumpToMonth('${k}')"` : '';
-    return `<div title="${nm} ${yr}${hasStmt?(cur?' — current':' — open statement'):''}"${click} style="text-align:center;padding:.3rem .1rem;border-radius:6px;background:var(--surface);${cur?'outline:2px solid var(--accent);':''}${clickable?'cursor:pointer;':''}${!hasStmt?'opacity:.5;':''}"><div style="color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace">${nm}</div><div style="font-size:14px;line-height:1.2">${mark}</div></div>`;
+    // Small status dot: filled green = passed, amber = needs review, hollow = not yet.
+    const dot = rec
+      ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${rec.passed?'#16a34a':'#d97706'}"></span>`
+      : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;border:1.5px solid var(--border)"></span>`;
+    return `<div title="${nm} ${yr}${hasStmt?(cur?' — current':' — open statement'):''}"${click} style="text-align:center;padding:.25rem .1rem;border-radius:6px;${cur?'outline:1.5px solid var(--accent);':''}${clickable?'cursor:pointer;':''}${!hasStmt?'opacity:.5;':''}"><div style="color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace;margin-bottom:4px">${nm}</div><div style="display:flex;justify-content:center;align-items:center;height:9px">${dot}</div></div>`;
   }).join('');
-  const head = monthKey ? `<div style="font-size:13px;margin-bottom:.5rem">${escHtml(monthLabel||monthKey)}: <strong style="color:${passed?'#15803d':'#b91c1c'}">${passed?'PASSED ✅':'NEEDS REVIEW ⚠️'}</strong></div>` : '';
+  const head = monthKey ? `<div style="font-size:13px;margin-bottom:.5rem;color:var(--text2)">${escHtml(monthLabel||monthKey)} · <span style="font-weight:600;color:${passed?'#16a34a':'#d97706'}">${passed?'Passed':'Needs review'}</span></div>` : '';
   el.innerHTML = `${head}<div style="font-weight:700;font-size:10.5px;color:var(--text3);letter-spacing:.5px;margin-bottom:.3rem">AUDIT — ${yr}</div><div style="display:grid;grid-template-columns:repeat(12,1fr);gap:4px;margin-bottom:.9rem">${chips}</div>`;
 }
 
