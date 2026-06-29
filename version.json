@@ -1,1 +1,1 @@
-{"version":174,"note":"v174: reconcile — undo a split. Each split child carries a group id; a new merge icon appears on any split row that rejoins all parts back into one line (and folds any prior pairings onto the rejoined line)."}
+{"version":175,"note":"v175: reconcile — rejoin works on legacy splits too. Splits made before v174 don't carry the splitGroup tag, so the merge icon now also fires for any row whose description ends with \"· part k/N\" — it gathers siblings by description prefix + date."}

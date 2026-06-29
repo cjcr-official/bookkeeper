@@ -3495,15 +3495,25 @@ async function splitTxn(idx) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
-// Undo a split: collect every txn carrying the same splitGroup, sum their
-// amounts, and replace them with the original single transaction. manual_matches
-// and unmatch_t indices are remapped so any prior pairing folds onto the rejoined
-// line (rather than dangling references to removed indices).
-async function rejoinSplit(groupId) {
+// Undo a split. Accepts either a splitGroup id (new splits) OR a txn index
+// (legacy splits made before v174 that have no splitGroup — falls back to
+// matching by description prefix + date).
+async function rejoinSplit(arg) {
   const s = _recState; if (!s) return;
   const txns = s.stmt.transactions || [];
   const indices = [];
-  txns.forEach((t, i) => { if (t.splitGroup === groupId) indices.push(i); });
+  if (typeof arg === 'number') {
+    const t = txns[arg]; if (!t) return;
+    const m = (t.description||'').match(/^(.+?) · part \d+\/\d+$/);
+    if (!m) { showToast('Not a recognized split', 'error'); return; }
+    const prefix = m[1];
+    const date = t.date;
+    const esc = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('^' + esc + ' · part \\d+\\/\\d+$');
+    txns.forEach((x, i) => { if (x.date === date && re.test(x.description||'')) indices.push(i); });
+  } else {
+    txns.forEach((t, i) => { if (t.splitGroup === arg) indices.push(i); });
+  }
   if (indices.length < 2) { showToast('Nothing to rejoin', 'error'); return; }
   const firstIdx = indices[0];
   const removeCount = indices.length;
@@ -3887,8 +3897,10 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps) {
     const txn = (editTxnIdx!=null) ? txns[editTxnIdx] : null;
     const priorBtn = (editTxnIdx!=null && amt > 0) ? `
       <button onclick="recordPriorPayment(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as a prior-year payment (creates a back-dated invoice marked paid)"><i class="ti ti-calendar-plus"></i></button>` : '';
-    const rejoinBtn = (txn && txn.splitGroup) ? `
-      <button onclick="rejoinSplit('${txn.splitGroup}')" class="btn btn-sm" style="background:transparent;border:none;color:var(--accent);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Rejoin split parts back into one line"><i class="ti ti-arrows-join-2"></i></button>` : '';
+    const isLegacySplit = txn && !txn.splitGroup && /· part \d+\/\d+$/.test(txn.description||'');
+    const rejoinArg = txn && txn.splitGroup ? `'${txn.splitGroup}'` : (isLegacySplit ? String(editTxnIdx) : '');
+    const rejoinBtn = (txn && (txn.splitGroup || isLegacySplit)) ? `
+      <button onclick="rejoinSplit(${rejoinArg})" class="btn btn-sm" style="background:transparent;border:none;color:var(--accent);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Rejoin split parts back into one line"><i class="ti ti-arrows-join-2"></i></button>` : '';
     const bankBtns = (editTxnIdx!=null) ? `
       ${priorBtn}
       ${rejoinBtn}
