@@ -787,10 +787,14 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- STATEMENTS (Accounts page) -->
       <div id="page-accounts" class="page">
-        <div style="margin-bottom:1rem">
+        <div style="margin-bottom:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
           <button class="btn btn-primary btn-sm" onclick="openReconcileModal()"><i class="ti ti-scale"></i> Reconcile bank statement</button>
+          <button class="btn btn-sm" onclick="openOwnerTxModal()"><i class="ti ti-wallet"></i> Log owner activity</button>
         </div>
         <div class="card list-card"><div id="accounts-table"></div></div>
+        <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace">Owner Activity</h3>
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Money you moved between the business and your personal funds. Contributions show as deposits in reconcile; draws show as withdrawals.</div>
+        <div class="card list-card"><div id="owner-tx-table"></div></div>
       </div>
 
       <!-- SETTINGS -->
@@ -1019,6 +1023,35 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
+<!-- OWNER ACTIVITY MODAL -->
+<div class="modal-overlay" id="modal-owner-tx">
+  <div class="modal">
+    <div class="modal-header"><h2 id="owner-tx-title">Log Owner Activity</h2><button class="btn btn-sm" onclick="closeModal('modal-owner-tx')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <input type="hidden" id="owner-tx-id">
+      <div class="form-row">
+        <div class="form-group"><label>Date</label><input id="owner-tx-date" type="date"></div>
+        <div class="form-group"><label>Kind</label>
+          <select id="owner-tx-kind">
+            <option value="contribution">Owner Contribution (money in)</option>
+            <option value="draw">Owner Draw (money out)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Amount</label><input id="owner-tx-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></div>
+        <div class="form-group"><label>Account</label><select id="owner-tx-account"></select></div>
+      </div>
+      <div class="form-group"><label>Note</label><input id="owner-tx-note" type="text" placeholder="e.g. covered parts purchase from personal"></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Owner activity is equity, not income or expense — it won't show up in revenue or expense totals, but it will reconcile against the bank.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-owner-tx')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveOwnerTx()"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- JOB MODAL -->
 <div class="modal-overlay" id="modal-job">
   <div class="modal">
@@ -1181,12 +1214,13 @@ const VAPID_PUBLIC_KEY = 'BERMR7TzR5rf0fQt_BcTOyOwiHIujwdr_S5dbutJhl1o_FyntPXRe7
 // ====== STATE ======
 let currentUser = null;
 let profile = {};
-let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[]};
+let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[]};
 let currentPage = 'dashboard';
 
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
-const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderStatementsTable, mileage: renderMileage, settings: loadSettingsForm };
+const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, settings: loadSettingsForm };
+function renderAccountsPage() { renderStatementsTable(); renderOwnerTx(); }
 let _viewResizeTimer = null;
 let _lastIsMobile = window.innerWidth <= 768;
 function rerenderCurrentView() {
@@ -1320,7 +1354,7 @@ async function doResetPassword() {
 
 async function doLogout() {
   await sb.auth.signOut();
-  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[]};
+  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[]};
   document.getElementById('app').style.display = 'none';
   document.getElementById('auth-wrap').style.display = 'flex';
 }
@@ -1329,7 +1363,7 @@ async function doLogout() {
 async function loadAllData() {
   // Each query wrapped so one missing table (e.g. trips before SQL is run) can't hang the whole load
   const safe = (q) => q.then(r=>r).catch(e=>({data:null,error:e}));
-  const [prof, customers, invoices, expenses, accounts, trips, recurring, jobs] = await Promise.all([
+  const [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx] = await Promise.all([
     safe(sb.from('profiles').select('*').eq('id', currentUser.id).single()),
     safe(sb.from('customers').select('*').eq('user_id', currentUser.id).order('name')),
     safe(sb.from('invoices').select('*').eq('user_id', currentUser.id).order('created_at', {ascending:false})),
@@ -1338,6 +1372,7 @@ async function loadAllData() {
     safe(sb.from('trips').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
     safe(sb.from('recurring').select('*').eq('user_id', currentUser.id).order('next_date')),
     safe(sb.from('jobs').select('*').eq('user_id', currentUser.id).order('date')),
+    safe(sb.from('owner_transactions').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
   ]);
   profile = prof.data || {};
   cache.customers = customers.data || [];
@@ -1347,6 +1382,7 @@ async function loadAllData() {
   cache.trips = trips.data || [];
   cache.recurring = recurring.data || [];
   cache.jobs = jobs.data || [];
+  cache.owner_transactions = ownerTx.data || [];
 }
 
 // ====== NAVIGATION ======
@@ -3346,6 +3382,86 @@ async function editTxnAmt(idx) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// ====== OWNER ACTIVITY (equity transactions — contributions in, draws out) ======
+function renderOwnerTx() {
+  const el = document.getElementById('owner-tx-table'); if (!el) return;
+  const rows = (cache.owner_transactions||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if (!rows.length) { el.innerHTML = `<div class="empty"><i class="ti ti-wallet"></i><p>No owner activity yet</p><p style="font-size:12px;color:var(--text3)">Use this when you move money between the business and your personal funds.</p></div>`; return; }
+  const esc = escHtml;
+  const acctName = id => (cache.accounts.find(a=>a.id===id)||{}).name || '—';
+  const sign = r => r.kind==='contribution' ? 1 : -1;
+  const signed = r => sign(r) * (parseFloat(r.amount)||0);
+  const kindLabel = r => r.kind==='contribution' ? 'Contribution' : 'Draw';
+  if (window.innerWidth <= 768) {
+    el.innerHTML = rows.map(r=>`
+      <div class="m-card" onclick="editOwnerTx('${r.id}')">
+        <div class="m-card-main">
+          <div class="m-card-title">${esc(kindLabel(r))}${r.note?` <span style="color:var(--text3);font-weight:400">· ${esc(r.note)}</span>`:''}</div>
+          <div class="m-card-meta">${fmtDate(r.date)}${r.account_id?' · '+esc(acctName(r.account_id)):''}</div>
+        </div>
+        <div class="m-card-right">
+          <div class="m-card-amount" style="color:${sign(r)>0?'#16a34a':'#dc2626'}">${fmt(signed(r))}</div>
+          <div class="m-card-actions">
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteOwnerTx('${r.id}')"><i class="ti ti-trash"></i></button>
+          </div>
+        </div>
+      </div>`).join('');
+  } else {
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Kind</th><th>Note</th><th>Account</th><th>Amount</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr style="cursor:pointer" onclick="editOwnerTx('${r.id}')"><td>${fmtDate(r.date)}</td><td>${esc(kindLabel(r))}</td><td style="color:var(--text2)">${esc(r.note||'—')}</td><td>${esc(acctName(r.account_id))}</td><td style="font-family:'JetBrains Mono',monospace;font-weight:600;color:${sign(r)>0?'#16a34a':'#dc2626'}">${fmt(signed(r))}</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-sm" onclick="editOwnerTx('${r.id}')" style="margin-right:4px"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteOwnerTx('${r.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+  }
+}
+
+function openOwnerTxModal(tx) {
+  const aSel = document.getElementById('owner-tx-account');
+  aSel.innerHTML = '<option value="">— none —</option>' + (cache.accounts||[]).map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('');
+  if (tx) {
+    document.getElementById('owner-tx-title').textContent = 'Edit Owner Activity';
+    document.getElementById('owner-tx-id').value = tx.id;
+    document.getElementById('owner-tx-date').value = tx.date;
+    document.getElementById('owner-tx-kind').value = tx.kind || 'contribution';
+    document.getElementById('owner-tx-amount').value = tx.amount;
+    document.getElementById('owner-tx-account').value = tx.account_id||'';
+    document.getElementById('owner-tx-note').value = tx.note||'';
+  } else {
+    document.getElementById('owner-tx-title').textContent = 'Log Owner Activity';
+    document.getElementById('owner-tx-id').value = '';
+    document.getElementById('owner-tx-date').value = today();
+    document.getElementById('owner-tx-kind').value = 'contribution';
+    document.getElementById('owner-tx-amount').value = '';
+    document.getElementById('owner-tx-account').value = '';
+    document.getElementById('owner-tx-note').value = '';
+  }
+  openModal('modal-owner-tx');
+}
+function editOwnerTx(id) { openOwnerTxModal((cache.owner_transactions||[]).find(t=>t.id===id)); }
+
+async function saveOwnerTx() {
+  const id = document.getElementById('owner-tx-id').value;
+  const amount = parseFloat(document.getElementById('owner-tx-amount').value)||0;
+  if (!amount) { showToast('Enter an amount','error'); return; }
+  const row = {
+    user_id: currentUser.id,
+    date: document.getElementById('owner-tx-date').value || today(),
+    kind: document.getElementById('owner-tx-kind').value,
+    amount: amount,
+    account_id: document.getElementById('owner-tx-account').value || null,
+    note: document.getElementById('owner-tx-note').value || ''
+  };
+  let err;
+  if (id) { const r = await sb.from('owner_transactions').update(row).eq('id', id); err = r.error; if (!err) { const idx = cache.owner_transactions.findIndex(t=>t.id===id); cache.owner_transactions[idx] = {...cache.owner_transactions[idx], ...row}; } }
+  else { const r = await sb.from('owner_transactions').insert(row).select().single(); err = r.error; if (!err && r.data) cache.owner_transactions.unshift(r.data); }
+  if (err) { showToast(err.message, 'error'); return; }
+  showToast('Saved','success'); closeModal('modal-owner-tx'); renderOwnerTx();
+}
+
+async function deleteOwnerTx(id) {
+  if (!confirm('Delete this owner activity?')) return;
+  const { error } = await sb.from('owner_transactions').delete().eq('id', id);
+  if (error) { showToast(error.message, 'error'); return; }
+  cache.owner_transactions = (cache.owner_transactions||[]).filter(t=>t.id!==id);
+  showToast('Deleted'); renderOwnerTx();
+}
+
 // Override the parsed statement month (user correction) and re-record audit.
 let _recState = null;
 async function changeStmtMonth(newM) {
@@ -3448,6 +3564,15 @@ function renderReconcile(stmt, acctId, path) {
   (cache.invoices||[]).forEach(i=>{
     const paid = parseFloat(i.amount_paid)||0;
     if (paid>0) recs.push({ kind:'Payment', date:i.paid_date||i.date, amount:paid, label:'Invoice '+(i.number||'')+' — '+(i.customer_name||''), fp:'p:'+i.id });
+  });
+  // Owner activity (contributions in, draws out) — equity moves, not P&L,
+  // but they hit the bank so they belong in the reconciliation candidate pool.
+  (cache.owner_transactions||[]).forEach(o=>{
+    if (acctId && o.account_id && o.account_id!==acctId) return;
+    const s = o.kind==='contribution' ? 1 : -1;
+    const amt = s * (parseFloat(o.amount)||0);
+    const label = (o.kind==='contribution' ? 'Owner Contribution' : 'Owner Draw') + (o.note ? ' — '+o.note : '');
+    recs.push({ kind: o.kind==='contribution'?'Owner+':'Owner−', date:o.date, amount:amt, label, fp:'o:'+o.id });
   });
   const dayDiff = (a,b)=>Math.abs((parseDate(a)-parseDate(b))/86400000);
   const close = (a,b)=>Math.abs(a-b) <= 0.01;

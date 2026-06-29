@@ -1,1 +1,1 @@
-{"version":163,"note":"v163: reconcile — split a bank line into N parts. One $200 charge that was really $150 + $50 of separate purchases? Click the split icon, enter \"-150, -50\", each piece becomes its own row and can match its own expense."}
+{"version":164,"note":"v164: owner activity — log Owner Contributions (money you put in from personal) and Owner Draws (money you took out) on the Accounts page. They reconcile against the bank but don't pollute revenue/expense totals."}

@@ -194,6 +194,22 @@ create table if not exists jobs (
 alter table jobs enable row level security;
 create policy "jobs_own" on jobs for all using (auth.uid() = user_id);
 
+-- owner_transactions: equity moves between business and personal (NOT P&L).
+-- Contributions = money in (you covered a purchase from personal); draws = money
+-- out (you paid yourself). Sign is derived from `kind`; amount is stored positive.
+create table if not exists owner_transactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  date date not null,
+  kind text not null,                                -- 'contribution' | 'draw'
+  amount numeric not null,                           -- stored positive; sign from kind
+  account_id uuid references accounts(id) on delete set null,
+  note text,
+  created_at timestamptz default now()
+);
+alter table owner_transactions enable row level security;
+create policy "owner_tx_own" on owner_transactions for all using (auth.uid() = user_id);
+
 -- Storage: private buckets "receipts" and "statements" + RLS policies scoped to
 -- (storage.foldername(name))[1] = auth.uid()::text  (select/insert/delete).
 -- "statements" archives reconciled bank-statement PDFs; the reconcile modal can
