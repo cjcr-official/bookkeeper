@@ -1,1 +1,1 @@
-{"version":189,"note":"v189: mobile bottom tab bar sits lower — trimmed the empty home-indicator space it reserved below the icons (kept a small cushion) so it no longer floats high above the screen edge."}
+{"version":190,"note":"v190: expenses — filter bar on top of the existing sort. Search/category/date filters narrow the list, then it sorts newest-first. Running total + count at the bottom."}

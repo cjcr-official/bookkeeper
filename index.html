@@ -784,6 +784,13 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- EXPENSES -->
       <div id="page-expenses" class="page">
+        <div style="margin-bottom:.75rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:end">
+          <div class="form-group" style="margin:0;flex:1;min-width:160px"><label>Search</label><input id="exp-search" type="text" placeholder="vendor, note, category…" oninput="renderExpenses()"></div>
+          <div class="form-group" style="margin:0;min-width:140px"><label>Category</label><select id="exp-cat-filter" onchange="renderExpenses()"><option value="">All</option></select></div>
+          <div class="form-group" style="margin:0;min-width:130px"><label>From</label><input id="exp-from" type="date" onchange="renderExpenses()"></div>
+          <div class="form-group" style="margin:0;min-width:130px"><label>To</label><input id="exp-to" type="date" onchange="renderExpenses()"></div>
+          <button class="btn btn-sm" onclick="clearExpFilters()" style="height:38px">Clear</button>
+        </div>
         <div class="card list-card"><div id="expenses-table"></div></div>
       </div>
 
@@ -2684,15 +2691,51 @@ function renderCalDayList() {
 }
 
 // ====== EXPENSES ======
+function clearExpFilters() {
+  const ids = ['exp-search','exp-cat-filter','exp-from','exp-to'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  renderExpenses();
+}
+
+function getFilteredExpenses() {
+  let list = (cache.expenses||[]).slice();
+  const q = (document.getElementById('exp-search')?.value || '').trim().toLowerCase();
+  const cat = document.getElementById('exp-cat-filter')?.value || '';
+  const from = document.getElementById('exp-from')?.value || '';
+  const to = document.getElementById('exp-to')?.value || '';
+  if (q) {
+    const num = parseFloat(q);
+    list = list.filter(e => {
+      if (!isNaN(num) && Math.abs(parseFloat(e.amount||0) - num) <= 0.01) return true;
+      const hay = ((e.vendor||'')+' '+(e.description||'')+' '+(e.category||'')+' '+(e.method||'')).toLowerCase();
+      return hay.includes(q);
+    });
+  }
+  if (cat) list = list.filter(e => (e.category||'') === cat);
+  if (from) list = list.filter(e => (e.date||'') >= from);
+  if (to) list = list.filter(e => (e.date||'') <= to);
+  return list;
+}
+
 function renderExpenses() {
   const el = document.getElementById('expenses-table');
+  // Refresh the category filter options each render so newly-used categories appear.
+  const catSel = document.getElementById('exp-cat-filter');
+  if (catSel) {
+    const current = catSel.value;
+    const cats = [...new Set((cache.expenses||[]).map(e=>e.category).filter(Boolean))].sort();
+    catSel.innerHTML = '<option value="">All</option>' + cats.map(c=>`<option value="${escHtml(c)}"${c===current?' selected':''}>${escHtml(c)}</option>`).join('');
+  }
   if (!cache.expenses.length) { el.innerHTML = `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`; return; }
+  const list = getFilteredExpenses();
+  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-filter-off"></i><p>No expenses match the filters</p></div>`; return; }
+  // Newest-dated first, so a freshly added (or back-dated) expense lands in the
+  // right spot instead of jumping to the top of the list. Applies after filtering.
+  list.sort((a,b)=>(b.date||'').localeCompare(a.date||'') || (b.created_at||'').localeCompare(a.created_at||''));
+  const totalAmt = list.reduce((s,e)=>s+parseFloat(e.amount||0),0);
   const esc = escHtml;
-  // Always show newest-dated first, so a freshly added (or back-dated) expense
-  // lands in the right spot instead of jumping to the top of the list.
-  const rows = cache.expenses.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'') || (b.created_at||'').localeCompare(a.created_at||''));
   if (window.innerWidth <= 768) {
-    el.innerHTML = rows.map(e=>`
+    el.innerHTML = list.map(e=>`
       <div class="m-card" onclick="editExpense('${e.id}')">
         <div class="m-card-main">
           <div class="m-card-title">${esc(e.vendor)}</div>
@@ -2707,9 +2750,9 @@ function renderExpenses() {
             <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button>
           </div>
         </div>
-      </div>`).join('');
+      </div>`).join('') + `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;justify-content:space-between;font-weight:700"><span>${list.length} expense${list.length===1?'':'s'}</span><span class="red">${fmt(totalAmt)}</span></div>`;
   } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${rows.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${list.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody><tfoot><tr><td colspan="5" style="font-weight:700;text-align:right;padding:.85rem 1rem;border-top:2px solid var(--border)">${list.length} expense${list.length===1?'':'s'}</td><td class="red" style="font-weight:700;font-family:'JetBrains Mono',monospace;padding:.85rem 1rem;border-top:2px solid var(--border)">${fmt(totalAmt)}</td><td style="border-top:2px solid var(--border)"></td></tr></tfoot></table>`;
   }
 }
 
