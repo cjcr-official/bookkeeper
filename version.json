@@ -1,1 +1,1 @@
-{"version":172,"note":"v172: reconcile — cross-statement manual matches stay consistent. Match a January expense against a February bank line, and January's reconcile drops it from \"in your books\" too. Other statements' manual_matches are loaded once per open and applied as already-used."}
+{"version":173,"note":"v173: reconcile — prior-year payment now explicitly pairs the bank line to the new invoice via manual_matches, not just relying on the auto-matcher to notice. Splits especially — each part is paired explicitly so neither slips into \"in your books\" unmatched."}

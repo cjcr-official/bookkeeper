@@ -3448,6 +3448,12 @@ async function recordPriorPayment(idx) {
   const r = await sb.from('invoices').insert(row).select().single();
   if (r.error) { showToast(r.error.message, 'error'); return; }
   cache.invoices.unshift(r.data);
+  // Explicit pair: the new invoice's payment IS this bank line, period. Don't rely
+  // on the auto-matcher noticing — splits, near-duplicates, or any tolerance edge
+  // can let it slip through. Pass 0 handles manual_matches first on next render.
+  const fp = 'p:' + r.data.id;
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx], rFps:[fp] }]);
+  await saveStmtSidecar(s.stmt, s.path);
   showToast('Prior payment recorded','success');
   renderReconcile(s.stmt, s.acctId, s.path);
 }
