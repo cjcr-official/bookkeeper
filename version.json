@@ -1,1 +1,1 @@
-{"version":179,"note":"v179: reconcile — prior-year expense refund. On a bank deposit, the new receipt-refund icon prompts for the vendor, creates a Dec-31-prior-year negative expense (reduces last year's expenses), and pairs the bank line to it."}
+{"version":180,"note":"v180: reconcile — hide the Statement Month picker by default. The median-date auto-detection (v158) gets it right almost always; the picker now only appears if you previously set a manual override, with a 'Use auto' button to clear it."}

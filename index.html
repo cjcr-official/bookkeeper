@@ -3844,6 +3844,19 @@ function refreshReconcileIfOpen() {
   }
 }
 
+// Clear a previously-set manual month override and fall back to auto-detect.
+async function clearStmtMonthOverride() {
+  const s = _recState; if (!s) return;
+  const key = s.acctId || '_';
+  if (profile.audited_months && profile.audited_months[key]) {
+    delete profile.audited_months[key][s.monthKey];
+  }
+  delete s.stmt.statement_month;
+  await saveStmtSidecar(s.stmt, s.path);
+  renderReconcile(s.stmt, s.acctId, s.path);
+  renderStatementsTable();
+}
+
 // Override the parsed statement month (user correction) and re-record audit.
 let _recState = null;
 async function changeStmtMonth(newM) {
@@ -4090,7 +4103,9 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
   _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs, globalMatchedFps: globalSet, monthMap: monthMap || (_recState && _recState.monthMap) || {} };
-  const monthPicker = `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><span style="color:var(--text3);font-size:11px">(override if the cycle date crossed months)</span></div>`;
+  // Month picker is now optional — only shown if the user manually overrode it
+  // before (rare). The median-transaction-date heuristic gets it right normally.
+  const monthPicker = stmt.statement_month ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
 
   // Tidy a noisy bank description down to the readable part.
   const cleanDesc = s => {
