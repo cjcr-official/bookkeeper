@@ -1,1 +1,1 @@
-{"version":169,"note":"v169: reconcile — fix TDZ crash (Cannot access 'blockedT' before initialization). The unmatch sets were declared after the passes that used them."}
+{"version":170,"note":"v170: owner activity — editing or deleting a row now refreshes the open Reconcile view immediately, so a fixed kind (Draw → Contribution) re-matches against the bank without needing a Reconcile reopen."}

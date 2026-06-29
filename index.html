@@ -3535,7 +3535,7 @@ async function saveOwnerTx() {
   if (id) { const r = await sb.from('owner_transactions').update(row).eq('id', id); err = r.error; if (!err) { const idx = cache.owner_transactions.findIndex(t=>t.id===id); cache.owner_transactions[idx] = {...cache.owner_transactions[idx], ...row}; } }
   else { const r = await sb.from('owner_transactions').insert(row).select().single(); err = r.error; if (!err && r.data) cache.owner_transactions.unshift(r.data); }
   if (err) { showToast(err.message, 'error'); return; }
-  showToast('Saved','success'); closeModal('modal-owner-tx'); renderOwnerTx();
+  showToast('Saved','success'); closeModal('modal-owner-tx'); renderOwnerTx(); refreshReconcileIfOpen();
 }
 
 async function deleteOwnerTx(id) {
@@ -3543,7 +3543,16 @@ async function deleteOwnerTx(id) {
   const { error } = await sb.from('owner_transactions').delete().eq('id', id);
   if (error) { showToast(error.message, 'error'); return; }
   cache.owner_transactions = (cache.owner_transactions||[]).filter(t=>t.id!==id);
-  showToast('Deleted'); renderOwnerTx();
+  showToast('Deleted'); renderOwnerTx(); refreshReconcileIfOpen();
+}
+
+// If the reconcile modal is open, re-render it so a cache change (an edited
+// expense, deleted owner activity, etc.) is reflected without a full reopen.
+function refreshReconcileIfOpen() {
+  const s = _recState;
+  if (s && document.getElementById('modal-reconcile')?.classList.contains('open')) {
+    renderReconcile(s.stmt, s.acctId, s.path);
+  }
 }
 
 // Override the parsed statement month (user correction) and re-record audit.
