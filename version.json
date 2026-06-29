@@ -1,1 +1,1 @@
-{"version":181,"note":"v181: reconcile — drop the misleading 'N unmatched elsewhere' count. It tallied every record outside the current period including ones from months that were never reconciled, so the number was always huge and meaningless."}
+{"version":182,"note":"v182: reconcile — auto-matched records are now also excluded from cross-month search. Each render persists its auto-match fingerprints to the sidecar (only when changed), and other statements read them alongside manual matches."}

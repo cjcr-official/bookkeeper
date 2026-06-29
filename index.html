@@ -3373,6 +3373,7 @@ async function gatherGlobalMatchedFps(excludePath) {
         if (!dl.data) return;
         const j = JSON.parse(await dl.data.text());
         (j.manual_matches||[]).forEach(m => (m.rFps||[]).forEach(fp => fps.add(fp)));
+        (j.auto_matched_fps||[]).forEach(fp => fps.add(fp));
       } catch(e) { /* ignore individual failures */ }
     }));
   } catch(e) { console.error('gatherGlobalMatchedFps failed', e); }
@@ -4103,6 +4104,18 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
   _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs, globalMatchedFps: globalSet, monthMap: monthMap || (_recState && _recState.monthMap) || {} };
+
+  // Persist the set of record fps that auto-matched in this render, so OTHER
+  // statements' cross-month search can exclude them. Only writes when the set
+  // actually changed (avoids spamming saves on every internal re-render).
+  const autoFps = [];
+  matched.forEach(g => { if (g.manualIdx == null) (g.rIdxs||[]).forEach(ri => { const r = recs[ri]; if (r && r.fp) autoFps.push(r.fp); }); });
+  const newKey = autoFps.slice().sort().join(',');
+  const oldKey = (stmt.auto_matched_fps || []).slice().sort().join(',');
+  if (newKey !== oldKey) {
+    stmt.auto_matched_fps = autoFps;
+    if (path) saveStmtSidecar(stmt, path);   // fire-and-forget
+  }
   // Month picker is now optional — only shown if the user manually overrode it
   // before (rare). The median-transaction-date heuristic gets it right normally.
   const monthPicker = stmt.statement_month ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
