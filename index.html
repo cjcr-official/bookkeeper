@@ -3294,8 +3294,8 @@ async function runReconcile() {
   btn.disabled = false; btn.innerHTML = orig;
   document.getElementById('rec-file').value = '';
   if (last) {
-    const [globalFps, monthMap] = await Promise.all([gatherGlobalMatchedFps(lastPath), loadStatementMonthMap()]);
-    renderReconcile(last, null, lastPath, globalFps, monthMap);
+    const sidecars = await loadSidecars();
+    renderReconcile(last, null, lastPath, fpsFromSidecars(sidecars, lastPath), monthMapFromSidecars(sidecars));
   }
   if (files.length > 1) showToast(`Imported ${files.length} statements`, 'success');
   renderStatementsTable();
@@ -3307,14 +3307,13 @@ async function viewStatement(path) {
   const out = document.getElementById('rec-result');
   out.innerHTML = '<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">Loading…</div>';
   try {
-    const [dl, globalFps, monthMap] = await Promise.all([
+    const [dl, sidecars] = await Promise.all([
       sb.storage.from('statements').download(path),
-      gatherGlobalMatchedFps(path),
-      loadStatementMonthMap(),
+      loadSidecars(),
     ]);
     if (dl.error || !dl.data) { out.innerHTML = '<div style="color:#b91c1c;font-size:13px">Could not load that statement.</div>'; return; }
     const stmt = await getStatement(dl.data, path);
-    renderReconcile(stmt, null, path, globalFps, monthMap);
+    renderReconcile(stmt, null, path, fpsFromSidecars(sidecars, path), monthMapFromSidecars(sidecars));
   } catch(e) { console.error(e); out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Failed to read that statement.')}</div>`; }
 }
 
@@ -3327,56 +3326,54 @@ function jumpToMonth(month) {
   viewStatement(path);
 }
 
-// Build a { 'YYYY-MM' → pdfPath } map by scanning every sidecar's resolved month.
-// Lets the audit grid chips jump to whatever statement covers that month.
-async function loadStatementMonthMap() {
-  const map = {};
+// Download every sidecar JSON once: [{ pdfPath, json }]. Opening a statement needs
+// both the cross-month fingerprint set AND the month→pdf map, so derive both from a
+// single pass instead of listing + downloading every sidecar twice.
+async function loadSidecars() {
+  const out = [];
   try {
     const { data } = await sb.storage.from('statements').list(currentUser.id, { limit: 500 });
-    if (!data) return map;
+    if (!data) return out;
     const sidecars = data.filter(f => f && /\.pdf\.json$/i.test(f.name||''));
     await Promise.all(sidecars.map(async f => {
-      const sidecarFull = currentUser.id + '/' + f.name;
-      const pdfPath = sidecarFull.replace(/\.json$/i, '');
+      const pdfPath = (currentUser.id + '/' + f.name).replace(/\.json$/i, '');
       try {
-        const dl = await sb.storage.from('statements').download(sidecarFull);
+        const dl = await sb.storage.from('statements').download(currentUser.id + '/' + f.name);
         if (!dl.data) return;
-        const j = JSON.parse(await dl.data.text());
-        let month = j.statement_month;
-        if (!month) {
-          const ds = (j.transactions||[]).map(t=>t.date).filter(Boolean).sort();
-          if (ds.length) month = ds[Math.floor(ds.length/2)].slice(0,7);
-          else month = (j.period_start||'').slice(0,7) || (j.period_end||'').slice(0,7);
-        }
-        if (month) map[month] = pdfPath;
+        out.push({ pdfPath, json: JSON.parse(await dl.data.text()) });
       } catch(e) { /* ignore individual */ }
     }));
-  } catch(e) { console.error('loadStatementMonthMap failed', e); }
+  } catch(e) { console.error('loadSidecars failed', e); }
+  return out;
+}
+
+// Build a { 'YYYY-MM' → pdfPath } map from loaded sidecars (resolved month per
+// statement). Lets the audit grid chips jump to whatever statement covers a month.
+function monthMapFromSidecars(sidecars) {
+  const map = {};
+  (sidecars||[]).forEach(({ pdfPath, json }) => {
+    let month = json.statement_month;
+    if (!month) {
+      const ds = (json.transactions||[]).map(t=>t.date).filter(Boolean).sort();
+      if (ds.length) month = ds[Math.floor(ds.length/2)].slice(0,7);
+      else month = (json.period_start||'').slice(0,7) || (json.period_end||'').slice(0,7);
+    }
+    if (month) map[month] = pdfPath;
+  });
   return map;
 }
 
-// Build the set of record fingerprints already claimed by manual_matches in OTHER
-// statements. Used so that when a record from January is matched against a
-// February bank line, January's reconcile drops it from "in your books" too.
-async function gatherGlobalMatchedFps(excludePath) {
+// Build the set of record fingerprints already claimed by manual_matches (or
+// auto-matched) in OTHER statements. Used so that when a record from January is
+// matched against a February bank line, January's reconcile drops it from "in your
+// books" too. excludePath skips the statement currently being rendered.
+function fpsFromSidecars(sidecars, excludePath) {
   const fps = new Set();
-  try {
-    const { data } = await sb.storage.from('statements').list(currentUser.id, { limit: 500 });
-    if (!data) return fps;
-    const sidecars = data.filter(f => f && /\.pdf\.json$/i.test(f.name||''));
-    await Promise.all(sidecars.map(async f => {
-      const sidecarFull = currentUser.id + '/' + f.name;
-      const pdfPath = sidecarFull.replace(/\.json$/i, '');
-      if (excludePath && pdfPath === excludePath) return;
-      try {
-        const dl = await sb.storage.from('statements').download(sidecarFull);
-        if (!dl.data) return;
-        const j = JSON.parse(await dl.data.text());
-        (j.manual_matches||[]).forEach(m => (m.rFps||[]).forEach(fp => fps.add(fp)));
-        (j.auto_matched_fps||[]).forEach(fp => fps.add(fp));
-      } catch(e) { /* ignore individual failures */ }
-    }));
-  } catch(e) { console.error('gatherGlobalMatchedFps failed', e); }
+  (sidecars||[]).forEach(({ pdfPath, json }) => {
+    if (excludePath && pdfPath === excludePath) return;
+    (json.manual_matches||[]).forEach(m => (m.rFps||[]).forEach(fp => fps.add(fp)));
+    (json.auto_matched_fps||[]).forEach(fp => fps.add(fp));
+  });
   return fps;
 }
 
@@ -3868,9 +3865,7 @@ async function changeStmtMonth(newM) {
     delete profile.audited_months[key][s.monthKey];
   }
   s.stmt.statement_month = newM;
-  if (s.path) {
-    try { await sb.storage.from('statements').upload(s.path + '.json', new Blob([JSON.stringify(s.stmt)], { type:'application/json' }), { upsert:true, contentType:'application/json' }); } catch(e){}
-  }
+  await saveStmtSidecar(s.stmt, s.path);   // shares the upsert→delete/insert fallback
   renderReconcile(s.stmt, s.acctId, s.path);
   renderStatementsTable();
 }
@@ -4215,14 +4210,21 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
 // Save (and display) the pass/fail result for a month, keyed by account.
 async function recordAudit(acctId, monthKey, passed, monthLabel) {
   const key = acctId || '_';
+  let changed = false;
   if (monthKey) {
     if (!profile.audited_months || typeof profile.audited_months !== 'object') profile.audited_months = {};
     const byAcct = profile.audited_months[key] || {};
-    byAcct[monthKey] = { passed: !!passed, at: new Date().toISOString() };
-    profile.audited_months[key] = byAcct;
+    const prev = byAcct[monthKey];
+    // Only re-stamp + persist when the result actually flips — passive re-opens
+    // shouldn't rewrite the row (or move the `at` timestamp) for no reason.
+    if (!prev || prev.passed !== !!passed) {
+      byAcct[monthKey] = { passed: !!passed, at: new Date().toISOString() };
+      profile.audited_months[key] = byAcct;
+      changed = true;
+    }
   }
   renderAuditBlock(acctId, monthKey, monthLabel, passed);
-  if (monthKey) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
+  if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
 }
 
 // Year grid of audit marks for the selected account (✅ pass · ⚠️ needs review · · not yet).

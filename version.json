@@ -1,1 +1,1 @@
-{"version":182,"note":"v182: reconcile — auto-matched records are now also excluded from cross-month search. Each render persists its auto-match fingerprints to the sidecar (only when changed), and other statements read them alongside manual matches."}
+{"version":183,"note":"v183: reconcile cleanup — opening a statement loads each sidecar once (not twice), changeStmtMonth uses the fallback-aware sidecar saver, and the month audit row is only rewritten when its pass/fail result actually changes."}
