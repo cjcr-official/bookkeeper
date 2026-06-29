@@ -3540,8 +3540,10 @@ async function saveOwnerTx() {
 
 async function deleteOwnerTx(id) {
   if (!confirm('Delete this owner activity?')) return;
-  const { error } = await sb.from('owner_transactions').delete().eq('id', id);
+  // .select() so we can verify a row was actually removed (catches silent RLS fails).
+  const { data, error } = await sb.from('owner_transactions').delete().eq('id', id).select();
   if (error) { showToast(error.message, 'error'); return; }
+  if (!data || !data.length) { showToast('Nothing was deleted — refresh and try again.', 'error'); return; }
   cache.owner_transactions = (cache.owner_transactions||[]).filter(t=>t.id!==id);
   showToast('Deleted'); renderOwnerTx(); refreshReconcileIfOpen();
 }

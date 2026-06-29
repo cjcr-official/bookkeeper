@@ -1,1 +1,1 @@
-{"version":170,"note":"v170: owner activity — editing or deleting a row now refreshes the open Reconcile view immediately, so a fixed kind (Draw → Contribution) re-matches against the bank without needing a Reconcile reopen."}
+{"version":171,"note":"v171: owner activity delete — surface silent failures. If RLS or anything else swallows the delete without erroring, you now get a real toast instead of a fake 'Deleted' success."}
