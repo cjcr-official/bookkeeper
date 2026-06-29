@@ -1,1 +1,1 @@
-{"version":171,"note":"v171: owner activity delete — surface silent failures. If RLS or anything else swallows the delete without erroring, you now get a real toast instead of a fake 'Deleted' success."}
+{"version":172,"note":"v172: reconcile — cross-statement manual matches stay consistent. Match a January expense against a February bank line, and January's reconcile drops it from \"in your books\" too. Other statements' manual_matches are loaded once per open and applied as already-used."}

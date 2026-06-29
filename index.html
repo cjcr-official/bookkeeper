@@ -3268,7 +3268,10 @@ async function runReconcile() {
   }
   btn.disabled = false; btn.innerHTML = orig;
   document.getElementById('rec-file').value = '';
-  if (last) renderReconcile(last, null, lastPath);
+  if (last) {
+    const globalFps = await gatherGlobalMatchedFps(lastPath);
+    renderReconcile(last, null, lastPath, globalFps);
+  }
   if (files.length > 1) showToast(`Imported ${files.length} statements`, 'success');
   renderStatementsTable();
 }
@@ -3279,11 +3282,38 @@ async function viewStatement(path) {
   const out = document.getElementById('rec-result');
   out.innerHTML = '<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">Loading…</div>';
   try {
-    const dl = await sb.storage.from('statements').download(path);
+    const [dl, globalFps] = await Promise.all([
+      sb.storage.from('statements').download(path),
+      gatherGlobalMatchedFps(path),
+    ]);
     if (dl.error || !dl.data) { out.innerHTML = '<div style="color:#b91c1c;font-size:13px">Could not load that statement.</div>'; return; }
     const stmt = await getStatement(dl.data, path);
-    renderReconcile(stmt, null, path);
+    renderReconcile(stmt, null, path, globalFps);
   } catch(e) { console.error(e); out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Failed to read that statement.')}</div>`; }
+}
+
+// Build the set of record fingerprints already claimed by manual_matches in OTHER
+// statements. Used so that when a record from January is matched against a
+// February bank line, January's reconcile drops it from "in your books" too.
+async function gatherGlobalMatchedFps(excludePath) {
+  const fps = new Set();
+  try {
+    const { data } = await sb.storage.from('statements').list(currentUser.id, { limit: 500 });
+    if (!data) return fps;
+    const sidecars = data.filter(f => f && /\.pdf\.json$/i.test(f.name||''));
+    await Promise.all(sidecars.map(async f => {
+      const sidecarFull = currentUser.id + '/' + f.name;
+      const pdfPath = sidecarFull.replace(/\.json$/i, '');
+      if (excludePath && pdfPath === excludePath) return;
+      try {
+        const dl = await sb.storage.from('statements').download(sidecarFull);
+        if (!dl.data) return;
+        const j = JSON.parse(await dl.data.text());
+        (j.manual_matches||[]).forEach(m => (m.rFps||[]).forEach(fp => fps.add(fp)));
+      } catch(e) { /* ignore individual failures */ }
+    }));
+  } catch(e) { console.error('gatherGlobalMatchedFps failed', e); }
+  return fps;
 }
 
 // Save the current statement's cached extraction (sidecar JSON) after a user edit.
@@ -3640,7 +3670,9 @@ async function renderStatementsTable() {
 
 // Compare extracted statement transactions against recorded expenses + invoice
 // payments, by amount (±$0.01) and date (±5 days). Renders matched / missing buckets.
-function renderReconcile(stmt, acctId, path) {
+// globalMatchedFps = record fps claimed by manual_matches in OTHER statements; we
+// mark them as already-used so a cross-month match stays consistent across views.
+function renderReconcile(stmt, acctId, path, globalMatchedFps) {
   const out = document.getElementById('rec-result');
   const txns = (stmt.transactions||[]).map(t=>({ ...t, amount: parseFloat(t.amount)||0 }));
   if (!txns.length) { out.innerHTML = '<div style="color:var(--text3);font-size:13px">No transactions found in that statement.</div>'; return; }
@@ -3692,6 +3724,11 @@ function renderReconcile(stmt, acctId, path) {
     rIdxs.forEach(i => usedR[i] = true);
     matched.push({ tIdxs, rIdxs, manualIdx: mi });
   });
+
+  // After this statement's Pass 0, mark records that OTHER statements have already
+  // claimed via manual_matches. Carry the set across internal re-renders.
+  const globalSet = globalMatchedFps || (_recState && _recState.globalMatchedFps) || new Set();
+  recs.forEach((r,i) => { if (!usedR[i] && globalSet.has(r.fp)) usedR[i] = true; });
 
   // Passes 1–2: one-to-one. Tight (±5 days) first, then a loose window (±45
   // days) so a payment recorded in a different month than the bank cleared it
@@ -3785,7 +3822,7 @@ function renderReconcile(stmt, acctId, path) {
   const monthKey = monthSrc ? monthSrc.slice(0,7) : '';
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
-  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs };
+  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs, globalMatchedFps: globalSet };
   const monthPicker = `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><span style="color:var(--text3);font-size:11px">(override if the cycle date crossed months)</span></div>`;
 
   // Tidy a noisy bank description down to the readable part.
