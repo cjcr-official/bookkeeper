@@ -1,1 +1,1 @@
-{"version":166,"note":"v166: reconcile — one-click \"Record as prior-year payment\" on bank deposits. Creates a back-dated invoice (Dec 31 of the prior year) marked paid on the bank line's date, so the deposit auto-matches and the income lands in last year's books."}
+{"version":167,"note":"v167: reconcile — fix splits/edits/matches not persisting. The sidecar JSON's upsert was silently failing when the storage policy only allows insert+delete (no update). Now falls back to delete-then-insert, and surfaces a real error toast instead of failing silently."}

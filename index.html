@@ -3287,9 +3287,28 @@ async function viewStatement(path) {
 }
 
 // Save the current statement's cached extraction (sidecar JSON) after a user edit.
+// First try upsert (works if the bucket policy allows update). If that fails because
+// the bucket policy only permits insert/select/delete, fall back to delete-then-insert.
 async function saveStmtSidecar(stmt, path) {
   if (!path) return;
-  try { await sb.storage.from('statements').upload(path + '.json', new Blob([JSON.stringify(stmt)], { type:'application/json' }), { upsert:true, contentType:'application/json' }); } catch(e) { console.error('sidecar save failed', e); }
+  const jsonPath = path + '.json';
+  const body = new Blob([JSON.stringify(stmt)], { type:'application/json' });
+  let r;
+  try {
+    r = await sb.storage.from('statements').upload(jsonPath, body, { upsert:true, contentType:'application/json' });
+    if (r && r.error) {
+      await sb.storage.from('statements').remove([jsonPath]).catch(()=>{});
+      r = await sb.storage.from('statements').upload(jsonPath, body, { upsert:false, contentType:'application/json' });
+    }
+  } catch(e) {
+    console.error('sidecar save crashed', e);
+    showToast('Save failed: ' + (e.message||e), 'error');
+    return;
+  }
+  if (r && r.error) {
+    console.error('sidecar save failed', r.error);
+    showToast('Save failed: ' + (r.error.message||'unknown'), 'error');
+  }
 }
 
 // Search across the other-month unmatched records. Renders matching rows with the
