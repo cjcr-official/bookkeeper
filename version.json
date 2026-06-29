@@ -1,1 +1,1 @@
-{"version":177,"note":"v177: reconcile — gift card flow handles 'all to gift card' cleanly. If 100% of the charge went to credit, no $0 kept stub is created. Existing $0 bank lines are also filtered from the unmatched view so the audit can pass."}
+{"version":178,"note":"v178: reconcile — audit grid chips are now buttons. Click any month with a saved statement and the reconcile view jumps to it. Months with no statement are dimmed."}
