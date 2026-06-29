@@ -3664,6 +3664,12 @@ function renderReconcile(stmt, acctId, path) {
   const usedR = new Array(recs.length).fill(false);
   const matched = [];   // each: { tIdxs:[...], rIdxs:[...], manualIdx? }
 
+  // User-blocked auto-matches: bank indices / record fingerprints the user unlinked
+  // from an earlier auto-pair. Passes 1-4 skip these (so the same wrong pair doesn't
+  // get re-formed); Pass 0 (manual_matches) still consumes them on explicit pairing.
+  const blockedT = new Set(stmt.unmatch_t || []);
+  const blockedR = new Set(stmt.unmatch_r || []);
+
   // Pass 0: user's manual matches consume slots before any auto-match passes run.
   // Manual matches let the user pair anything to anything (1↔N, N↔1, fix/split cases).
   const recFpIdx = {}; recs.forEach((r,i)=>{ recFpIdx[r.fp] = i; });
@@ -3740,12 +3746,6 @@ function renderReconcile(stmt, acctId, path) {
     if (combo) { usedR[ri]=true; combo.forEach(ti=>usedT[ti]=true); matched.push({ tIdxs:combo, rIdxs:[ri] }); }
   }
 
-  // User-blocked auto-matches: bank indices / record fingerprints that the user
-  // unlinked from an earlier auto-pair. They stay OUT of passes 1-4 (so the same
-  // wrong pair doesn't get re-formed on every render) but Pass 0 (manual_matches)
-  // still consumes them when the user explicitly pairs them.
-  const blockedT = new Set(stmt.unmatch_t || []);
-  const blockedR = new Set(stmt.unmatch_r || []);
   const txnFp = i => 't:'+i;
   const onBankOnly = []; txns.forEach((t,i)=>{ if (!usedT[i]) onBankOnly.push({t,fp:txnFp(i)}); });
   const inRecordsOnly = recs.filter((r,i)=>!usedR[i] && inPeriod(r.date));

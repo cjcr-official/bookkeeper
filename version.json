@@ -1,1 +1,1 @@
-{"version":168,"note":"v168: reconcile — unlink AI matches too. Every matched row now has the unlink button. Unlinking an auto-match parks both sides so the matcher won't immediately re-form the same wrong pair; then check + Match them yourself the right way."}
+{"version":169,"note":"v169: reconcile — fix TDZ crash (Cannot access 'blockedT' before initialization). The unmatch sets were declared after the passes that used them."}
