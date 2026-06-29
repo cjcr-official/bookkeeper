@@ -3365,17 +3365,19 @@ function monthMapFromSidecars(sidecars) {
 
 // Build the record fingerprints claimed in OTHER statements, split by authority:
 //   manual = deliberate manual_matches (block everywhere)
-//   auto   = speculative auto-matches (only suppress out-of-period records here)
-// excludePath skips the statement currently being rendered. Keeping the two apart
-// lets the month that actually owns a record beat another month's loose auto-match.
+//   owned  = records the other statement TIGHT-matched (±5d); only these suppress
+//            this statement's loose/combo passes + cross-month search.
+// excludePath skips the statement currently being rendered. The legacy
+// auto_matched_fps field is intentionally NOT read — it included loose grabs and
+// caused records to be stolen from the month that owns them.
 function fpsFromSidecars(sidecars, excludePath) {
-  const manual = new Set(), auto = new Set();
+  const manual = new Set(), owned = new Set();
   (sidecars||[]).forEach(({ pdfPath, json }) => {
     if (excludePath && pdfPath === excludePath) return;
     (json.manual_matches||[]).forEach(m => (m.rFps||[]).forEach(fp => manual.add(fp)));
-    (json.auto_matched_fps||[]).forEach(fp => auto.add(fp));
+    (json.owned_fps||[]).forEach(fp => owned.add(fp));
   });
-  return { manual, auto };
+  return { manual, owned };
 }
 
 // Save the current statement's cached extraction (sidecar JSON) after a user edit.
@@ -3937,9 +3939,10 @@ async function renderStatementsTable() {
 
 // Compare extracted statement transactions against recorded expenses + invoice
 // payments, by amount (±$0.01) and date (±5 days). Renders matched / missing buckets.
-// globalMatchedFps = { manual, auto } record-fp sets claimed in OTHER statements.
-// Manual claims block everywhere; auto claims only suppress out-of-period records
-// here, so the month that owns a record beats another month's loose auto-match.
+// globalMatchedFps = { manual, owned } record-fp sets claimed in OTHER statements.
+// Manual claims block everywhere; owned (tight ±5-day matches) only block this
+// statement's loose/combo passes, so the month that tight-matches a record keeps
+// it while still letting a genuine cross-month record match where it belongs.
 function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const out = document.getElementById('rec-result');
   const txns = (stmt.transactions||[]).map(t=>({ ...t, amount: parseFloat(t.amount)||0 }));
@@ -4003,36 +4006,42 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
 
   // Records OTHER statements have already claimed, split by authority:
   //   • MANUAL matches are deliberate — block them everywhere (mark used now).
-  //   • AUTO matches are speculative — they only suppress records that are
-  //     OUT-OF-PERIOD here (in the loose passes + cross-month search). A record
-  //     that belongs to THIS statement's period is owned here and beats another
-  //     month's loose auto-match. Without this, a recurring same-amount charge
-  //     (e.g. a $14.99 monthly Amazon Prime) gets stolen by an adjacent month's
-  //     ±45-day match and vanishes from the month that actually owns it.
+  //   • OWNED = records another statement matched TIGHTLY (±5 days, one-to-one).
+  //     A tight match is reliable proof that statement owns the record, so this
+  //     statement's LOOSE/combo passes (and the cross-month search) won't grab it
+  //     — that's what stops a recurring same-amount charge (e.g. $14.99 monthly
+  //     Amazon Prime) or an owner contribution from being stolen by an adjacent
+  //     month. The TIGHT pass below is NOT suppressed: every statement can always
+  //     tight-match its own record, regardless of the AI's period guess (which is
+  //     why this replaces the old, fragile in-period test).
   const gFps = globalMatchedFps || (_recState && _recState.globalMatchedFps) || {};
   const gManual = gFps.manual || new Set();
-  const gAuto = gFps.auto || new Set();
+  const gOwned = gFps.owned || new Set();
   recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
-  // A record claimed by another month's AUTO match is only off-limits here when
-  // it's out-of-period for this statement.
-  const autoClaimedElsewhere = i => gAuto.has(recs[i].fp) && !inPeriod(recs[i].date);
+  const ownedElsewhere = i => gOwned.has(recs[i].fp);
+  const tightFps = [];   // records THIS render claimed via a ±5-day one-to-one match
 
   // Passes 1–2: one-to-one. Tight (±5 days) first, then a loose window (±45
   // days) so a payment recorded in a different month than the bank cleared it
   // still matches. Loose pass picks the closest date.
   for (const win of [5, 45]) {
+    const loose = win > 5;   // only the loose pass defers to another month's tight ownership
     for (let ti=0; ti<txns.length; ti++) {
       if (usedT[ti] || blockedT.has(ti)) continue;
       let best=-1, bestD=Infinity;
       for (let ri=0; ri<recs.length; ri++) {
-        if (usedR[ri] || blockedR.has(recs[ri].fp) || autoClaimedElsewhere(ri) || !close(txns[ti].amount, recs[ri].amount)) continue;
+        if (usedR[ri] || blockedR.has(recs[ri].fp) || !close(txns[ti].amount, recs[ri].amount)) continue;
+        if (loose && ownedElsewhere(ri)) continue;
         if (txns[ti].date && recs[ri].date) {
           const d = dayDiff(txns[ti].date, recs[ri].date);
           if (d > win) continue;
           if (d < bestD) { bestD = d; best = ri; }
         } else if (best < 0) { best = ri; bestD = win; }
       }
-      if (best>=0) { usedT[ti]=true; usedR[best]=true; matched.push({ tIdxs:[ti], rIdxs:[best] }); }
+      if (best>=0) {
+        usedT[ti]=true; usedR[best]=true; matched.push({ tIdxs:[ti], rIdxs:[best] });
+        if (!loose && recs[best].fp) tightFps.push(recs[best].fp);   // ±5-day match = ownership
+      }
     }
   }
 
@@ -4060,7 +4069,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     const t = txns[ti];
     const pool = [];
     for (let ri=0; ri<recs.length; ri++) {
-      if (usedR[ri] || blockedR.has(recs[ri].fp) || autoClaimedElsewhere(ri) || Math.sign(recs[ri].amount)!==Math.sign(t.amount)) continue;
+      if (usedR[ri] || blockedR.has(recs[ri].fp) || ownedElsewhere(ri) || Math.sign(recs[ri].amount)!==Math.sign(t.amount)) continue;
       if (t.date && recs[ri].date && dayDiff(t.date, recs[ri].date) > 45) continue;
       pool.push({ idx:ri, amount:recs[ri].amount });
     }
@@ -4069,7 +4078,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   }
   // Pass 4: the reverse — one record = several bank lines.
   for (let ri=0; ri<recs.length; ri++) {
-    if (usedR[ri] || blockedR.has(recs[ri].fp) || autoClaimedElsewhere(ri)) continue;
+    if (usedR[ri] || blockedR.has(recs[ri].fp) || ownedElsewhere(ri)) continue;
     const r = recs[ri];
     const pool = [];
     for (let ti=0; ti<txns.length; ti++) {
@@ -4089,7 +4098,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   // Unmatched records OUTSIDE this statement's period — searchable for cross-month
   // matches (prior-year payments cleared this month, etc.). recFpIdx already maps
   // their fp's so checking + Match works the same as in-period rows.
-  const otherUnmatched = recs.filter((r,i)=>!usedR[i] && !inPeriod(r.date) && !gAuto.has(r.fp));
+  const otherUnmatched = recs.filter((r,i)=>!usedR[i] && !inPeriod(r.date) && !gOwned.has(r.fp));
 
   // Balance check. balanceOk is true / false / null (unknown — statement had no balances).
   let balanceHtml = '', balanceOk = null;
@@ -4111,17 +4120,17 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const monthKey = monthSrc ? monthSrc.slice(0,7) : '';
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
-  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs, globalMatchedFps: { manual: gManual, auto: gAuto }, monthMap: monthMap || (_recState && _recState.monthMap) || {} };
+  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs, globalMatchedFps: { manual: gManual, owned: gOwned }, monthMap: monthMap || (_recState && _recState.monthMap) || {} };
 
-  // Persist the set of record fps that auto-matched in this render, so OTHER
-  // statements' cross-month search can exclude them. Only writes when the set
-  // actually changed (avoids spamming saves on every internal re-render).
-  const autoFps = [];
-  matched.forEach(g => { if (g.manualIdx == null) (g.rIdxs||[]).forEach(ri => { const r = recs[ri]; if (r && r.fp) autoFps.push(r.fp); }); });
-  const newKey = autoFps.slice().sort().join(',');
-  const oldKey = (stmt.auto_matched_fps || []).slice().sort().join(',');
+  // Persist the fps this statement TIGHT-matched (±5 days), so other statements'
+  // loose passes + cross-month search defer to this ownership. Only tight matches
+  // count — a loose match is too weak to claim a record away from another month.
+  // Write only when the set changes (avoids spamming saves on internal re-renders).
+  const newKey = tightFps.slice().sort().join(',');
+  const oldKey = (stmt.owned_fps || []).slice().sort().join(',');
   if (newKey !== oldKey) {
-    stmt.auto_matched_fps = autoFps;
+    stmt.owned_fps = tightFps;
+    delete stmt.auto_matched_fps;   // retire the old, over-eager field
     if (path) saveStmtSidecar(stmt, path);   // fire-and-forget
   }
   // Month picker is now optional — only shown if the user manually overrode it
