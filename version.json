@@ -1,1 +1,1 @@
-{"version":176,"note":"v176: reconcile — partial return → gift card. On any bank debit, the gift icon prompts for the returned-to-credit amount + merchant, splits the bank line, creates a Store Credit record, and pairs the gift-card portion. New Store Credits section on Accounts page to manage them."}
+{"version":177,"note":"v177: reconcile — gift card flow handles 'all to gift card' cleanly. If 100% of the charge went to credit, no $0 kept stub is created. Existing $0 bank lines are also filtered from the unmatched view so the audit can pass."}

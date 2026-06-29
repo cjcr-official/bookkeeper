@@ -3462,12 +3462,16 @@ async function recordPartialReturn(idx) {
   const sign = Math.sign(t.amount) || -1;
   const keptPart = sign * (orig - credit);
   const creditPart = sign * credit;
+  const isFullCredit = Math.abs(orig - credit) <= 0.005;
   const groupId = 'g' + Date.now() + '_' + Math.floor(Math.random()*1000);
   const origDesc = t.splitOriginalDesc || t.description || 'split';
-  const newTxns = [
-    { date:t.date, description:origDesc+' · kept', amount:keptPart, splitGroup:groupId, splitOriginalDesc:origDesc },
-    { date:t.date, description:origDesc+' · gift card', amount:creditPart, splitGroup:groupId, splitOriginalDesc:origDesc }
-  ];
+  // If the entire charge went to gift card, no "kept" child — replace the bank
+  // line with a single gift-card entry. Otherwise split into kept + gift card.
+  const newTxns = [];
+  if (!isFullCredit) {
+    newTxns.push({ date:t.date, description:origDesc+' · kept', amount:keptPart, splitGroup:groupId, splitOriginalDesc:origDesc });
+  }
+  newTxns.push({ date:t.date, description:origDesc+(isFullCredit?'':' · gift card'), amount:creditPart, splitGroup: isFullCredit ? undefined : groupId, splitOriginalDesc:origDesc });
   s.stmt.transactions.splice(idx, 1, ...newTxns);
   const shift = newTxns.length - 1;
   s.stmt.manual_matches = (s.stmt.manual_matches||[]).map(m => ({
@@ -3475,13 +3479,14 @@ async function recordPartialReturn(idx) {
     tIdxs: (m.tIdxs||[]).map(i => i > idx ? i + shift : (i === idx ? null : i)).filter(i => i != null)
   })).filter(m => m.tIdxs.length && m.rFps.length);
   s.stmt.unmatch_t = (s.stmt.unmatch_t||[]).map(i => i > idx ? i + shift : i);
-  // Insert the gift card record + pair to the second new child (idx+1).
+  // Insert the gift card record + pair to its child (idx if full credit, else idx+1).
   const row = { user_id:currentUser.id, date:t.date||today(), merchant:merchant.trim(), amount:credit, note:'From return on '+(t.description||'').slice(0,60) };
   const r = await sb.from('store_credits').insert(row).select().single();
   if (r.error) { showToast(r.error.message, 'error'); return; }
   cache.store_credits.unshift(r.data);
   const fp = 'sc:' + r.data.id;
-  s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx+1], rFps:[fp] }]);
+  const giftIdx = isFullCredit ? idx : idx + 1;
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[giftIdx], rFps:[fp] }]);
   await saveStmtSidecar(s.stmt, s.path);
   showToast('Split + gift card credit recorded','success');
   renderReconcile(s.stmt, s.acctId, s.path);
@@ -3983,7 +3988,9 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps) {
   }
 
   const txnFp = i => 't:'+i;
-  const onBankOnly = []; txns.forEach((t,i)=>{ if (!usedT[i]) onBankOnly.push({t,fp:txnFp(i)}); });
+  // Hide $0 bank lines (a "kept" split that turned out to be zero, etc.) from
+  // the unmatched view so they don't block the audit's PASSED state.
+  const onBankOnly = []; txns.forEach((t,i)=>{ if (!usedT[i] && Math.abs(parseFloat(t.amount)||0) > 0.005) onBankOnly.push({t,fp:txnFp(i)}); });
   const inRecordsOnly = recs.filter((r,i)=>!usedR[i] && inPeriod(r.date));
   // Unmatched records OUTSIDE this statement's period — searchable for cross-month
   // matches (prior-year payments cleared this month, etc.). recFpIdx already maps
