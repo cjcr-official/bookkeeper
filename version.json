@@ -1,1 +1,1 @@
-{"version":191,"note":"v191: mobile bottom tab bar now hugs the bottom edge — reserved only a small cushion instead of the full home-indicator inset, so there's no longer a big empty gap below the icons."}
+{"version":192,"note":"v192: mobile bottom tab bar sits flush to the bottom edge (removed the reserved cushion)."}
