@@ -1481,7 +1481,7 @@ function showPage(page, el) {
     customers:`<button class="btn btn-primary" onclick="openCustomerModal()"><i class="ti ti-plus"></i> <span>New Customer</span></button>`,
     expenses:`<button class="btn" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
     accounts:`<button class="btn btn-primary" onclick="openReconcileModal()"><i class="ti ti-scale"></i> <span>Reconcile</span></button>`,
-    mileage:`<button class="btn" onclick="recalcAllMileage()" title="Recompute invoice + log mileage from each customer's one-way miles"><i class="ti ti-refresh"></i> <span>Recalc</span></button> <button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
+    mileage:`<button class="btn" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   rerenderCurrentView();
@@ -2371,15 +2371,26 @@ async function propagateCustomerMiles(cust) {
   return count;
 }
 
-// One-tap migration: recompute every invoice's mileage (and its linked log trip)
-// from the current customer one-way miles × 2. Unpaid invoices follow the customer;
-// paid invoices are only filled if blank (finalized records aren't overwritten).
-// Use after changing the one-way/round-trip model or editing customer distances.
-async function recalcAllMileage() {
-  if (!confirm('Recalculate mileage on all invoices and the mileage log from each customer’s current one-way miles (× 2 for the round trip)?\n\nUnpaid invoices update; paid invoices are only filled in if they have no mileage yet.')) return;
-  let total = 0;
-  for (const c of (cache.customers||[])) total += await propagateCustomerMiles(c);
-  showToast(total ? `Updated ${total} invoice${total>1?'s':''}` : 'Everything already up to date', 'success');
+// Full rebuild: FORCE every invoice's mileage from its customer's one-way miles
+// × 2 × trips, including paid invoices, and recreate each linked mileage-log trip.
+// Use after editing customer one-way distances (and after deleting old log trips).
+async function rebuildAllMileage() {
+  if (!confirm('Rebuild mileage on EVERY invoice from each customer’s one-way miles (× 2 for the round trip × trips)?\n\nThis overwrites mileage on all invoices — including paid ones — and recreates their mileage-log trips.')) return;
+  let count = 0, failed = 0;
+  for (const inv of (cache.invoices||[])) {
+    const cust = (cache.customers||[]).find(c=>c.id===inv.customer_id);
+    if (!cust) continue;
+    const tripCount = parseInt(inv.trips)||0;
+    const perTrip = (parseFloat(cust.miles)||0) * 2;       // one-way × 2 = round trip
+    const miles = tripCount > 0 ? perTrip : 0;
+    const total = miles * tripCount;
+    const r = await sb.from('invoices').update({ miles, total_miles: total }).eq('id', inv.id);
+    if (r.error) { failed++; continue; }
+    inv.miles = miles; inv.total_miles = total;
+    await syncInvoiceTrip(inv.id, inv, total, miles, tripCount, cust);
+    count++;
+  }
+  showToast(`Rebuilt ${count} invoice${count===1?'':'s'}` + (failed?` · ${failed} failed`:''), failed?'error':'success');
   renderMileage(); renderInvoices();
 }
 
