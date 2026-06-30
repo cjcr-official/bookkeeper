@@ -735,7 +735,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">25%</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--accent)">$0.00</div></div>
             </div>
           </div>
-          <div class="ov-foot" id="tax-sub"></div>
         </div>
         <div class="card">
           <div class="card-header"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button></div>
@@ -1583,25 +1582,12 @@ function renderDashboard() {
 // Rule-of-thumb: set aside a % of YTD net profit; show the next IRS quarterly
 // deadline and flag it when it's close. Rate is local-only (no migration).
 function taxRate() { const v = parseFloat(lsGet('bk-tax-setaside-pct')); return (isFinite(v) && v>0 && v<100) ? v : 25; }
-function nextEstTaxDue(now) {
-  const y = now.getFullYear();
-  const today = new Date(y, now.getMonth(), now.getDate());
-  const ds = [new Date(y,3,15), new Date(y,5,15), new Date(y,8,15), new Date(y+1,0,15)];   // Apr 15, Jun 15, Sep 15, Jan 15
-  return ds.find(d => d >= today) || ds[ds.length-1];
-}
 function renderTaxCard(profit) {
   const el = document.getElementById('tax-setaside'); if (!el) return;
   const rate = taxRate();
   const setAside = Math.max(0, profit) * rate / 100;
-  const now = new Date();
-  const due = nextEstTaxDue(now);
-  const days = Math.ceil((due - now) / 86400000);
-  const soon = days <= 21;
-  const dueStr = due.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
   el.textContent = fmt(setAside);
   document.getElementById('tax-rate-badge').textContent = rate + '%';
-  const sub = document.getElementById('tax-sub');
-  if (sub) sub.innerHTML = `Set aside ≈ ${rate}% of net profit · next quarterly tax due <strong style="color:${soon?'#b45309':'var(--text2)'}">${dueStr}${soon?` · ${days}d`:''}</strong>`;
 }
 function editTaxRate() {
   const v = prompt('What % of net profit do you want to set aside for taxes?', String(taxRate()));

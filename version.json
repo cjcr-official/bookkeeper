@@ -1,1 +1,1 @@
-{"version":196,"note":"v196: redesigned the dashboard top — the five metric cards are now one premium overview panel: Net Profit headline with a profit-margin pill and accent glow, plus Revenue / Expenses / Outstanding / Tax set-aside as mini-stats with colored icons and the next tax deadline as a footer."}
+{"version":197,"note":"v197: removed the tax deadline caption under the overview cards; the Tax set-aside still shows in its tile."}
