@@ -1,1 +1,1 @@
-{"version":200,"note":"v200: Mileage page Rebuild button now force-rebuilds mileage on every invoice (including paid) from each customer's one-way miles × 2 × trips, and recreates the linked mileage-log trips."}
+{"version":201,"note":"v201: faster launch — html2canvas + jsPDF (~500KB) were render-blocking scripts in <head> on every open; now lazy-loaded only when you build/share/print a PDF. Nothing else changes."}

@@ -14,8 +14,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- html2canvas + jsPDF (~500KB) are loaded on demand via loadPdfLibs(), only when a PDF
+     is built/shared/printed — they used to be render-blocking on every app launch. -->
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 
@@ -1994,10 +1994,30 @@ let lastInvoiceTitle = 'Invoice';
 let lastReportHTML = '';
 let lastReportTitle = 'Report';
 
+// Lazy-load the heavy PDF stack (html2canvas + jsPDF, ~500KB) only when a PDF is
+// actually built, keeping it off the app's launch path. Mirrors loadPdfJs().
+let _pdfLibsReady = null;
+function loadPdfLibs() {
+  if (window.html2canvas && window.jspdf) return Promise.resolve();
+  if (_pdfLibsReady) return _pdfLibsReady;
+  const load = src => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  _pdfLibsReady = Promise.all([
+    window.html2canvas ? null : load('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
+    window.jspdf ? null : load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+  ]).catch(e => { _pdfLibsReady = null; throw e; });
+  return _pdfLibsReady;
+}
+
 // Render an HTML fragment off-screen at a fixed desktop width (780px so the print
 // table keeps its columns), rasterize it, and paginate into a letter-size PDF.
 async function htmlToPDF(html, anchorSelector) {
-  if (!html || !window.html2canvas || !window.jspdf) return null;
+  if (!html) return null;
+  try { await loadPdfLibs(); } catch(e) { console.error('PDF libs failed to load', e); }
+  if (!window.html2canvas || !window.jspdf) return null;
   const holder = document.createElement('div');
   holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:780px;background:#fff;z-index:-1';
   holder.innerHTML = '<div style="width:780px;background:#fff;padding:24px">' + html + '</div>';
