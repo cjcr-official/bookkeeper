@@ -1,1 +1,1 @@
-{"version":193,"note":"v193: tap the logo in the top-left to return to the Home dashboard."}
+{"version":194,"note":"v194: dashboard Income vs Expenses chart — axis amounts no longer overlap the bars (added a left gutter, right-aligned labels) and read cleaner without cents."}
