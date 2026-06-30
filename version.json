@@ -1,1 +1,1 @@
-{"version":197,"note":"v197: removed the tax deadline caption under the overview cards; the Tax set-aside still shows in its tile."}
+{"version":198,"note":"v198: mileage now stores ONE-WAY distance per customer; invoices multiply by 2 for the round trip. Customer field relabeled to One-Way Miles."}

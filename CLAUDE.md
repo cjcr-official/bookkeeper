@@ -159,7 +159,7 @@ alter table expenses add column if not exists reimbursed boolean default false;
 alter table expenses add column if not exists invoice_id uuid references invoices(id) on delete cascade;
 alter table expenses add column if not exists receipt_path text;
 
--- customers: per-customer round-trip miles (user-typed; no more auto-calc)
+-- customers: per-customer ONE-WAY miles (user-typed; invoices ×2 for round trip)
 alter table customers add column if not exists miles numeric;
 
 -- trips (mileage log): link back to the invoice or an expense
@@ -296,12 +296,14 @@ minute until the cache refreshes.
   linked reimbursed expenses (pass-throughs don't count as income; Outstanding
   still shows the full amount owed). Deleting a linked expense recomputes invoice
   totals.
-- **Mileage:** per-customer round-trip miles is **user-typed**. The customer
-  modal has a **Maps** button that opens the address in the Google Maps app
-  via universal link (`https://www.google.com/maps/search/?api=1&query=...`).
-  User reads the distance, types it back. Per-invoice mileage: Trips Made
-  (default 0) × customer round-trip miles → Total Miles; saving syncs a linked
-  trip in the Mileage log. **Auto-calculation was removed** — earlier versions
+- **Mileage:** per-customer **one-way** miles is **user-typed** (stored in
+  `customers.miles`). The customer modal has a **Maps** button that opens the
+  address in the Google Maps app via universal link
+  (`https://www.google.com/maps/search/?api=1&query=...`). User reads the one-way
+  distance, types it back. Per-invoice mileage: Trips Made (default 0) ×
+  (customer one-way × 2) → Total Miles; saving syncs a linked trip in the Mileage
+  log. (The ×2 lives in `calcInvMiles`/`propagateCustomerMiles`; `customers.miles`
+  itself holds the raw one-way value.) **Auto-calculation was removed** — earlier versions
   tried Google Routes API, Distance Matrix API, Places API, US Census Geocoder
   + OSRM, all gave numbers that drifted from the Maps app, and Google does not
   expose the consumer Maps routing engine to developers. Don't reintroduce the

@@ -937,7 +937,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Paid Date</label><input id="inv-paid-date" type="date"></div>
       </div>
       <button class="btn btn-sm" type="button" onclick="markInvoicePaidFull()" style="margin-bottom:.25rem"><i class="ti ti-cash"></i> Mark Paid in Full</button>
-      <div class="form-group" style="margin-bottom:.35rem"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(round-trip distance comes from the customer)</span></label></div>
+      <div class="form-group" style="margin-bottom:.35rem"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(round trip = customer one-way × 2)</span></label></div>
       <div class="form-row">
         <div class="form-group"><label>Trips Made</label><input id="inv-trips" type="number" inputmode="numeric" min="0" step="1" value="0" oninput="calcInvMiles()"></div>
         <div class="form-group"><label>Per Trip</label><input id="inv-miles" type="number" readonly style="background:var(--bg2)" placeholder="—"></div>
@@ -1035,12 +1035,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Phone</label><input id="cust-phone" type="tel"></div>
       </div>
       <div class="form-group"><label>Address</label><textarea id="cust-address" rows="2"></textarea></div>
-      <div class="form-group"><label>Round-Trip Miles (from your base)</label>
+      <div class="form-group"><label>One-Way Miles (from your base)</label>
         <div style="display:flex;gap:.5rem;align-items:center">
-          <input id="cust-miles" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 24.5" style="flex:1">
+          <input id="cust-miles" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 12.25" style="flex:1">
           <button class="btn btn-sm" type="button" onclick="openInMaps()" title="Open this address in Google Maps"><i class="ti ti-map"></i> Maps</button>
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Tap <b>Maps</b> to open the address in the Google Maps app and read the round-trip mileage, then type it here.</div></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Tap <b>Maps</b> to read the one-way distance to this customer, then type it here. Each trip on an invoice counts the round trip (one-way × 2).</div></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-customer')">Cancel</button>
@@ -2351,7 +2351,7 @@ async function saveCustomer() {
 // distance. Returns the count of invoices changed.
 async function propagateCustomerMiles(cust) {
   if (!cust || !cust.id) return 0;
-  const perTrip = parseFloat(cust.miles)||0;
+  const perTrip = (parseFloat(cust.miles)||0) * 2;   // one-way × 2 = round trip
   let count = 0;
   for (const inv of (cache.invoices||[])) {
     if (inv.customer_id !== cust.id) continue;
@@ -2497,7 +2497,8 @@ function calcTripMiles() {
 function calcInvMiles() {
   const cid = document.getElementById('inv-customer').value;
   const cust = (cache.customers||[]).find(x=>x.id===cid);
-  const perTrip = cust ? (parseFloat(cust.miles)||0) : 0;
+  // Customer stores ONE-WAY miles; a full trip there and back is ×2.
+  const perTrip = cust ? (parseFloat(cust.miles)||0) * 2 : 0;
   const count = parseInt(document.getElementById('inv-trips').value)||0;
   document.getElementById('inv-miles').value = perTrip ? perTrip : '';
   document.getElementById('inv-total-miles').value = (perTrip*count).toFixed(2);
