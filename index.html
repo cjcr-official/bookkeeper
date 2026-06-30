@@ -683,6 +683,16 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
+        <div class="card" id="tax-card" style="display:none;border-left:3px solid var(--accent)">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem">
+            <div style="min-width:0">
+              <div class="stat-label" style="display:flex;align-items:center;gap:6px"><i class="ti ti-receipt-tax" style="color:var(--accent)"></i>Estimated Taxes · Set Aside</div>
+              <div class="stat-value amber" id="tax-setaside" style="margin:.15rem 0">$0.00</div>
+              <div class="stat-sub" id="tax-sub">—</div>
+            </div>
+            <button class="btn btn-sm" onclick="editTaxRate()" title="Change set-aside %"><i class="ti ti-percentage"></i> <span id="tax-rate-badge">25%</span></button>
+          </div>
+        </div>
         <div class="stats-grid">
           <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value green" id="stat-revenue">$0.00</div><div class="stat-sub">This year (paid)</div></div>
           <div class="stat-card"><div class="stat-label">Total Expenses</div><div class="stat-value red" id="stat-expenses">$0.00</div><div class="stat-sub">This year</div></div>
@@ -1476,6 +1486,7 @@ function renderDashboard() {
   const pe = document.getElementById('stat-profit');
   pe.textContent = fmt(profit); pe.className = 'stat-value '+(profit>=0?'green':'red');
   document.getElementById('stat-outstanding').textContent = fmt(outstanding);
+  renderTaxCard(profit);
 
   const chart = document.getElementById('bar-chart');
   const months = [];
@@ -1522,6 +1533,39 @@ function renderDashboard() {
 
   renderUpcoming();
   // Reports render on demand when the collapsible card is opened (see toggleReports)
+}
+
+// ── Estimated-tax set-aside (top of Home) ──
+// Rule-of-thumb: set aside a % of YTD net profit; show the next IRS quarterly
+// deadline and flag it when it's close. Rate is local-only (no migration).
+function taxRate() { const v = parseFloat(lsGet('bk-tax-setaside-pct')); return (isFinite(v) && v>0 && v<100) ? v : 25; }
+function nextEstTaxDue(now) {
+  const y = now.getFullYear();
+  const today = new Date(y, now.getMonth(), now.getDate());
+  const ds = [new Date(y,3,15), new Date(y,5,15), new Date(y,8,15), new Date(y+1,0,15)];   // Apr 15, Jun 15, Sep 15, Jan 15
+  return ds.find(d => d >= today) || ds[ds.length-1];
+}
+function renderTaxCard(profit) {
+  const card = document.getElementById('tax-card'); if (!card) return;
+  const rate = taxRate();
+  const setAside = Math.max(0, profit) * rate / 100;
+  const now = new Date();
+  const due = nextEstTaxDue(now);
+  const days = Math.ceil((due - now) / 86400000);
+  const soon = days <= 21;
+  const dueStr = due.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+  document.getElementById('tax-setaside').textContent = fmt(setAside);
+  document.getElementById('tax-rate-badge').textContent = rate + '%';
+  document.getElementById('tax-sub').innerHTML = `≈ ${rate}% of net profit · Next payment due <strong style="color:${soon?'#b45309':'var(--text2)'}">${dueStr}${soon?` · ${days}d`:''}</strong>`;
+  card.style.display = '';
+}
+function editTaxRate() {
+  const v = prompt('What % of net profit do you want to set aside for taxes?', String(taxRate()));
+  if (v == null) return;
+  const n = parseFloat(v);
+  if (!isFinite(n) || n <= 0 || n >= 100) { showToast('Enter a percent between 1 and 99', 'error'); return; }
+  lsSet('bk-tax-setaside-pct', String(n));
+  renderDashboard();
 }
 
 function renderUpcoming() {
