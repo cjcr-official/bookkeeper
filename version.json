@@ -1,1 +1,1 @@
-{"version":190,"note":"v190: expenses — filter bar on top of the existing sort. Search/category/date filters narrow the list, then it sorts newest-first. Running total + count at the bottom."}
+{"version":191,"note":"v191: mobile bottom tab bar now hugs the bottom edge — reserved only a small cushion instead of the full home-indicator inset, so there's no longer a big empty gap below the icons."}

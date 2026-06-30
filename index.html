@@ -306,10 +306,11 @@ body.modal-open .main{overflow:hidden}
   .sidebar{
     position:fixed;bottom:0;left:0;right:0;top:auto;
     width:100%;
-    /* Reserve most of the home-indicator inset, but trim it so the bar sits lower
-       instead of floating high above the screen edge (keeps a small cushion). */
-    height:calc(62px + max(4px, env(safe-area-inset-bottom,0px) - 16px));
-    padding-bottom:max(4px, calc(env(safe-area-inset-bottom,0px) - 16px));
+    /* Hug the bottom edge: keep only a small cushion instead of the full
+       home-indicator inset (a native tab bar reserves ~34px, which read as too
+       big a gap here). 6px floor so it still clears the indicator a touch. */
+    height:calc(62px + max(6px, env(safe-area-inset-bottom,0px) - 26px));
+    padding-bottom:max(6px, calc(env(safe-area-inset-bottom,0px) - 26px));
     flex-direction:row;align-items:flex-start;
     border-right:none;border-top:1px solid var(--border);
     background:var(--bg);   /* match page bg so there's no color seam */
@@ -568,7 +569,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true"><defs><linearGradient id="bkg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient><symbol id="bk-logo" viewBox="0 0 92 94"><g transform="rotate(-14 46 47) translate(-8,6)"><rect x="4" y="8" width="92" height="94" rx="5" fill="#0e1829" stroke="#1a2a45" stroke-width="1"/><rect x="4" y="8" width="14" height="94" rx="5" fill="#172554"/><rect x="10" y="8" width="8" height="94" fill="#0e1829"/></g><g transform="rotate(-5 46 47) translate(-4,3)"><rect x="4" y="4" width="92" height="94" rx="5" fill="#111d30" stroke="#1e3050" stroke-width="1"/><rect x="4" y="4" width="14" height="94" rx="5" fill="#1d4ed8"/><rect x="10" y="4" width="8" height="94" fill="#111d30"/></g><rect x="0" y="0" width="92" height="94" rx="5" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="5" fill="url(#bkg1)"/><rect x="6" y="0" width="8" height="94" fill="#1c2845"/><line x1="22" y1="22" x2="74" y2="22" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="33" x2="74" y2="33" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><line x1="22" y1="43" x2="70" y2="43" stroke="#2a4070" stroke-width="1.2" stroke-linecap="round"/><polyline points="38,74 44,81 62,67" fill="none" stroke="#06b6d4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7" cy="10" r="3" fill="#06b6d4" fill-opacity="0.8"/></symbol></defs></svg>
 
 <!-- INSTALL HINT (iOS Safari only, dismissible) -->
-<div id="install-hint" style="display:none;position:fixed;bottom:calc(62px + max(4px, env(safe-area-inset-bottom,0px) - 16px));left:0;right:0;z-index:9000;background:var(--surface2,#232d42);border-top:1px solid var(--border2,#2a3349);padding:.9rem 1rem;padding-bottom:max(.9rem,env(safe-area-inset-bottom,.9rem));font-size:13px;color:var(--text,#e8eaf0);display:flex;align-items:center;gap:.75rem">
+<div id="install-hint" style="display:none;position:fixed;bottom:calc(62px + max(6px, env(safe-area-inset-bottom,0px) - 26px));left:0;right:0;z-index:9000;background:var(--surface2,#232d42);border-top:1px solid var(--border2,#2a3349);padding:.9rem 1rem;padding-bottom:max(.9rem,env(safe-area-inset-bottom,.9rem));font-size:13px;color:var(--text,#e8eaf0);display:flex;align-items:center;gap:.75rem">
   <i class="ti ti-device-mobile" style="font-size:22px;color:#3b82f6;flex-shrink:0"></i>
   <div style="flex:1;line-height:1.4">For fullscreen, tap <i class="ti ti-share" style="font-size:15px;vertical-align:-2px"></i> <strong>Share</strong> then <strong>Add to Home Screen</strong>.</div>
   <button onclick="dismissInstallHint()" style="background:none;border:none;color:var(--text3,#8b93a8);font-size:20px;cursor:pointer;flex-shrink:0"><i class="ti ti-x"></i></button>
