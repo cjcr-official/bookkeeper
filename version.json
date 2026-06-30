@@ -1,1 +1,1 @@
-{"version":198,"note":"v198: mileage now stores ONE-WAY distance per customer; invoices multiply by 2 for the round trip. Customer field relabeled to One-Way Miles."}
+{"version":199,"note":"v199: added a Recalc button on the Mileage page that pushes corrected mileage onto all invoices + the mileage log from each customer's one-way miles (× 2). Unpaid invoices update; paid invoices are only filled if blank."}
