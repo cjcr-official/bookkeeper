@@ -145,6 +145,32 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace;margin-bottom:.5rem}
 .stat-value{font-size:26px;font-weight:800;letter-spacing:-1.2px;line-height:1;font-variant-numeric:tabular-nums}
 .stat-sub{font-size:11px;color:var(--text3);margin-top:.4rem;font-family:'JetBrains Mono',monospace}
+/* ── OVERVIEW (dashboard hero) ── */
+.overview{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:1.3rem 1.4rem;margin-bottom:1.5rem}
+.overview::before{content:'';position:absolute;top:-55%;right:-12%;width:52%;height:175%;background:radial-gradient(closest-side,var(--accent-bg),transparent);opacity:.85;pointer-events:none}
+.ov-hero{position:relative;z-index:1;display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}
+.ov-hero-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.9px;font-family:'JetBrains Mono',monospace;margin-bottom:.45rem}
+.ov-hero-value{font-size:42px;font-weight:800;letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums}
+.ov-margin{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;padding:.32rem .65rem;border-radius:var(--radius-pill);background:var(--accent-bg);color:var(--accent-text);white-space:nowrap;display:flex;align-items:center;gap:4px}
+.ov-grid{position:relative;z-index:1;display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-top:1.25rem;padding-top:1.15rem;border-top:1px solid var(--border)}
+.ov-item{display:flex;align-items:center;gap:.6rem;min-width:0}
+.ov-icon{width:36px;height:36px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+.ov-icon.green{background:var(--green-bg);color:var(--green)}
+.ov-icon.red{background:rgba(220,38,38,.13);color:var(--red)}
+.ov-icon.amber{background:var(--amber-bg);color:var(--amber)}
+.ov-icon.accent{background:var(--accent-bg);color:var(--accent)}
+.ov-item-text{min-width:0}
+.ov-item-label{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.ov-item-value{font-size:19px;font-weight:800;letter-spacing:-.6px;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:3px}
+.ov-badge{font-size:9px;background:var(--accent-bg);color:var(--accent-text);padding:1px 6px;border-radius:var(--radius-pill);font-weight:700;letter-spacing:0}
+.ov-foot{position:relative;z-index:1;margin-top:1.05rem;font-size:11.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;line-height:1.5}
+@media(max-width:768px){
+  .overview{padding:1.1rem 1.15rem;margin-bottom:1rem}
+  .ov-hero-value{font-size:34px}
+  .ov-grid{grid-template-columns:1fr 1fr;gap:.85rem 1rem;margin-top:1rem;padding-top:1rem}
+  .ov-item-value{font-size:17px}
+  .ov-icon{width:32px;height:32px;font-size:17px}
+}
 
 /* ── CARDS ── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:1rem}
@@ -683,21 +709,33 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
-        <div class="card" id="tax-card" style="display:none;border-left:3px solid var(--accent)">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem">
-            <div style="min-width:0">
-              <div class="stat-label" style="display:flex;align-items:center;gap:6px"><i class="ti ti-receipt-tax" style="color:var(--accent)"></i>Estimated Taxes · Set Aside</div>
-              <div class="stat-value amber" id="tax-setaside" style="margin:.15rem 0">$0.00</div>
-              <div class="stat-sub" id="tax-sub">—</div>
+        <div class="overview">
+          <div class="ov-hero">
+            <div>
+              <div class="ov-hero-label">Net Profit · This Year</div>
+              <div class="ov-hero-value" id="stat-profit">$0.00</div>
             </div>
-            <button class="btn btn-sm" onclick="editTaxRate()" title="Change set-aside %"><i class="ti ti-percentage"></i> <span id="tax-rate-badge">25%</span></button>
+            <div class="ov-margin" id="ov-margin" style="display:none"></div>
           </div>
-        </div>
-        <div class="stats-grid">
-          <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value green" id="stat-revenue">$0.00</div><div class="stat-sub">This year (paid)</div></div>
-          <div class="stat-card"><div class="stat-label">Total Expenses</div><div class="stat-value red" id="stat-expenses">$0.00</div><div class="stat-sub">This year</div></div>
-          <div class="stat-card"><div class="stat-label">Net Profit</div><div class="stat-value" id="stat-profit">$0.00</div><div class="stat-sub">Revenue − Expenses</div></div>
-          <div class="stat-card"><div class="stat-label">Outstanding</div><div class="stat-value amber" id="stat-outstanding">$0.00</div><div class="stat-sub">Unpaid invoices</div></div>
+          <div class="ov-grid">
+            <div class="ov-item">
+              <div class="ov-icon green"><i class="ti ti-trending-up"></i></div>
+              <div class="ov-item-text"><div class="ov-item-label">Revenue</div><div class="ov-item-value green" id="stat-revenue">$0.00</div></div>
+            </div>
+            <div class="ov-item">
+              <div class="ov-icon red"><i class="ti ti-trending-down"></i></div>
+              <div class="ov-item-text"><div class="ov-item-label">Expenses</div><div class="ov-item-value red" id="stat-expenses">$0.00</div></div>
+            </div>
+            <div class="ov-item">
+              <div class="ov-icon amber"><i class="ti ti-hourglass-high"></i></div>
+              <div class="ov-item-text"><div class="ov-item-label">Outstanding</div><div class="ov-item-value amber" id="stat-outstanding">$0.00</div></div>
+            </div>
+            <div class="ov-item" onclick="editTaxRate()" style="cursor:pointer" title="Tap to change set-aside %">
+              <div class="ov-icon accent"><i class="ti ti-receipt-tax"></i></div>
+              <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">25%</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--accent)">$0.00</div></div>
+            </div>
+          </div>
+          <div class="ov-foot" id="tax-sub"></div>
         </div>
         <div class="card">
           <div class="card-header"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button></div>
@@ -1484,7 +1522,13 @@ function renderDashboard() {
   document.getElementById('stat-revenue').textContent = fmt(revenue);
   document.getElementById('stat-expenses').textContent = fmt(expenses);
   const pe = document.getElementById('stat-profit');
-  pe.textContent = fmt(profit); pe.className = 'stat-value '+(profit>=0?'green':'red');
+  pe.textContent = fmt(profit); pe.className = 'ov-hero-value '+(profit>=0?'green':'red');
+  const me = document.getElementById('ov-margin');
+  if (me) {
+    const margin = revenue>0 ? Math.round(profit/revenue*100) : null;
+    if (margin!=null) { me.innerHTML = `<i class="ti ti-percentage" style="font-size:13px"></i>${margin}% margin`; me.style.display=''; }
+    else me.style.display='none';
+  }
   document.getElementById('stat-outstanding').textContent = fmt(outstanding);
   renderTaxCard(profit);
 
@@ -1546,7 +1590,7 @@ function nextEstTaxDue(now) {
   return ds.find(d => d >= today) || ds[ds.length-1];
 }
 function renderTaxCard(profit) {
-  const card = document.getElementById('tax-card'); if (!card) return;
+  const el = document.getElementById('tax-setaside'); if (!el) return;
   const rate = taxRate();
   const setAside = Math.max(0, profit) * rate / 100;
   const now = new Date();
@@ -1554,10 +1598,10 @@ function renderTaxCard(profit) {
   const days = Math.ceil((due - now) / 86400000);
   const soon = days <= 21;
   const dueStr = due.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
-  document.getElementById('tax-setaside').textContent = fmt(setAside);
+  el.textContent = fmt(setAside);
   document.getElementById('tax-rate-badge').textContent = rate + '%';
-  document.getElementById('tax-sub').innerHTML = `≈ ${rate}% of net profit · Next payment due <strong style="color:${soon?'#b45309':'var(--text2)'}">${dueStr}${soon?` · ${days}d`:''}</strong>`;
-  card.style.display = '';
+  const sub = document.getElementById('tax-sub');
+  if (sub) sub.innerHTML = `Set aside ≈ ${rate}% of net profit · next quarterly tax due <strong style="color:${soon?'#b45309':'var(--text2)'}">${dueStr}${soon?` · ${days}d`:''}</strong>`;
 }
 function editTaxRate() {
   const v = prompt('What % of net profit do you want to set aside for taxes?', String(taxRate()));

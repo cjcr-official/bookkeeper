@@ -1,1 +1,1 @@
-{"version":195,"note":"v195: new Estimated Taxes card at the top of Home — shows how much to set aside (~25% of year-to-date net profit, tap the % to adjust) and the next quarterly IRS deadline, highlighted when it's within 3 weeks."}
+{"version":196,"note":"v196: redesigned the dashboard top — the five metric cards are now one premium overview panel: Net Profit headline with a profit-margin pill and accent glow, plus Revenue / Expenses / Outstanding / Tax set-aside as mini-stats with colored icons and the next tax deadline as a footer."}
