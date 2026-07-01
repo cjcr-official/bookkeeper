@@ -1986,7 +1986,7 @@ async function deleteInvoice(id) {
   const linkedExp = (cache.expenses||[]).filter(e=>e.invoice_id===id);
   for (const e of linkedExp) { await sb.from('expenses').delete().eq('id',e.id); }
   if (linkedExp.length) cache.expenses = cache.expenses.filter(e=>e.invoice_id!==id);
-  showToast('Invoice deleted'); renderInvoices();
+  showToast('Invoice deleted'); renderInvoices(); refreshReconcileIfOpen();
 }
 
 let lastInvoiceHTML = '';
@@ -3029,7 +3029,7 @@ async function deleteExpense(id) {
     if (typeof renderInvExpenses==='function') renderInvExpenses();
     if (typeof calcInvTotals==='function') calcInvTotals();
   }
-  showToast('Expense deleted'); renderExpenses(); renderInvoices();
+  showToast('Expense deleted'); renderExpenses(); renderInvoices(); refreshReconcileIfOpen();
 }
 
 async function recomputeInvoiceTotals(invId) {

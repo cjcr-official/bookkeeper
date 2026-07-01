@@ -1,1 +1,1 @@
-{"version":204,"note":"v204: reconcile — deleting a matched record (e.g. an owner draw) now breaks its manual link automatically; the bank line it was paired to returns to 'on the bank, not in your books' instead of staying stuck as matched to a missing record."}
+{"version":205,"note":"v205: deleting an expense or invoice now also breaks its reconciliation link live (matching the owner-draw behavior) — the paired bank line returns to unmatched right away if a statement is open."}
