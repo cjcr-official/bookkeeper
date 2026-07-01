@@ -1,1 +1,1 @@
-{"version":202,"note":"v202: dashboard Recent Invoices now sort by invoice number (newest first) and Recent Expenses by date (newest first)."}
+{"version":203,"note":"v203: reconcile — new wallet action on each bank line records it as an owner contribution (deposit) or owner draw (withdrawal) and pairs it to that line, so account-to-account transfers can be logged straight from the statement."}

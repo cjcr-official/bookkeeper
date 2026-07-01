@@ -3784,6 +3784,35 @@ async function recordPriorPayment(idx) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// Record a transfer bank line as owner equity: a deposit (positive) = owner
+// contribution (money into the business), a withdrawal (negative) = owner draw.
+// Creates the owner_transactions row and explicit-pairs it to this bank line.
+async function recordOwnerFromTxn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const amt = parseFloat(t.amount)||0;
+  if (!amt) { showToast('This line has no amount.', 'error'); return; }
+  const kind = amt >= 0 ? 'contribution' : 'draw';
+  const label = kind === 'contribution' ? 'owner contribution (money into the business)' : 'owner draw (money out to you)';
+  if (!confirm(`Record ${fmt(amt)} on ${fmtDate(t.date)} ("${(t.description||'').slice(0,50)}") as an ${label}?`)) return;
+  const row = {
+    user_id: currentUser.id,
+    date: t.date || today(),
+    kind,
+    amount: Math.abs(amt),
+    account_id: null,
+    note: (t.description||'').slice(0,80)
+  };
+  const r = await sb.from('owner_transactions').insert(row).select().single();
+  if (r.error) { showToast(r.error.message, 'error'); return; }
+  cache.owner_transactions.unshift(r.data);
+  const fp = 'o:' + r.data.id;
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx], rFps:[fp] }]);
+  await saveStmtSidecar(s.stmt, s.path);
+  showToast(`Owner ${kind} recorded`, 'success');
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // Split a bank line into N parts (e.g. one $200 charge that was really $150 + $50,
 // so each piece can match its own record). Parts inherit the original date and
 // description (with " part k/N"). Manual_matches that referenced the original index
@@ -4354,9 +4383,12 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <button onclick="rejoinSplit(${rejoinArg})" class="btn btn-sm" style="background:transparent;border:none;color:var(--accent);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Rejoin split parts back into one line"><i class="ti ti-arrows-join-2"></i></button>` : '';
     const giftBtn = (editTxnIdx!=null && amt < 0) ? `
       <button onclick="recordPartialReturn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Mark portion as returned to a gift card / store credit"><i class="ti ti-gift"></i></button>` : '';
+    const ownerBtn = (editTxnIdx!=null) ? `
+      <button onclick="recordOwnerFromTxn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as owner ${amt<0?'draw':'contribution'} (equity transfer)"><i class="ti ti-wallet"></i></button>` : '';
     const bankBtns = (editTxnIdx!=null) ? `
       ${priorBtn}
       ${giftBtn}
+      ${ownerBtn}
       ${rejoinBtn}
       <button onclick="splitTxn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Split into multiple amounts"><i class="ti ti-arrows-split"></i></button>
       <button onclick="editTxnAmt(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Fix amount"><i class="ti ti-pencil"></i></button>` : '';
