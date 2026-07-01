@@ -849,6 +849,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="card list-card"><div id="accounts-table"></div></div>
         <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace">Owner Activity</h3>
         <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Money you moved between the business and your personal funds. Contributions show as deposits in reconcile; draws show as withdrawals.</div>
+        <div id="owner-tx-stats"></div>
         <div class="card list-card"><div id="owner-tx-table"></div></div>
         <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace">Gift Cards / Store Credits</h3>
         <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Credits gained from partial returns where the merchant gave you a gift card instead of refunding the bank. They reconcile against the original bank charge so books aren't overstated as expenses.</div>
@@ -3908,9 +3909,29 @@ async function editTxnAmt(idx) {
 }
 
 // ====== OWNER ACTIVITY (equity transactions — contributions in, draws out) ======
+// Summary stats above the owner-activity list: total in, total out, net invested.
+function renderOwnerTxStats(rows) {
+  const el = document.getElementById('owner-tx-stats'); if (!el) return;
+  if (!rows.length) { el.innerHTML = ''; return; }
+  const sum = k => rows.filter(r=>(r.kind==='contribution')===(k==='contribution')).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+  const contrib = sum('contribution');
+  const draws = sum('draw');
+  const net = contrib - draws;
+  const cell = (label, val, color) => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.6rem .7rem">
+    <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);font-family:'JetBrains Mono',monospace">${label}</div>
+    <div style="font-size:16px;font-weight:800;color:${color};font-variant-numeric:tabular-nums;letter-spacing:-.4px;margin-top:2px">${fmt(val)}</div>
+  </div>`;
+  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-bottom:.6rem">
+    ${cell('Contributions', contrib, '#16a34a')}
+    ${cell('Draws', draws, '#dc2626')}
+    ${cell('Net Invested', net, net>=0?'#16a34a':'#dc2626')}
+  </div>`;
+}
+
 function renderOwnerTx() {
   const el = document.getElementById('owner-tx-table'); if (!el) return;
   const rows = (cache.owner_transactions||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  renderOwnerTxStats(rows);
   if (!rows.length) { el.innerHTML = `<div class="empty"><i class="ti ti-wallet"></i><p>No owner activity yet</p><p style="font-size:12px;color:var(--text3)">Use this when you move money between the business and your personal funds.</p></div>`; return; }
   const esc = escHtml;
   const acctName = id => (cache.accounts.find(a=>a.id===id)||{}).name || '—';
