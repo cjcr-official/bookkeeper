@@ -3743,6 +3743,7 @@ async function recordPartialReturn(idx) {
   s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[giftIdx], rFps:[fp] }]);
   await saveStmtSidecar(s.stmt, s.path);
   showToast('Split + gift card credit recorded','success');
+  renderStoreCredits();   // keep the Accounts page gift-card list in sync
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
@@ -3810,6 +3811,7 @@ async function recordOwnerFromTxn(idx) {
   s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx], rFps:[fp] }]);
   await saveStmtSidecar(s.stmt, s.path);
   showToast(`Owner ${kind} recorded`, 'success');
+  renderOwnerTx();   // keep the Accounts page owner list in sync
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 

@@ -1,1 +1,1 @@
-{"version":205,"note":"v205: deleting an expense or invoice now also breaks its reconciliation link live (matching the owner-draw behavior) — the paired bank line returns to unmatched right away if a statement is open."}
+{"version":206,"note":"v206: recording an owner contribution/draw (or a gift-card credit) from reconciliation now refreshes the Accounts page lists immediately."}
