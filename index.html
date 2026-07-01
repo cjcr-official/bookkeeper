@@ -3926,7 +3926,7 @@ function renderOwnerTxStats(rows) {
   const sum = k => rows.filter(r=>(r.kind==='contribution')===(k==='contribution')).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
   const contrib = sum('contribution');
   const draws = sum('draw');
-  const net = contrib - draws;
+  const pocketed = draws - contrib;   // how much you took out, net of what you put in
   const cell = (label, val, color) => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.6rem .7rem">
     <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);font-family:'JetBrains Mono',monospace">${label}</div>
     <div style="font-size:16px;font-weight:800;color:${color};font-variant-numeric:tabular-nums;letter-spacing:-.4px;margin-top:2px">${fmt(val)}</div>
@@ -3934,7 +3934,7 @@ function renderOwnerTxStats(rows) {
   el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-bottom:.6rem">
     ${cell('Contributions', contrib, '#16a34a')}
     ${cell('Draws', draws, '#dc2626')}
-    ${cell('Net Invested', net, net>=0?'#16a34a':'#dc2626')}
+    ${cell('Net Pocketed', pocketed, pocketed>=0?'#16a34a':'#dc2626')}
   </div>`;
 }
 
