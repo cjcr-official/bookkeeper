@@ -1,1 +1,1 @@
-{"version":211,"note":"v211: customers — decluttered the mobile cards. Tap a card to edit (removed the big violet Edit bar); action row is now 4 quiet uniform buttons in one line (Call / Email / Map / Invoices) instead of a 5-wide colored wrap; Delete moved into the edit screen."}
+{"version":212,"note":"v212: customers — restored the color on the quick-action buttons (green Call / blue Email / cyan Map) while keeping the decluttered single-row layout and tap-to-edit card."}

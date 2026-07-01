@@ -513,6 +513,9 @@ body.modal-open .main{overflow:hidden}
   }
   .cust-btn i{font-size:16px;flex-shrink:0}
   .cust-btn:active{transform:scale(.97);background:var(--surface2);color:var(--text)}
+  .cust-btn-call{color:var(--green);border-color:rgba(34,197,94,.3);background:var(--green-bg)}
+  .cust-btn-email{color:var(--accent-text);border-color:rgba(59,130,246,.3);background:var(--accent-bg)}
+  .cust-btn-map{color:var(--cyan);border-color:rgba(6,182,212,.3);background:var(--cyan-bg)}
 
   .m-card{
     background:var(--surface);border:1px solid var(--border);
@@ -2291,9 +2294,9 @@ function renderCustomers() {
           '<div class="cust-amount">' + fmt(totalOf(c)) + '</div>' +
         '</div>' +
         '<div class="cust-actions" onclick="event.stopPropagation()">' +
-          (c.phone ? '<a class="cust-btn" href="tel:' + esc(phoneHref) + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
-          (c.email ? '<a class="cust-btn" href="mailto:' + esc(c.email) + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
-          (c.address ? '<a class="cust-btn" href="https://maps.apple.com/?q=' + encodeURIComponent(cleanAddr(c.address)) + '" target="_blank" rel="noopener"><i class="ti ti-map-pin"></i><span>Map</span></a>' : '') +
+          (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + esc(phoneHref) + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
+          (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + esc(c.email) + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
+          (c.address ? '<a class="cust-btn cust-btn-map" href="https://maps.apple.com/?q=' + encodeURIComponent(cleanAddr(c.address)) + '" target="_blank" rel="noopener"><i class="ti ti-map-pin"></i><span>Map</span></a>' : '') +
           '<button class="cust-btn" onclick="gotoInvoicesSearch(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
         '</div>' +
       '</div>';
