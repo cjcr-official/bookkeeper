@@ -4335,6 +4335,10 @@ function reconcileMatch(stmt, acctId, gFps) {
   const monthKey = monthSrc ? monthSrc.slice(0,7) : '';
   const monthLabel = monthKey ? parseDate(monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'}) : '';
   const passed = onBankOnly.length===0 && inRecordsOnly.length===0 && balanceOk!==false;
+  // Order the Matched list by date (newest first). Sort here so the array stored
+  // as _recState.matchedGroups and the rendered rows share indices (unmatchByIdx).
+  const grpDate = g => (g.tIdxs.length && txns[g.tIdxs[0]] && txns[g.tIdxs[0]].date) || (g.rIdxs.length && recs[g.rIdxs[0]] && recs[g.rIdxs[0]].date) || '';
+  matched.sort((a,b) => (grpDate(b)||'').localeCompare(grpDate(a)||''));
   return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, balanceOk, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned };
 }
 
