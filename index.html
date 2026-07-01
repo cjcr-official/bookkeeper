@@ -4208,7 +4208,10 @@ function reconcileMatch(stmt, acctId, gFps) {
   (stmt.manual_matches||[]).forEach((m, mi) => {
     const tIdxs = (m.tIdxs||[]).filter(i => i < txns.length && !usedT[i]);
     const rIdxs = (m.rFps||[]).map(fp => recFpIdx[fp]).filter(i => i!=null && !usedR[i]);
-    if (!tIdxs.length && !rIdxs.length) return;
+    // A manual pair only holds if BOTH sides still resolve. If the record was
+    // deleted (e.g. an owner draw removed) its fp no longer maps, rIdxs is empty,
+    // so the link breaks and the bank line returns to unmatched.
+    if (!tIdxs.length || !rIdxs.length) return;
     tIdxs.forEach(i => usedT[i] = true);
     rIdxs.forEach(i => usedR[i] = true);
     matched.push({ tIdxs, rIdxs, manualIdx: mi });

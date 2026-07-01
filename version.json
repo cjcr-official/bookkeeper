@@ -1,1 +1,1 @@
-{"version":203,"note":"v203: reconcile — new wallet action on each bank line records it as an owner contribution (deposit) or owner draw (withdrawal) and pairs it to that line, so account-to-account transfers can be logged straight from the statement."}
+{"version":204,"note":"v204: reconcile — deleting a matched record (e.g. an owner draw) now breaks its manual link automatically; the bank line it was paired to returns to 'on the bank, not in your books' instead of staying stuck as matched to a missing record."}
