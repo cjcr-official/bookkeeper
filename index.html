@@ -494,34 +494,25 @@ body.modal-open .main{overflow:hidden}
   .cust-card{
     background:var(--surface);border:1px solid var(--border);
     border-radius:var(--radius-sm);padding:.85rem .9rem;margin-bottom:.6rem;
+    cursor:pointer;transition:background .12s;
   }
-  .cust-card-head{display:flex;align-items:flex-start;gap:.75rem;margin-bottom:.75rem}
+  .cust-card:active{background:var(--surface2)}
+  .cust-card-head{display:flex;align-items:flex-start;gap:.75rem;margin-bottom:.7rem}
   .cust-name{font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cust-line{font-size:12.5px;color:var(--text2);margin-top:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .cust-amount{font-size:17px;font-weight:700;color:var(--text);flex-shrink:0;white-space:nowrap}
-  .cust-actions{display:flex;flex-wrap:wrap;gap:.4rem}
-  .cust-actions .cust-btn{flex:1 1 calc(20% - .4rem);min-width:60px}
+  .cust-actions{display:flex;gap:.4rem}
+  .cust-actions .cust-btn{flex:1;min-width:0}
   .cust-btn{
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-    padding:.55rem .2rem;border-radius:var(--radius-sm);
-    border:1px solid var(--border2);background:var(--bg2);color:var(--text);
-    font-size:10px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;
-    cursor:pointer;text-decoration:none;transition:all .12s;min-height:48px;
+    display:flex;align-items:center;justify-content:center;gap:5px;
+    padding:.5rem .3rem;border-radius:var(--radius-sm);
+    border:1px solid var(--border2);background:var(--bg2);color:var(--text2);
+    font-size:11px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;
+    cursor:pointer;text-decoration:none;transition:all .12s;min-height:40px;
+    white-space:nowrap;overflow:hidden;
   }
-  .cust-btn i{font-size:18px}
-  .cust-btn:active{transform:scale(.96);background:var(--surface2)}
-  .cust-btn-call{color:var(--green);border-color:rgba(34,197,94,.3);background:var(--green-bg)}
-  .cust-btn-email{color:var(--accent-text);border-color:rgba(59,130,246,.3);background:var(--accent-bg)}
-  .cust-btn-map{color:var(--cyan);border-color:rgba(6,182,212,.3);background:var(--cyan-bg)}
-  .cust-btn-edit-big{
-    flex-direction:row!important;gap:8px!important;width:100%;
-    padding:.7rem!important;margin-top:.45rem;min-height:0;
-    background:var(--accent)!important;color:#fff!important;border:none!important;
-    font-size:14px!important;font-weight:700;
-  }
-  .cust-btn-edit-big i{font-size:18px}
-  .cust-btn-edit-big:active{transform:scale(.98);filter:brightness(.95)}
-  .cust-btn-del{color:var(--red);border-color:rgba(239,68,68,.3);background:var(--red-bg)}
+  .cust-btn i{font-size:16px;flex-shrink:0}
+  .cust-btn:active{transform:scale(.97);background:var(--surface2);color:var(--text)}
 
   .m-card{
     background:var(--surface);border:1px solid var(--border);
@@ -1046,6 +1037,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Tap <b>Maps</b> to read the one-way distance to this customer, then type it here. Each trip on an invoice counts the round trip (one-way × 2).</div></div>
     </div>
     <div class="modal-footer">
+      <button class="btn btn-danger" id="cust-delete-btn" style="display:none;margin-right:auto" onclick="deleteCustomer(document.getElementById('cust-id').value)"><i class="ti ti-trash"></i> Delete</button>
       <button class="btn" onclick="closeModal('modal-customer')">Cancel</button>
       <button class="btn btn-primary" onclick="saveCustomer()"><i class="ti ti-check"></i> Save</button>
     </div>
@@ -2288,7 +2280,7 @@ function renderCustomers() {
     el.innerHTML = list.map(c=>{
       const nm = (c.name||'').replace(/'/g, "\\'");
       const phoneHref = (c.phone||'').replace(/[^\d+]/g,'');
-      return '<div class="cust-card">' +
+      return '<div class="cust-card" onclick="editCustomer(\'' + c.id + '\')">' +
         '<div class="cust-card-head">' +
           '<div style="min-width:0;flex:1">' +
             '<div class="cust-name">' + esc(c.name) + '</div>' +
@@ -2298,14 +2290,12 @@ function renderCustomers() {
           '</div>' +
           '<div class="cust-amount">' + fmt(totalOf(c)) + '</div>' +
         '</div>' +
-        '<div class="cust-actions">' +
-          (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + esc(phoneHref) + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
-          (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + esc(c.email) + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
-          (c.address ? '<a class="cust-btn cust-btn-map" href="https://maps.apple.com/?q=' + encodeURIComponent(cleanAddr(c.address)) + '" target="_blank" rel="noopener"><i class="ti ti-map-pin"></i><span>Map</span></a>' : '') +
+        '<div class="cust-actions" onclick="event.stopPropagation()">' +
+          (c.phone ? '<a class="cust-btn" href="tel:' + esc(phoneHref) + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
+          (c.email ? '<a class="cust-btn" href="mailto:' + esc(c.email) + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
+          (c.address ? '<a class="cust-btn" href="https://maps.apple.com/?q=' + encodeURIComponent(cleanAddr(c.address)) + '" target="_blank" rel="noopener"><i class="ti ti-map-pin"></i><span>Map</span></a>' : '') +
           '<button class="cust-btn" onclick="gotoInvoicesSearch(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
-          '<button class="cust-btn cust-btn-del" onclick="deleteCustomer(\'' + c.id + '\')"><i class="ti ti-trash"></i><span>Delete</span></button>' +
         '</div>' +
-        '<button class="cust-btn cust-btn-edit-big" onclick="editCustomer(\'' + c.id + '\')"><i class="ti ti-edit"></i><span>Edit Customer</span></button>' +
       '</div>';
     }).join('');
   } else {
@@ -2323,6 +2313,7 @@ function openCustomerModal(c) {
   document.getElementById('cust-phone').value = c.phone||'';
   document.getElementById('cust-address').value = c.address||'';
   document.getElementById('cust-miles').value = c.miles||'';
+  document.getElementById('cust-delete-btn').style.display = c.id ? '' : 'none';
   openModal('modal-customer');
 }
 function editCustomer(id) { openCustomerModal(cache.customers.find(c=>c.id===id)); }
@@ -2422,6 +2413,7 @@ async function deleteCustomer(id) {
   const {error} = await sb.from('customers').delete().eq('id',id);
   if (error) { showToast(error.message,'error'); return; }
   cache.customers = cache.customers.filter(c=>c.id!==id);
+  closeModal('modal-customer');
   showToast('Customer deleted'); renderCustomers();
 }
 
