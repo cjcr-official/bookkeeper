@@ -1,1 +1,1 @@
-{"version":201,"note":"v201: faster launch — html2canvas + jsPDF (~500KB) were render-blocking scripts in <head> on every open; now lazy-loaded only when you build/share/print a PDF. Nothing else changes."}
+{"version":202,"note":"v202: dashboard Recent Invoices now sort by invoice number (newest first) and Recent Expenses by date (newest first)."}
