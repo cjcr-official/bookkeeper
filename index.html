@@ -847,10 +847,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <button class="btn btn-sm" onclick="openOwnerTxModal()"><i class="ti ti-wallet"></i> Log owner activity</button>
         </div>
         <div class="card list-card"><div id="accounts-table"></div></div>
-        <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace">Owner Activity</h3>
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Money you moved between the business and your personal funds. Contributions show as deposits in reconcile; draws show as withdrawals.</div>
-        <div id="owner-tx-stats"></div>
-        <div class="card list-card"><div id="owner-tx-table"></div></div>
+        <h3 onclick="toggleOwnerActivity()" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"><span>Owner Activity</span><i class="ti ti-chevron-down" id="owner-activity-chevron" style="transition:transform .2s;color:var(--text3);font-size:15px"></i></h3>
+        <div id="owner-activity-body">
+          <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Money you moved between the business and your personal funds. Contributions show as deposits in reconcile; draws show as withdrawals.</div>
+          <div id="owner-tx-stats"></div>
+          <div class="card list-card"><div id="owner-tx-table"></div></div>
+        </div>
         <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace">Gift Cards / Store Credits</h3>
         <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Credits gained from partial returns where the merchant gave you a gift card instead of refunding the bank. They reconcile against the original bank charge so books aren't overstated as expenses.</div>
         <div class="card list-card"><div id="store-credits-table"></div></div>
@@ -3270,6 +3272,14 @@ function toggleReports() {
   body.style.display = open ? 'none' : 'block';
   if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
   if (!open) renderReport(currentReport); // render fresh when opening
+}
+
+function toggleOwnerActivity() {
+  const body = document.getElementById('owner-activity-body');
+  const chev = document.getElementById('owner-activity-chevron');
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (chev) chev.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
 }
 
 function toggleCalendar() {
