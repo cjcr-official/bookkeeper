@@ -1,1 +1,1 @@
-{"version":213,"note":"v213: bank reconciliation can now pull cleared transactions directly from a linked bank via Plaid (Reconcile modal → Connect a bank → pick a month → Pull & reconcile), feeding the same matching + audit view as an uploaded PDF. The Plaid access token is stored server-side only."}
+{"version":214,"note":"v214: the Reconcile modal now splits the two methods into separate tabs — Bank sync (Plaid) and Upload PDF — so only one shows at a time. Bank sync defaults the month to last month (the current month is usually still pending)."}
