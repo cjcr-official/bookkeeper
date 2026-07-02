@@ -579,6 +579,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
   .stat-value{font-size:22px}
 }
 /* ============================================================== */
+/* Reconcile modal: segmented tabs to keep Bank sync and PDF upload separate */
+.rec-tabs{display:flex;gap:.3rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-pill);padding:.28rem;margin-bottom:1.1rem}
+.rec-tab{flex:1;border:none;background:transparent;color:var(--text3);font-weight:700;font-size:13px;padding:.52rem .75rem;border-radius:var(--radius-pill);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.4rem;font-family:inherit;transition:background .15s,color .15s}
+.rec-tab.active{background:var(--accent);color:#fff;box-shadow:0 2px 8px var(--accent-glow)}
+.rec-tab:active{transform:scale(.97)}
 </style>
 </head>
 <body>
@@ -1268,10 +1273,18 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal" style="width:680px">
     <div class="modal-header"><h2>Reconcile Bank Statement</h2><button class="btn btn-sm" onclick="closeModal('modal-reconcile')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
-      <div id="rec-plaid" style="margin-bottom:1rem"></div>
-      <div class="form-group"><label>Upload bank statement(s) (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf" multiple></div>
-      <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:.5rem">Each PDF is saved privately to your account so you can re-open it any time from the Statements list. Pick several to import a batch.</div>
+      <div class="rec-tabs">
+        <button type="button" id="rec-tab-plaid" class="rec-tab active" onclick="switchRecTab('plaid')"><i class="ti ti-building-bank"></i> Bank sync</button>
+        <button type="button" id="rec-tab-pdf" class="rec-tab" onclick="switchRecTab('pdf')"><i class="ti ti-file-upload"></i> Upload PDF</button>
+      </div>
+      <div id="rec-pane-plaid">
+        <div id="rec-plaid"></div>
+      </div>
+      <div id="rec-pane-pdf" style="display:none">
+        <div class="form-group"><label>Upload bank statement(s) (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf" multiple></div>
+        <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
+        <div style="font-size:11px;color:var(--text3);margin-top:.5rem">Each PDF is saved privately to your account so you can re-open it any time from the Statements list. Pick several to import a batch.</div>
+      </div>
       <div id="rec-result" style="margin-top:1rem"></div>
     </div>
   </div>
@@ -3414,8 +3427,23 @@ function openReconcileModal() {
   document.getElementById('rec-file').value = '';
   document.getElementById('rec-result').innerHTML = '<div id="rec-audit"></div>';
   renderAuditBlock(null, '', '', null);   // show year-to-date audit checkmarks
+  switchRecTab('plaid');                  // default to Bank sync; renderPlaidBlock flips to PDF if unconfigured
   openModal('modal-reconcile');
   renderPlaidBlock();                     // bank-sync card (async; fills in when status returns)
+}
+
+// Toggle between the two reconcile methods so only one input shows at a time.
+// The shared result area (#rec-result: audit grid + matched/unmatched buckets)
+// stays visible below both, since either method feeds the same reconcile view.
+function switchRecTab(which) {
+  const paneP = document.getElementById('rec-pane-plaid'), paneF = document.getElementById('rec-pane-pdf');
+  const tabP = document.getElementById('rec-tab-plaid'), tabF = document.getElementById('rec-tab-pdf');
+  if (!paneP || !paneF) return;
+  const plaid = which !== 'pdf';
+  paneP.style.display = plaid ? '' : 'none';
+  paneF.style.display = plaid ? 'none' : '';
+  if (tabP) tabP.classList.toggle('active', plaid);
+  if (tabF) tabF.classList.toggle('active', !plaid);
 }
 
 // ─── Plaid bank sync ─────────────────────────────────────────────────────────
@@ -3452,28 +3480,32 @@ async function renderPlaidBlock() {
   let status;
   try { status = await plaidFetch('/plaid/status', { method: 'GET' }); }
   catch (e) { el.innerHTML = ''; return; }   // stay quiet on transient errors — PDF upload still works
-  const card = inner => `<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:.85rem;background:var(--bg2)">${inner}</div>`;
-  const head = `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.55rem"><i class="ti ti-building-bank" style="font-size:16px;color:var(--accent)"></i><span style="font-weight:700;font-size:13.5px">Bank sync (Plaid)</span></div>`;
   if (!status.configured) {
-    el.innerHTML = card(`${head}<div style="font-size:11.5px;color:var(--text3);line-height:1.5">Not set up yet. Add your Plaid <code>PLAID_CLIENT_ID</code> + <code>PLAID_SECRET</code> as Worker secrets to pull transactions automatically instead of uploading PDFs. Until then, use the PDF upload below.</div>`);
+    // Nothing to do on this tab — send the user to the method that works today.
+    el.innerHTML = `<div style="font-size:12px;color:var(--text3);line-height:1.6">Bank sync isn’t set up on this account yet. Use <b>Upload PDF</b> instead, or add your Plaid keys to enable it.</div>`;
+    switchRecTab('pdf');
     return;
   }
   if (!status.connected) {
-    el.innerHTML = card(`${head}<div style="font-size:11.5px;color:var(--text3);margin-bottom:.6rem;line-height:1.5">Link a bank once to pull cleared transactions for any month — no PDF needed.</div><button class="btn btn-primary btn-sm" id="plaid-connect-btn" onclick="plaidConnect()"><i class="ti ti-link"></i> Connect a bank</button>`);
+    el.innerHTML = `<div style="font-size:12.5px;color:var(--text3);margin-bottom:.7rem;line-height:1.55">Link your bank once, then pull cleared transactions for any month — no PDF needed.</div><button class="btn btn-primary" id="plaid-connect-btn" onclick="plaidConnect()"><i class="ti ti-link"></i> Connect a bank</button>`;
     return;
   }
-  const now = new Date();
-  const thisMonth = now.toISOString().slice(0, 7);
-  el.innerHTML = card(`${head}
-    <div style="display:flex;align-items:center;gap:.4rem;font-size:12px;margin-bottom:.6rem"><i class="ti ti-circle-check" style="color:#16a34a"></i><span>Connected${status.institution ? ' — <b>' + escHtml(status.institution) + '</b>' : ''}</span></div>
-    <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap">
-      <div><label style="display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:.2rem">Month</label><input type="month" id="plaid-month" value="${thisMonth}" max="${thisMonth}" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.35rem .5rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"></div>
-      <button class="btn btn-primary btn-sm" id="plaid-pull-btn" onclick="plaidPull()"><i class="ti ti-download"></i> Pull &amp; reconcile</button>
+  // Default to LAST month — the current month is usually still mostly pending, so
+  // it comes back empty and looks broken. Users can bump it forward if they want.
+  const d = new Date(); d.setDate(1);
+  const thisMonth = d.toISOString().slice(0, 7);
+  d.setMonth(d.getMonth() - 1);
+  const defMonth = d.toISOString().slice(0, 7);
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:.4rem;font-size:13px;margin-bottom:.9rem"><i class="ti ti-circle-check" style="color:#16a34a;font-size:16px"></i><span>Connected${status.institution ? ' — <b>' + escHtml(status.institution) + '</b>' : ''}</span></div>
+    <div style="display:flex;gap:.6rem;align-items:flex-end;flex-wrap:wrap">
+      <div><label style="display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:.25rem">Statement month</label><input type="month" id="plaid-month" value="${defMonth}" max="${thisMonth}" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.4rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px"></div>
+      <button class="btn btn-primary" id="plaid-pull-btn" onclick="plaidPull()"><i class="ti ti-download"></i> Pull &amp; reconcile</button>
     </div>
-    <div style="display:flex;gap:.9rem;margin-top:.6rem">
-      <button class="btn btn-sm" onclick="plaidConnect()" style="font-size:11px;padding:.25rem .5rem"><i class="ti ti-refresh"></i> Reconnect</button>
-      <button class="btn btn-sm btn-danger" onclick="plaidDisconnect()" style="font-size:11px;padding:.25rem .5rem"><i class="ti ti-unlink"></i> Disconnect</button>
-    </div>`);
+    <div style="display:flex;gap:1rem;margin-top:.85rem">
+      <button class="btn btn-sm" onclick="plaidConnect()" style="font-size:11.5px;padding:.3rem .6rem"><i class="ti ti-refresh"></i> Reconnect</button>
+      <button class="btn btn-sm btn-danger" onclick="plaidDisconnect()" style="font-size:11.5px;padding:.3rem .6rem"><i class="ti ti-unlink"></i> Disconnect</button>
+    </div>`;
 }
 // Open Plaid Link → exchange the public_token server-side → refresh the card.
 async function plaidConnect() {
