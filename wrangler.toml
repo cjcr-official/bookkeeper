@@ -20,4 +20,4 @@ VAPID_PUBLIC_KEY = "BERMR7TzR5rf0fQt_BcTOyOwiHIujwdr_S5dbutJhl1o_FyntPXRe7vuhx1x
 VAPID_SUBJECT = "mailto:casejohnstoncomputerrepair@hotmail.com"
 # Plaid bank sync: 'sandbox' (fake test banks) or 'production' (real banks, once
 # Plaid approves the account). PLAID_CLIENT_ID + PLAID_SECRET are Worker secrets.
-PLAID_ENV = "sandbox"
+PLAID_ENV = "production"
