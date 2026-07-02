@@ -3432,8 +3432,11 @@ async function extractPdfText(file) {
 // universal, so it's kept. _recTabKeep=true lets a caller (viewStatement) switch
 // tabs without clearing the results it's about to render.
 let _recTabKeep = false;
+let _acctTab = 'bank';        // which Statements tab is showing ('bank' | 'pdf')
+let _plaidConnected = false;  // true once renderPlaidBlock sees a linked bank
 function switchAcctTab(which) {
   const bank = which !== 'pdf';
+  _acctTab = bank ? 'bank' : 'pdf';
   const pB = document.getElementById('acct-pane-bank'), pF = document.getElementById('acct-pane-pdf');
   const tB = document.getElementById('acct-tab-bank'), tF = document.getElementById('acct-tab-pdf');
   if (!pB || !pF) return;
@@ -3484,12 +3487,15 @@ async function renderPlaidBlock() {
   catch (e) { el.innerHTML = ''; return; }   // stay quiet on transient errors — PDF upload still works
   if (!status.configured) {
     // Nothing to do on this tab — send the user to the method that works today.
+    _plaidConnected = false;
     el.innerHTML = `<div style="font-size:12px;color:var(--text3);line-height:1.6">Bank sync isn’t set up on this account yet. Use <b>Upload PDF</b> instead, or add your Plaid keys to enable it.</div>`;
     switchAcctTab('pdf');
     return;
   }
   if (!status.connected) {
+    _plaidConnected = false;
     el.innerHTML = `<div style="font-size:12.5px;color:var(--text3);margin-bottom:.7rem;line-height:1.55">Link your bank once, then pull cleared transactions for any month — no PDF needed.</div><button class="btn btn-primary" id="plaid-connect-btn" onclick="plaidConnect()"><i class="ti ti-link"></i> Connect a bank</button>`;
+    if (!_recState) renderAuditBlock(null, '', '', null);
     return;
   }
   // Default to LAST month — the current month is usually still mostly pending, so
@@ -3504,10 +3510,13 @@ async function renderPlaidBlock() {
       <div><label style="display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:.25rem">Statement month</label><input type="month" id="plaid-month" value="${defMonth}" max="${thisMonth}" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.4rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px"></div>
       <button class="btn btn-primary" id="plaid-pull-btn" onclick="plaidPull()"><i class="ti ti-download"></i> Pull &amp; reconcile</button>
     </div>
-    <div style="display:flex;gap:1rem;margin-top:.85rem">
+    <div style="font-size:11.5px;color:var(--text3);margin-top:.7rem">Tip: tap any month in the audit grid below to pull &amp; reconcile that month.</div>
+    <div style="display:flex;gap:1rem;margin-top:.7rem">
       <button class="btn btn-sm" onclick="plaidConnect()" style="font-size:11.5px;padding:.3rem .6rem"><i class="ti ti-refresh"></i> Reconnect</button>
       <button class="btn btn-sm btn-danger" onclick="plaidDisconnect()" style="font-size:11.5px;padding:.3rem .6rem"><i class="ti ti-unlink"></i> Disconnect</button>
     </div>`;
+  _plaidConnected = true;
+  if (!_recState) renderAuditBlock(null, '', '', null);   // make the audit months tap-to-pull
 }
 // Open Plaid Link → exchange the public_token server-side → refresh the card.
 async function plaidConnect() {
@@ -3532,8 +3541,14 @@ async function plaidConnect() {
 // Pull the selected month's cleared transactions and drop them into the reconcile
 // view. No PDF is saved — Plaid is the live source — but the month's pass/fail is
 // still recorded in the audit grid by renderReconcile → recordAudit.
-async function plaidPull() {
-  const month = (document.getElementById('plaid-month') || {}).value || '';
+// Tap a month in the audit grid → pull & reconcile that month from the linked bank.
+async function plaidPullMonth(month) {
+  if (!_plaidConnected) return;
+  const inp = document.getElementById('plaid-month'); if (inp) inp.value = month;   // reflect it in the picker
+  await plaidPull(month);
+}
+async function plaidPull(monthArg) {
+  const month = monthArg || (document.getElementById('plaid-month') || {}).value || '';
   if (!/^\d{4}-\d{2}$/.test(month)) { showToast('Pick a month first.', 'error'); return; }
   const [y, m] = month.split('-').map(Number);
   const start = month + '-01';
@@ -4696,18 +4711,24 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed) {
   const yr = (monthKey || today()).slice(0,4);
   const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const monthMap = (_recState && _recState.monthMap) || {};
+  const curMonth = today().slice(0,7);   // don't offer to pull future months
   const chips = names.map((nm,idx)=>{
     const k = yr + '-' + String(idx+1).padStart(2,'0');
     const rec = byAcct[k];
     const cur = k===monthKey;
     const hasStmt = !!monthMap[k];
-    const clickable = hasStmt && !cur;
-    const click = clickable ? ` onclick="jumpToMonth('${k}')"` : '';
+    // Bank tab + linked bank → tap any month up to today to pull & reconcile it.
+    // PDF tab → tap a month that has a saved statement to reopen it.
+    const bankPull = _acctTab === 'bank' && _plaidConnected && k <= curMonth;
+    const click = bankPull ? ` onclick="plaidPullMonth('${k}')"` : (hasStmt && !cur ? ` onclick="jumpToMonth('${k}')"` : '');
+    const clickable = bankPull || (hasStmt && !cur);
+    const dim = !clickable && !hasStmt;   // future months / nothing to do → faded
     // Small status dot: filled green = passed, amber = needs review, hollow = not yet.
     const dot = rec
       ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${rec.passed?'#16a34a':'#d97706'}"></span>`
       : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;border:1.5px solid var(--border)"></span>`;
-    return `<div title="${nm} ${yr}${hasStmt?(cur?' — current':' — open statement'):''}"${click} style="text-align:center;padding:.25rem .1rem;border-radius:6px;${cur?'outline:1.5px solid var(--accent);':''}${clickable?'cursor:pointer;':''}${!hasStmt?'opacity:.5;':''}"><div style="color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace;margin-bottom:4px">${nm}</div><div style="display:flex;justify-content:center;align-items:center;height:9px">${dot}</div></div>`;
+    const tip = bankPull ? `${nm} ${yr} — tap to reconcile` : `${nm} ${yr}${hasStmt?(cur?' — current':' — open statement'):''}`;
+    return `<div title="${tip}"${click} style="text-align:center;padding:.25rem .1rem;border-radius:6px;${cur?'outline:1.5px solid var(--accent);':''}${clickable?'cursor:pointer;':''}${dim?'opacity:.5;':''}"><div style="color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace;margin-bottom:4px">${nm}</div><div style="display:flex;justify-content:center;align-items:center;height:9px">${dot}</div></div>`;
   }).join('');
   const head = monthKey ? `<div style="font-size:13px;margin-bottom:.5rem;color:var(--text2)">${escHtml(monthLabel||monthKey)} · <span style="font-weight:600;color:${passed?'#16a34a':'#d97706'}">${passed?'Passed':'Needs review'}</span></div>` : '';
   el.innerHTML = `${head}<div style="font-weight:700;font-size:10.5px;color:var(--text3);letter-spacing:.5px;margin-bottom:.3rem">AUDIT — ${yr}</div><div style="display:grid;grid-template-columns:repeat(12,1fr);gap:4px;margin-bottom:.9rem">${chips}</div>`;

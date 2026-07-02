@@ -1,1 +1,1 @@
-{"version":219,"note":"v219: reconciliation now happens inline on the Statements page (no popup). The Bank reconciliation and PDF tabs each hold their flow directly on the page, with the audit grid + matched/unmatched results below. Tapping a saved statement opens it right on the page."}
+{"version":220,"note":"v220: on the Bank reconciliation tab, tap any month in the AUDIT grid to pull & reconcile that month straight from the linked bank — no need to use the month picker. Future months stay disabled."}
