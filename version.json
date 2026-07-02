@@ -1,1 +1,1 @@
-{"version":217,"note":"v217: the Statements page is now split into two tabs — Bank reconciliation (Plaid bank sync) and PDF. The saved-statement PDF list lives only under the PDF tab; the page opens on Bank reconciliation. The reconcile popup opens straight to the chosen method."}
+{"version":218,"note":"v218: fresh deploy carrying the Statements-page tabs (Bank reconciliation / PDF). Same behavior as v217 — this bump triggers a clean Cloudflare build after the queue stall and prompts open apps to update."}
