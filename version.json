@@ -1,1 +1,1 @@
-{"version":214,"note":"v214: the Reconcile modal now splits the two methods into separate tabs — Bank sync (Plaid) and Upload PDF — so only one shows at a time. Bank sync defaults the month to last month (the current month is usually still pending)."}
+{"version":215,"note":"v215: reconcile tabs are now fully separated — switching between Bank sync and Upload PDF clears the other method's results so the two flows never bleed together. Reopening a saved statement lands on the PDF tab."}

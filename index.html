@@ -3435,6 +3435,7 @@ function openReconcileModal() {
 // Toggle between the two reconcile methods so only one input shows at a time.
 // The shared result area (#rec-result: audit grid + matched/unmatched buckets)
 // stays visible below both, since either method feeds the same reconcile view.
+let _recTabKeep = false;   // when true, switchRecTab won't wipe #rec-result (caller renders its own)
 function switchRecTab(which) {
   const paneP = document.getElementById('rec-pane-plaid'), paneF = document.getElementById('rec-pane-pdf');
   const tabP = document.getElementById('rec-tab-plaid'), tabF = document.getElementById('rec-tab-pdf');
@@ -3444,6 +3445,13 @@ function switchRecTab(which) {
   paneF.style.display = plaid ? 'none' : '';
   if (tabP) tabP.classList.toggle('active', plaid);
   if (tabF) tabF.classList.toggle('active', !plaid);
+  // Wipe the previous method's reconcile output so the two flows never bleed into
+  // each other — each tab is its own clean workspace (audit grid is universal, so
+  // it's kept). Pass keepResult=true when the caller is about to render its own.
+  if (!_recTabKeep) {
+    const res = document.getElementById('rec-result');
+    if (res) { _recState = null; res.innerHTML = '<div id="rec-audit"></div>'; renderAuditBlock(null, '', '', null); }
+  }
 }
 
 // ─── Plaid bank sync ─────────────────────────────────────────────────────────
@@ -3639,6 +3647,7 @@ async function runReconcile() {
 // Open a saved statement in the reconcile view (uses the cached extraction).
 async function viewStatement(path) {
   openModal('modal-reconcile');
+  _recTabKeep = true; switchRecTab('pdf'); _recTabKeep = false;   // saved statements are PDFs; keep the results we're about to render
   const out = document.getElementById('rec-result');
   out.innerHTML = '<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">Loading…</div>';
   try {
