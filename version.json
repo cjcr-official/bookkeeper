@@ -1,1 +1,1 @@
-{"version":221,"note":"v221: polished the Bank reconciliation top section — the connection, month picker, and controls now sit in a clean card, and the audit grid is a proper carded month strip with a legend. Includes v220's tap-a-month-to-reconcile."}
+{"version":222,"note":"v222: Plaid now requests the full 24-month history at link time (older months were empty because of Plaid's 90-day default — reconnect once to apply). Pulled months are cached for the session so re-opening one is instant; the Pull button forces a fresh pull."}

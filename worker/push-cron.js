@@ -154,7 +154,11 @@ async function plaidLinkToken(req, env) {
       client_name: 'Bookkeeper',
       products: ['transactions'],
       country_codes: ['US'],
-      language: 'en'
+      language: 'en',
+      // Ask for the maximum history (24 months) instead of Plaid's 90-day default,
+      // so older months can be reconciled. This is fixed at link time — an already
+      // linked bank must be reconnected for the longer window to take effect.
+      transactions: { days_requested: 730 }
     });
     return jsonResp({ ok: true, link_token: data.link_token });
   } catch (e) { console.error('plaid link-token', e.plaid || e); return jsonResp({ error: e.message || 'Plaid error' }, 502); }
