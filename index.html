@@ -3522,7 +3522,7 @@ async function renderPlaidBlock() {
       <div style="height:1px;background:var(--border);margin:.95rem 0"></div>
       <label style="display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:.4rem;font-weight:700">Statement month</label>
       <input type="month" id="plaid-month" value="${defMonth}" max="${thisMonth}" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:.6rem .65rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:14px">
-      <button class="btn btn-primary" id="plaid-pull-btn" onclick="plaidPull()" style="width:100%;margin-top:.6rem"><i class="ti ti-download"></i> Pull &amp; reconcile</button>
+      <button class="btn btn-primary" id="plaid-pull-btn" onclick="plaidPull(null,true)" style="width:100%;margin-top:.6rem"><i class="ti ti-download"></i> Pull &amp; reconcile</button>
       <div style="font-size:11.5px;color:var(--text3);margin-top:.75rem;display:flex;align-items:center;gap:.35rem;justify-content:center"><i class="ti ti-hand-finger" style="font-size:13px"></i> Or tap a month in the audit grid below</div>
       <div style="display:flex;gap:.5rem;margin-top:.9rem;padding-top:.85rem;border-top:1px solid var(--border)">
         <button class="btn btn-sm" onclick="plaidConnect()" style="font-size:11.5px;padding:.34rem .65rem"><i class="ti ti-refresh"></i> Reconnect</button>
@@ -3542,6 +3542,7 @@ async function plaidConnect() {
       onSuccess: async (public_token) => {
         try {
           const r = await plaidFetch('/plaid/exchange', { method: 'POST', body: JSON.stringify({ public_token }) });
+          _plaidCache = {};   // fresh bank / new history window — drop any cached months
           profile.plaid_institution = r.institution || 'bank';
           showToast('Bank connected' + (r.institution ? ': ' + r.institution : ''), 'success');
           renderPlaidBlock();
@@ -3555,23 +3556,33 @@ async function plaidConnect() {
 // Pull the selected month's cleared transactions and drop them into the reconcile
 // view. No PDF is saved — Plaid is the live source — but the month's pass/fail is
 // still recorded in the audit grid by renderReconcile → recordAudit.
-// Tap a month in the audit grid → pull & reconcile that month from the linked bank.
+// Plaid is a LIVE source — nothing is stored locally — so each month is fetched
+// from the bank on demand. This session cache means re-opening a month you've
+// already pulled is instant (no re-fetch); the "Pull & reconcile" button forces a
+// fresh pull (force=true). Cleared on connect/disconnect.
+let _plaidCache = {};
+// Tap a month in the audit grid → pull & reconcile that month (cached if seen).
 async function plaidPullMonth(month) {
   if (!_plaidConnected) return;
   const inp = document.getElementById('plaid-month'); if (inp) inp.value = month;   // reflect it in the picker
-  await plaidPull(month);
+  await plaidPull(month, false);
 }
-async function plaidPull(monthArg) {
+async function plaidPull(monthArg, force) {
   const month = monthArg || (document.getElementById('plaid-month') || {}).value || '';
   if (!/^\d{4}-\d{2}$/.test(month)) { showToast('Pick a month first.', 'error'); return; }
   const [y, m] = month.split('-').map(Number);
   const start = month + '-01';
   const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
-  const btn = document.getElementById('plaid-pull-btn'); const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Pulling…';
+  const btn = document.getElementById('plaid-pull-btn'); const orig = btn ? btn.innerHTML : '';
   const out = document.getElementById('rec-result');
   try {
-    const data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end }) });
-    if (!(data.transactions || []).length) { out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No cleared transactions from ${escHtml(data.institution || 'the bank')} for ${month}.</div>`; renderAuditBlock(null, '', '', null); return; }
+    let data = (!force && _plaidCache[month]) ? _plaidCache[month] : null;
+    if (!data) {
+      if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Pulling…'; }
+      data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end }) });
+      _plaidCache[month] = data;   // cache the raw response for this session
+    }
+    if (!(data.transactions || []).length) { out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No cleared transactions from ${escHtml(data.institution || 'the bank')} for ${month}. If this is an older month, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`; renderAuditBlock(null, '', '', null); return; }
     const stmt = {
       account_name: data.institution || 'Bank (Plaid)',
       period_start: start, period_end: end, statement_month: start,
@@ -3584,12 +3595,13 @@ async function plaidPull(monthArg) {
   } catch (e) {
     console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="color:#b91c1c;font-size:13px">${escHtml(e.message || 'Pull failed.')}</div>`; renderAuditBlock(null, '', '', null);
     if (e.data && e.data.reconnect) renderPlaidBlock();
-  } finally { btn.disabled = false; btn.innerHTML = orig; }
+  } finally { if (btn) { btn.disabled = false; btn.innerHTML = orig; } }
 }
 async function plaidDisconnect() {
   if (!confirm('Disconnect this bank? You can reconnect any time.')) return;
   try {
     await plaidFetch('/plaid/disconnect', { method: 'POST', body: '{}' });
+    _plaidCache = {};
     profile.plaid_institution = null;
     showToast('Bank disconnected');
     renderPlaidBlock();
