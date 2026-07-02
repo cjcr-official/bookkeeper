@@ -102,6 +102,11 @@ at Plaid and drops the stored token. The non-sensitive bank name is mirrored to
 alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;
 -- Plaid bank sync: the (non-sensitive) linked bank's name, shown in the UI.
 alter table profiles add column if not exists plaid_institution text;
+-- Plaid reconcile edits: Plaid statements have no saved PDF sidecar (their
+-- transactions are re-pulled live), so a month's manual matches / unmatches /
+-- month-override are stored here (jsonb, keyed {"YYYY-MM": {...}}) and merged back
+-- into the statement on the next pull.
+alter table profiles add column if not exists plaid_recon jsonb default '{}'::jsonb;
 -- Plaid access tokens live here, NOT on profiles: RLS is enabled with NO policy for
 -- authenticated users, so PostgREST returns nothing to the browser — only the Worker
 -- (service key) can read/write it. user_id is the PK so upsert-on-conflict replaces

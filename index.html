@@ -3583,11 +3583,21 @@ async function plaidPull(monthArg, force) {
       _plaidCache[month] = data;   // cache the raw response for this session
     }
     if (!(data.transactions || []).length) { out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No cleared transactions from ${escHtml(data.institution || 'the bank')} for ${month}. If this is an older month, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`; renderAuditBlock(null, '', '', null); return; }
+    // Stable order (date, then description, then amount) so a manual match's bank-line
+    // indices stay valid across re-pulls — Plaid may return rows in a different order.
+    const txns = (data.transactions || []).slice().sort((a, b) =>
+      (a.date || '').localeCompare(b.date || '') || (a.description || '').localeCompare(b.description || '') || ((a.amount || 0) - (b.amount || 0)));
+    const saved = (profile.plaid_recon || {})[month] || {};
     const stmt = {
       account_name: data.institution || 'Bank (Plaid)',
       period_start: start, period_end: end, statement_month: start,
       opening_balance: null, closing_balance: null,   // Plaid doesn't give a per-month opening/closing balance
-      transactions: data.transactions, source: 'plaid'
+      transactions: txns, source: 'plaid',
+      // Re-apply the user's saved manual edits for this month.
+      manual_matches: saved.manual_matches || [],
+      unmatch_t: saved.unmatch_t || [],
+      unmatch_r: saved.unmatch_r || [],
+      owned_fps: saved.owned_fps || []
     };
     const sidecars = await loadSidecars();
     renderReconcile(stmt, null, null, fpsFromSidecars(sidecars, null), monthMapFromSidecars(sidecars));
@@ -3763,6 +3773,10 @@ function fpsFromSidecars(sidecars, excludePath) {
 // First try upsert (works if the bucket policy allows update). If that fails because
 // the bucket policy only permits insert/select/delete, fall back to delete-then-insert.
 async function saveStmtSidecar(stmt, path) {
+  // Plaid statements have no PDF/sidecar (path is null) — their transactions are
+  // re-pulled live each time, so we persist just the user's manual edits (matches,
+  // unmatches, month override) per month on the profile, keyed by YYYY-MM.
+  if (!path && stmt && stmt.source === 'plaid') return savePlaidRecon(stmt);
   if (!path) return;
   const jsonPath = path + '.json';
   const body = new Blob([JSON.stringify(stmt)], { type:'application/json' });
@@ -3782,6 +3796,24 @@ async function saveStmtSidecar(stmt, path) {
     console.error('sidecar save failed', r.error);
     showToast('Save failed: ' + (r.error.message||'unknown'), 'error');
   }
+}
+
+// Persist a Plaid month's manual reconcile edits on profiles.plaid_recon (jsonb,
+// keyed 'YYYY-MM'). Merged back into the statement on the next pull so matches
+// stick even though Plaid transactions are re-fetched live each time.
+async function savePlaidRecon(stmt) {
+  const month = (stmt.statement_month || '').slice(0, 7);
+  if (!month) return;
+  if (!profile.plaid_recon || typeof profile.plaid_recon !== 'object') profile.plaid_recon = {};
+  profile.plaid_recon[month] = {
+    manual_matches: stmt.manual_matches || [],
+    unmatch_t: stmt.unmatch_t || [],
+    unmatch_r: stmt.unmatch_r || [],
+    owned_fps: stmt.owned_fps || [],
+    statement_month: stmt.statement_month || (month + '-01')
+  };
+  try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); }
+  catch (e) { console.error('plaid_recon save failed', e); showToast('Save failed: ' + (e.message || e), 'error'); }
 }
 
 // Search across the other-month unmatched records. Renders matching rows with the
