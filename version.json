@@ -1,1 +1,1 @@
-{"version":215,"note":"v215: reconcile tabs are now fully separated — switching between Bank sync and Upload PDF clears the other method's results so the two flows never bleed together. Reopening a saved statement lands on the PDF tab."}
+{"version":216,"note":"v216: redeploy to ship the separated reconcile tabs (Bank sync / Upload PDF). No behavior change beyond v215 — this bump re-triggers the Cloudflare build and prompts already-open apps to update."}
