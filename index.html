@@ -845,16 +845,20 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <button type="button" id="acct-tab-bank" class="rec-tab active" onclick="switchAcctTab('bank')"><i class="ti ti-building-bank"></i> Bank reconciliation</button>
           <button type="button" id="acct-tab-pdf" class="rec-tab" onclick="switchAcctTab('pdf')"><i class="ti ti-file-text"></i> PDF</button>
         </div>
-        <!-- Bank reconciliation (Plaid) -->
+        <!-- Bank reconciliation (Plaid) — inline, no popup -->
         <div id="acct-pane-bank">
-          <button class="btn btn-primary btn-sm" onclick="openReconcileModal('plaid')"><i class="ti ti-scale"></i> Reconcile with bank sync</button>
-          <div id="acct-bank-status" style="margin-top:.75rem;font-size:12.5px;color:var(--text3)"></div>
+          <div id="rec-plaid"></div>
         </div>
-        <!-- PDF statements -->
+        <!-- PDF statements — inline, no popup -->
         <div id="acct-pane-pdf" style="display:none">
-          <button class="btn btn-primary btn-sm" onclick="openReconcileModal('pdf')" style="margin-bottom:1rem"><i class="ti ti-upload"></i> Upload &amp; reconcile PDF</button>
+          <div class="form-group"><label>Upload bank statement(s) (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf" multiple></div>
+          <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
+          <div style="font-size:11px;color:var(--text3);margin:.5rem 0 1.25rem">Each PDF is saved privately to your account so you can re-open it any time from the list below. Pick several to import a batch.</div>
+          <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:.5rem 0;font-family:'JetBrains Mono',monospace">Saved statements</h3>
           <div class="card list-card"><div id="accounts-table"></div></div>
         </div>
+        <!-- Shared reconcile output: audit grid + matched/unmatched buckets -->
+        <div id="rec-result" style="margin-top:1.25rem"><div id="rec-audit"></div></div>
         <h3 onclick="toggleOwnerActivity()" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"><span>Owner Activity</span><i class="ti ti-chevron-down" id="owner-activity-chevron" style="transition:transform .2s;color:var(--text3);font-size:15px"></i></h3>
         <div id="owner-activity-body">
           <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Money you moved between the business and your personal funds. Contributions show as deposits in reconcile; draws show as withdrawals.</div>
@@ -1279,27 +1283,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
-<div class="modal-overlay" id="modal-reconcile">
-  <div class="modal" style="width:680px">
-    <div class="modal-header"><h2 id="rec-modal-title">Reconcile</h2><button class="btn btn-sm" onclick="closeModal('modal-reconcile')"><i class="ti ti-x"></i></button></div>
-    <div class="modal-body">
-      <div class="rec-tabs" id="rec-modal-tabs" style="display:none">
-        <button type="button" id="rec-tab-plaid" class="rec-tab active" onclick="switchRecTab('plaid')"><i class="ti ti-building-bank"></i> Bank sync</button>
-        <button type="button" id="rec-tab-pdf" class="rec-tab" onclick="switchRecTab('pdf')"><i class="ti ti-file-upload"></i> Upload PDF</button>
-      </div>
-      <div id="rec-pane-plaid">
-        <div id="rec-plaid"></div>
-      </div>
-      <div id="rec-pane-pdf" style="display:none">
-        <div class="form-group"><label>Upload bank statement(s) (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf" multiple></div>
-        <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
-        <div style="font-size:11px;color:var(--text3);margin-top:.5rem">Each PDF is saved privately to your account so you can re-open it any time from the Statements list. Pick several to import a batch.</div>
-      </div>
-      <div id="rec-result" style="margin-top:1rem"></div>
-    </div>
-  </div>
-</div>
-
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1320,7 +1303,17 @@ let currentPage = 'dashboard';
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
 const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, settings: loadSettingsForm };
-function renderAccountsPage() { renderStatementsTable(); renderOwnerTx(); renderStoreCredits(); renderAcctBankStatus(); }
+function renderAccountsPage() {
+  renderStatementsTable(); renderOwnerTx(); renderStoreCredits();
+  // Inline reconcile lives on this page now: keep the audit grid visible and
+  // refresh the bank-sync card. Don't wipe a loaded reconcile result on a plain
+  // re-render (e.g. rotation) — only reset the result area when nothing's loaded.
+  if (!_recState) {
+    const res = document.getElementById('rec-result');
+    if (res) { res.innerHTML = '<div id="rec-audit"></div>'; renderAuditBlock(null, '', '', null); }
+  }
+  renderPlaidBlock();
+}
 let _viewResizeTimer = null;
 let _lastIsMobile = window.innerWidth <= 768;
 function rerenderCurrentView() {
@@ -1502,7 +1495,6 @@ function showPage(page, el) {
     invoices:`<button class="btn" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> <span>New Invoice</span></button>`,
     customers:`<button class="btn btn-primary" onclick="openCustomerModal()"><i class="ti ti-plus"></i> <span>New Customer</span></button>`,
     expenses:`<button class="btn" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
-    accounts:`<button class="btn btn-primary" onclick="openReconcileModal()"><i class="ti ti-scale"></i> <span>Reconcile</span></button>`,
     mileage:`<button class="btn" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
@@ -3433,19 +3425,13 @@ async function extractPdfText(file) {
   return out;
 }
 
-function openReconcileModal(tab) {
-  const pdf = tab === 'pdf';
-  document.getElementById('rec-file').value = '';
-  document.getElementById('rec-result').innerHTML = '<div id="rec-audit"></div>';
-  renderAuditBlock(null, '', '', null);   // show year-to-date audit checkmarks
-  const title = document.getElementById('rec-modal-title'); if (title) title.textContent = pdf ? 'Reconcile PDF statement' : 'Reconcile with bank sync';
-  switchRecTab(pdf ? 'pdf' : 'plaid');    // open the method the caller asked for (default Bank sync)
-  openModal('modal-reconcile');
-  renderPlaidBlock();                     // bank-sync card (async; fills in when status returns)
-}
-
-// Statements page: switch between the Bank reconciliation (Plaid) view and the
-// PDF-statements view. The saved-PDF list lives only under the PDF tab now.
+// Statements page: switch between the Bank reconciliation (Plaid) and PDF views,
+// both rendered INLINE on the page (no popup). The shared result area (#rec-result:
+// audit grid + matched/unmatched buckets) sits below both. Switching wipes the
+// other method's output so the two flows never bleed together; the audit grid is
+// universal, so it's kept. _recTabKeep=true lets a caller (viewStatement) switch
+// tabs without clearing the results it's about to render.
+let _recTabKeep = false;
 function switchAcctTab(which) {
   const bank = which !== 'pdf';
   const pB = document.getElementById('acct-pane-bank'), pF = document.getElementById('acct-pane-pdf');
@@ -3455,41 +3441,11 @@ function switchAcctTab(which) {
   pF.style.display = bank ? 'none' : '';
   if (tB) tB.classList.toggle('active', bank);
   if (tF) tF.classList.toggle('active', !bank);
-  if (bank) renderAcctBankStatus(); else renderStatementsTable();
-}
-
-// One-line connection status under the Bank reconciliation tab's button.
-async function renderAcctBankStatus() {
-  const el = document.getElementById('acct-bank-status'); if (!el) return;
-  el.textContent = '';
-  let status;
-  try { status = await plaidFetch('/plaid/status', { method: 'GET' }); } catch (e) { return; }
-  if (!status.configured) { el.innerHTML = 'Bank sync isn’t set up yet — use the <b>PDF</b> tab, or add your Plaid keys.'; return; }
-  el.innerHTML = status.connected
-    ? `<i class="ti ti-circle-check" style="color:#16a34a"></i> Connected${status.institution ? ' — <b>' + escHtml(status.institution) + '</b>' : ''}. Tap <b>Reconcile with bank sync</b> to pull a month.`
-    : 'No bank linked yet. Tap <b>Reconcile with bank sync</b> to connect one.';
-}
-
-// Toggle between the two reconcile methods so only one input shows at a time.
-// The shared result area (#rec-result: audit grid + matched/unmatched buckets)
-// stays visible below both, since either method feeds the same reconcile view.
-let _recTabKeep = false;   // when true, switchRecTab won't wipe #rec-result (caller renders its own)
-function switchRecTab(which) {
-  const paneP = document.getElementById('rec-pane-plaid'), paneF = document.getElementById('rec-pane-pdf');
-  const tabP = document.getElementById('rec-tab-plaid'), tabF = document.getElementById('rec-tab-pdf');
-  if (!paneP || !paneF) return;
-  const plaid = which !== 'pdf';
-  paneP.style.display = plaid ? '' : 'none';
-  paneF.style.display = plaid ? 'none' : '';
-  if (tabP) tabP.classList.toggle('active', plaid);
-  if (tabF) tabF.classList.toggle('active', !plaid);
-  // Wipe the previous method's reconcile output so the two flows never bleed into
-  // each other — each tab is its own clean workspace (audit grid is universal, so
-  // it's kept). Pass keepResult=true when the caller is about to render its own.
   if (!_recTabKeep) {
     const res = document.getElementById('rec-result');
     if (res) { _recState = null; res.innerHTML = '<div id="rec-audit"></div>'; renderAuditBlock(null, '', '', null); }
   }
+  if (bank) renderPlaidBlock(); else renderStatementsTable();
 }
 
 // ─── Plaid bank sync ─────────────────────────────────────────────────────────
@@ -3529,7 +3485,7 @@ async function renderPlaidBlock() {
   if (!status.configured) {
     // Nothing to do on this tab — send the user to the method that works today.
     el.innerHTML = `<div style="font-size:12px;color:var(--text3);line-height:1.6">Bank sync isn’t set up on this account yet. Use <b>Upload PDF</b> instead, or add your Plaid keys to enable it.</div>`;
-    switchRecTab('pdf');
+    switchAcctTab('pdf');
     return;
   }
   if (!status.connected) {
@@ -3684,8 +3640,7 @@ async function runReconcile() {
 
 // Open a saved statement in the reconcile view (uses the cached extraction).
 async function viewStatement(path) {
-  openModal('modal-reconcile');
-  _recTabKeep = true; switchRecTab('pdf'); _recTabKeep = false;   // saved statements are PDFs; keep the results we're about to render
+  _recTabKeep = true; switchAcctTab('pdf'); _recTabKeep = false;   // saved statements are PDFs; keep the results we're about to render
   const out = document.getElementById('rec-result');
   out.innerHTML = '<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">Loading…</div>';
   try {
@@ -4274,7 +4229,7 @@ async function deleteStoreCredit(id) {
 // expense, deleted owner activity, etc.) is reflected without a full reopen.
 function refreshReconcileIfOpen() {
   const s = _recState;
-  if (s && document.getElementById('modal-reconcile')?.classList.contains('open')) {
+  if (s && currentPage === 'accounts') {
     renderReconcile(s.stmt, s.acctId, s.path);
   }
 }
