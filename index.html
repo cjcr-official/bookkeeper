@@ -841,14 +841,24 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- STATEMENTS (Accounts page) -->
       <div id="page-accounts" class="page">
-        <div style="margin-bottom:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
-          <button class="btn btn-primary btn-sm" onclick="openReconcileModal()"><i class="ti ti-scale"></i> Reconcile bank statement</button>
-          <button class="btn btn-sm" onclick="openOwnerTxModal()"><i class="ti ti-wallet"></i> Log owner activity</button>
+        <div class="rec-tabs" style="max-width:460px">
+          <button type="button" id="acct-tab-bank" class="rec-tab active" onclick="switchAcctTab('bank')"><i class="ti ti-building-bank"></i> Bank reconciliation</button>
+          <button type="button" id="acct-tab-pdf" class="rec-tab" onclick="switchAcctTab('pdf')"><i class="ti ti-file-text"></i> PDF</button>
         </div>
-        <div class="card list-card"><div id="accounts-table"></div></div>
+        <!-- Bank reconciliation (Plaid) -->
+        <div id="acct-pane-bank">
+          <button class="btn btn-primary btn-sm" onclick="openReconcileModal('plaid')"><i class="ti ti-scale"></i> Reconcile with bank sync</button>
+          <div id="acct-bank-status" style="margin-top:.75rem;font-size:12.5px;color:var(--text3)"></div>
+        </div>
+        <!-- PDF statements -->
+        <div id="acct-pane-pdf" style="display:none">
+          <button class="btn btn-primary btn-sm" onclick="openReconcileModal('pdf')" style="margin-bottom:1rem"><i class="ti ti-upload"></i> Upload &amp; reconcile PDF</button>
+          <div class="card list-card"><div id="accounts-table"></div></div>
+        </div>
         <h3 onclick="toggleOwnerActivity()" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"><span>Owner Activity</span><i class="ti ti-chevron-down" id="owner-activity-chevron" style="transition:transform .2s;color:var(--text3);font-size:15px"></i></h3>
         <div id="owner-activity-body">
           <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Money you moved between the business and your personal funds. Contributions show as deposits in reconcile; draws show as withdrawals.</div>
+          <button class="btn btn-sm" onclick="openOwnerTxModal()" style="margin-bottom:.75rem"><i class="ti ti-wallet"></i> Log owner activity</button>
           <div id="owner-tx-stats"></div>
           <div class="card list-card"><div id="owner-tx-table"></div></div>
         </div>
@@ -1271,9 +1281,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
 <div class="modal-overlay" id="modal-reconcile">
   <div class="modal" style="width:680px">
-    <div class="modal-header"><h2>Reconcile Bank Statement</h2><button class="btn btn-sm" onclick="closeModal('modal-reconcile')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-header"><h2 id="rec-modal-title">Reconcile</h2><button class="btn btn-sm" onclick="closeModal('modal-reconcile')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
-      <div class="rec-tabs">
+      <div class="rec-tabs" id="rec-modal-tabs" style="display:none">
         <button type="button" id="rec-tab-plaid" class="rec-tab active" onclick="switchRecTab('plaid')"><i class="ti ti-building-bank"></i> Bank sync</button>
         <button type="button" id="rec-tab-pdf" class="rec-tab" onclick="switchRecTab('pdf')"><i class="ti ti-file-upload"></i> Upload PDF</button>
       </div>
@@ -1310,7 +1320,7 @@ let currentPage = 'dashboard';
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
 const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, settings: loadSettingsForm };
-function renderAccountsPage() { renderStatementsTable(); renderOwnerTx(); renderStoreCredits(); }
+function renderAccountsPage() { renderStatementsTable(); renderOwnerTx(); renderStoreCredits(); renderAcctBankStatus(); }
 let _viewResizeTimer = null;
 let _lastIsMobile = window.innerWidth <= 768;
 function rerenderCurrentView() {
@@ -3423,13 +3433,41 @@ async function extractPdfText(file) {
   return out;
 }
 
-function openReconcileModal() {
+function openReconcileModal(tab) {
+  const pdf = tab === 'pdf';
   document.getElementById('rec-file').value = '';
   document.getElementById('rec-result').innerHTML = '<div id="rec-audit"></div>';
   renderAuditBlock(null, '', '', null);   // show year-to-date audit checkmarks
-  switchRecTab('plaid');                  // default to Bank sync; renderPlaidBlock flips to PDF if unconfigured
+  const title = document.getElementById('rec-modal-title'); if (title) title.textContent = pdf ? 'Reconcile PDF statement' : 'Reconcile with bank sync';
+  switchRecTab(pdf ? 'pdf' : 'plaid');    // open the method the caller asked for (default Bank sync)
   openModal('modal-reconcile');
   renderPlaidBlock();                     // bank-sync card (async; fills in when status returns)
+}
+
+// Statements page: switch between the Bank reconciliation (Plaid) view and the
+// PDF-statements view. The saved-PDF list lives only under the PDF tab now.
+function switchAcctTab(which) {
+  const bank = which !== 'pdf';
+  const pB = document.getElementById('acct-pane-bank'), pF = document.getElementById('acct-pane-pdf');
+  const tB = document.getElementById('acct-tab-bank'), tF = document.getElementById('acct-tab-pdf');
+  if (!pB || !pF) return;
+  pB.style.display = bank ? '' : 'none';
+  pF.style.display = bank ? 'none' : '';
+  if (tB) tB.classList.toggle('active', bank);
+  if (tF) tF.classList.toggle('active', !bank);
+  if (bank) renderAcctBankStatus(); else renderStatementsTable();
+}
+
+// One-line connection status under the Bank reconciliation tab's button.
+async function renderAcctBankStatus() {
+  const el = document.getElementById('acct-bank-status'); if (!el) return;
+  el.textContent = '';
+  let status;
+  try { status = await plaidFetch('/plaid/status', { method: 'GET' }); } catch (e) { return; }
+  if (!status.configured) { el.innerHTML = 'Bank sync isn’t set up yet — use the <b>PDF</b> tab, or add your Plaid keys.'; return; }
+  el.innerHTML = status.connected
+    ? `<i class="ti ti-circle-check" style="color:#16a34a"></i> Connected${status.institution ? ' — <b>' + escHtml(status.institution) + '</b>' : ''}. Tap <b>Reconcile with bank sync</b> to pull a month.`
+    : 'No bank linked yet. Tap <b>Reconcile with bank sync</b> to connect one.';
 }
 
 // Toggle between the two reconcile methods so only one input shows at a time.

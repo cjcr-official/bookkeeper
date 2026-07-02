@@ -1,1 +1,1 @@
-{"version":216,"note":"v216: redeploy to ship the separated reconcile tabs (Bank sync / Upload PDF). No behavior change beyond v215 — this bump re-triggers the Cloudflare build and prompts already-open apps to update."}
+{"version":217,"note":"v217: the Statements page is now split into two tabs — Bank reconciliation (Plaid bank sync) and PDF. The saved-statement PDF list lives only under the PDF tab; the page opens on Bank reconciliation. The reconcile popup opens straight to the chosen method."}
