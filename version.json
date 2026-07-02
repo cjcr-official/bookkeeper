@@ -1,1 +1,1 @@
-{"version":218,"note":"v218: fresh deploy carrying the Statements-page tabs (Bank reconciliation / PDF). Same behavior as v217 — this bump triggers a clean Cloudflare build after the queue stall and prompts open apps to update."}
+{"version":219,"note":"v219: reconciliation now happens inline on the Statements page (no popup). The Bank reconciliation and PDF tabs each hold their flow directly on the page, with the audit grid + matched/unmatched results below. Tapping a saved statement opens it right on the page."}

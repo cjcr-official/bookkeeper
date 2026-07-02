@@ -64,8 +64,10 @@ Worker secrets (Cloudflare dashboard → Workers & Pages → `bookkeeper` → Se
 | `PLAID_SECRET` | secret | Plaid bank sync — the secret for the chosen `PLAID_ENV` |
 | `PLAID_ENV` | plaintext (in wrangler.toml) | `sandbox` (default) or `production` |
 
-**Bank reconciliation:** Accounts page → "Reconcile bank statement" opens a modal
-that lazy-loads pdf.js (cdnjs) to extract the statement PDF's text client-side,
+**Bank reconciliation:** the Statements (Accounts) page has two inline tabs —
+**Bank reconciliation** (Plaid bank sync) and **PDF** — rendered directly on the
+page (no modal). The PDF tab lazy-loads pdf.js (cdnjs) to extract the statement
+PDF's text client-side,
 POSTs it to the Worker `/reconcile-extract` (gated by the caller's Supabase
 token), which calls the Claude API (`claude-haiku-4-5`) to return structured
 transactions as JSON. The client then matches them against recorded expenses +
@@ -76,8 +78,8 @@ per-month audit result: `profiles.audited_months` (jsonb, keyed
 unmatched and the balance isn't wrong. The modal shows a 12-month grid of
 ✅/⚠️/· marks per account. It never touches the user's financial records.
 
-**Plaid bank sync (optional alternative to PDF upload):** the same Reconcile modal
-has a "Bank sync (Plaid)" card. "Connect a bank" lazy-loads Plaid Link
+**Plaid bank sync (optional alternative to PDF upload):** the Bank reconciliation
+tab hosts the Plaid card (`#rec-plaid`). "Connect a bank" lazy-loads Plaid Link
 (`cdn.plaid.com`), and the Worker mints a link token (`/plaid/link-token`),
 exchanges the returned `public_token` for a long-lived `access_token`
 (`/plaid/exchange`), and stores it **server-side only** in the `plaid_items` table
