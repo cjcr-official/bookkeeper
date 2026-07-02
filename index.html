@@ -3600,7 +3600,11 @@ async function plaidPull(monthArg, force) {
       owned_fps: saved.owned_fps || []
     };
     const sidecars = await loadSidecars();
-    renderReconcile(stmt, null, null, fpsFromSidecars(sidecars, null), monthMapFromSidecars(sidecars));
+    const mMap = monthMapFromSidecars(sidecars);
+    // A Plaid pull is the authoritative statement for its month, so ignore any
+    // same-month PDF sidecar's record claims — otherwise records that PDF already
+    // matched (owner draws, payments, expenses) would be held back here.
+    renderReconcile(stmt, null, null, fpsFromSidecars(sidecars, mMap[month] || null), mMap);
     refreshAllAudits(sidecars);
   } catch (e) {
     console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="color:#b91c1c;font-size:13px">${escHtml(e.message || 'Pull failed.')}</div>`; renderAuditBlock(null, '', '', null);
@@ -4741,11 +4745,13 @@ async function refreshAllAudits(sidecars) {
   const byAcct = profile.audited_months[key] || (profile.audited_months[key] = {});
   const curPath = _recState && _recState.path;
   let changed = false;
+  const openMonth = _recState && _recState.monthKey;   // the live reconcile owns its month
   for (const { pdfPath, json } of sidecars) {
     if (pdfPath === curPath) continue;   // the open statement is handled by recordAudit
     try {
       const comp = reconcileMatch(json, null, fpsFromSidecars(sidecars, pdfPath));
       if (!comp.txns.length || !comp.monthKey) continue;
+      if (openMonth && comp.monthKey === openMonth) continue;   // don't clobber the open (e.g. Plaid) month's result
       const prev = byAcct[comp.monthKey];
       if (!prev || prev.passed !== !!comp.passed) {
         byAcct[comp.monthKey] = { passed: !!comp.passed, at: new Date().toISOString() };
