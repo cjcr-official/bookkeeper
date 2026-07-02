@@ -1,1 +1,1 @@
-{"version":212,"note":"v212: customers — restored the color on the quick-action buttons (green Call / blue Email / cyan Map) while keeping the decluttered single-row layout and tap-to-edit card."}
+{"version":213,"note":"v213: bank reconciliation can now pull cleared transactions directly from a linked bank via Plaid (Reconcile modal → Connect a bank → pick a month → Pull & reconcile), feeding the same matching + audit view as an uploaded PDF. The Plaid access token is stored server-side only."}

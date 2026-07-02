@@ -1268,6 +1268,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal" style="width:680px">
     <div class="modal-header"><h2>Reconcile Bank Statement</h2><button class="btn btn-sm" onclick="closeModal('modal-reconcile')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
+      <div id="rec-plaid" style="margin-bottom:1rem"></div>
       <div class="form-group"><label>Upload bank statement(s) (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf" multiple></div>
       <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
       <div style="font-size:11px;color:var(--text3);margin-top:.5rem">Each PDF is saved privately to your account so you can re-open it any time from the Statements list. Pick several to import a batch.</div>
@@ -3414,6 +3415,122 @@ function openReconcileModal() {
   document.getElementById('rec-result').innerHTML = '<div id="rec-audit"></div>';
   renderAuditBlock(null, '', '', null);   // show year-to-date audit checkmarks
   openModal('modal-reconcile');
+  renderPlaidBlock();                     // bank-sync card (async; fills in when status returns)
+}
+
+// ─── Plaid bank sync ─────────────────────────────────────────────────────────
+// An alternative to uploading a PDF: link a bank once, then pull a month's cleared
+// transactions on demand. Those feed the exact same reconcile view as a statement.
+let _plaidReady = null;
+function loadPlaidLink() {
+  if (window.Plaid) return Promise.resolve();
+  if (_plaidReady) return _plaidReady;
+  _plaidReady = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.plaid.com/link/v2/stable/link-initialize.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Could not load Plaid.'));
+    document.head.appendChild(s);
+  });
+  return _plaidReady;
+}
+// Authenticated call to a Worker /plaid/* endpoint; throws with the server message.
+async function plaidFetch(path, opts = {}) {
+  const { data: sess } = await sb.auth.getSession();
+  const token = sess && sess.session && sess.session.access_token;
+  if (!token) throw new Error('Please sign in again.');
+  const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...(opts.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) { const e = new Error(data.error || ('Failed (' + res.status + ')')); e.data = data; throw e; }
+  return data;
+}
+// Draw the bank-sync card: needs-setup note, a Connect button, or the connected
+// state (bank name + month picker + Pull + Reconnect/Disconnect).
+async function renderPlaidBlock() {
+  const el = document.getElementById('rec-plaid'); if (!el) return;
+  el.innerHTML = `<div style="font-size:11.5px;color:var(--text3)">Checking bank sync…</div>`;
+  let status;
+  try { status = await plaidFetch('/plaid/status', { method: 'GET' }); }
+  catch (e) { el.innerHTML = ''; return; }   // stay quiet on transient errors — PDF upload still works
+  const card = inner => `<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:.85rem;background:var(--bg2)">${inner}</div>`;
+  const head = `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.55rem"><i class="ti ti-building-bank" style="font-size:16px;color:var(--accent)"></i><span style="font-weight:700;font-size:13.5px">Bank sync (Plaid)</span></div>`;
+  if (!status.configured) {
+    el.innerHTML = card(`${head}<div style="font-size:11.5px;color:var(--text3);line-height:1.5">Not set up yet. Add your Plaid <code>PLAID_CLIENT_ID</code> + <code>PLAID_SECRET</code> as Worker secrets to pull transactions automatically instead of uploading PDFs. Until then, use the PDF upload below.</div>`);
+    return;
+  }
+  if (!status.connected) {
+    el.innerHTML = card(`${head}<div style="font-size:11.5px;color:var(--text3);margin-bottom:.6rem;line-height:1.5">Link a bank once to pull cleared transactions for any month — no PDF needed.</div><button class="btn btn-primary btn-sm" id="plaid-connect-btn" onclick="plaidConnect()"><i class="ti ti-link"></i> Connect a bank</button>`);
+    return;
+  }
+  const now = new Date();
+  const thisMonth = now.toISOString().slice(0, 7);
+  el.innerHTML = card(`${head}
+    <div style="display:flex;align-items:center;gap:.4rem;font-size:12px;margin-bottom:.6rem"><i class="ti ti-circle-check" style="color:#16a34a"></i><span>Connected${status.institution ? ' — <b>' + escHtml(status.institution) + '</b>' : ''}</span></div>
+    <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+      <div><label style="display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:.2rem">Month</label><input type="month" id="plaid-month" value="${thisMonth}" max="${thisMonth}" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:.35rem .5rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"></div>
+      <button class="btn btn-primary btn-sm" id="plaid-pull-btn" onclick="plaidPull()"><i class="ti ti-download"></i> Pull &amp; reconcile</button>
+    </div>
+    <div style="display:flex;gap:.9rem;margin-top:.6rem">
+      <button class="btn btn-sm" onclick="plaidConnect()" style="font-size:11px;padding:.25rem .5rem"><i class="ti ti-refresh"></i> Reconnect</button>
+      <button class="btn btn-sm btn-danger" onclick="plaidDisconnect()" style="font-size:11px;padding:.25rem .5rem"><i class="ti ti-unlink"></i> Disconnect</button>
+    </div>`);
+}
+// Open Plaid Link → exchange the public_token server-side → refresh the card.
+async function plaidConnect() {
+  try {
+    await loadPlaidLink();
+    const { link_token } = await plaidFetch('/plaid/link-token', { method: 'POST', body: '{}' });
+    const handler = window.Plaid.create({
+      token: link_token,
+      onSuccess: async (public_token) => {
+        try {
+          const r = await plaidFetch('/plaid/exchange', { method: 'POST', body: JSON.stringify({ public_token }) });
+          profile.plaid_institution = r.institution || 'bank';
+          showToast('Bank connected' + (r.institution ? ': ' + r.institution : ''), 'success');
+          renderPlaidBlock();
+        } catch (e) { showToast('Connect failed: ' + (e.message || ''), 'error'); }
+      },
+      onExit: (err) => { if (err) showToast('Plaid: ' + (err.display_message || err.error_message || 'closed'), 'error'); }
+    });
+    handler.open();
+  } catch (e) { showToast(e.message || 'Plaid error', 'error'); }
+}
+// Pull the selected month's cleared transactions and drop them into the reconcile
+// view. No PDF is saved — Plaid is the live source — but the month's pass/fail is
+// still recorded in the audit grid by renderReconcile → recordAudit.
+async function plaidPull() {
+  const month = (document.getElementById('plaid-month') || {}).value || '';
+  if (!/^\d{4}-\d{2}$/.test(month)) { showToast('Pick a month first.', 'error'); return; }
+  const [y, m] = month.split('-').map(Number);
+  const start = month + '-01';
+  const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+  const btn = document.getElementById('plaid-pull-btn'); const orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Pulling…';
+  const out = document.getElementById('rec-result');
+  try {
+    const data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end }) });
+    if (!(data.transactions || []).length) { out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No cleared transactions from ${escHtml(data.institution || 'the bank')} for ${month}.</div>`; renderAuditBlock(null, '', '', null); return; }
+    const stmt = {
+      account_name: data.institution || 'Bank (Plaid)',
+      period_start: start, period_end: end, statement_month: start,
+      opening_balance: null, closing_balance: null,   // Plaid doesn't give a per-month opening/closing balance
+      transactions: data.transactions, source: 'plaid'
+    };
+    const sidecars = await loadSidecars();
+    renderReconcile(stmt, null, null, fpsFromSidecars(sidecars, null), monthMapFromSidecars(sidecars));
+    refreshAllAudits(sidecars);
+  } catch (e) {
+    console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="color:#b91c1c;font-size:13px">${escHtml(e.message || 'Pull failed.')}</div>`; renderAuditBlock(null, '', '', null);
+    if (e.data && e.data.reconnect) renderPlaidBlock();
+  } finally { btn.disabled = false; btn.innerHTML = orig; }
+}
+async function plaidDisconnect() {
+  if (!confirm('Disconnect this bank? You can reconnect any time.')) return;
+  try {
+    await plaidFetch('/plaid/disconnect', { method: 'POST', body: '{}' });
+    profile.plaid_institution = null;
+    showToast('Bank disconnected');
+    renderPlaidBlock();
+  } catch (e) { showToast(e.message || 'Failed to disconnect', 'error'); }
 }
 
 // Save a statement PDF to storage under <uid>/<name>, de-duping the name.

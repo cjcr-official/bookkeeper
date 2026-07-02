@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **134** (see `version.json`).
+Current version: **213** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -60,6 +60,9 @@ Worker secrets (Cloudflare dashboard → Workers & Pages → `bookkeeper` → Se
 | `VAPID_SUBJECT` | plaintext (in wrangler.toml) | Web Push contact `mailto:` |
 | `MANUAL_KEY` | secret | gates the `/run` test endpoint |
 | `ANTHROPIC_API_KEY` | secret | bank-statement parsing (`/reconcile-extract` → Claude API) |
+| `PLAID_CLIENT_ID` | secret | Plaid bank sync (`/plaid/*` endpoints) — optional |
+| `PLAID_SECRET` | secret | Plaid bank sync — the secret for the chosen `PLAID_ENV` |
+| `PLAID_ENV` | plaintext (in wrangler.toml) | `sandbox` (default) or `production` |
 
 **Bank reconciliation:** Accounts page → "Reconcile bank statement" opens a modal
 that lazy-loads pdf.js (cdnjs) to extract the statement PDF's text client-side,
@@ -73,8 +76,43 @@ per-month audit result: `profiles.audited_months` (jsonb, keyed
 unmatched and the balance isn't wrong. The modal shows a 12-month grid of
 ✅/⚠️/· marks per account. It never touches the user's financial records.
 
+**Plaid bank sync (optional alternative to PDF upload):** the same Reconcile modal
+has a "Bank sync (Plaid)" card. "Connect a bank" lazy-loads Plaid Link
+(`cdn.plaid.com`), and the Worker mints a link token (`/plaid/link-token`),
+exchanges the returned `public_token` for a long-lived `access_token`
+(`/plaid/exchange`), and stores it **server-side only** in the `plaid_items` table
+(RLS on, no authenticated policy → only the Worker's service key can read it; the
+browser never sees the token). "Pull & reconcile" for a chosen month calls
+`/plaid/transactions`, which fetches that month's **cleared** (non-pending)
+transactions and maps them into the exact same `stmt` shape the PDF flow produces —
+**with the sign flipped** (Plaid uses +money-out / −money-in; the app's ledger
+convention is −out / +in). That `stmt` flows through `renderReconcile` unchanged, so
+matching, buckets, and the audit grid all just work. Plaid statements aren't saved
+as sidecars (Plaid is the live source, no PDF to archive) and carry `opening/closing
+balance = null` (Plaid gives no per-month opening/closing), so the balance check is
+"unknown" — a month still passes when nothing is unmatched. `PLAID_ENV=sandbox` uses
+Plaid's fake test banks (free, works immediately with the client credentials); switch
+to `production` once Plaid approves the account. `/plaid/disconnect` removes the item
+at Plaid and drops the stored token. The non-sensitive bank name is mirrored to
+`profiles.plaid_institution` for the UI.
+
 ```sql
 alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;
+-- Plaid bank sync: the (non-sensitive) linked bank's name, shown in the UI.
+alter table profiles add column if not exists plaid_institution text;
+-- Plaid access tokens live here, NOT on profiles: RLS is enabled with NO policy for
+-- authenticated users, so PostgREST returns nothing to the browser — only the Worker
+-- (service key) can read/write it. user_id is the PK so upsert-on-conflict replaces
+-- the row on reconnect.
+create table if not exists plaid_items (
+  user_id uuid primary key,
+  access_token text not null,
+  item_id text,
+  institution text,
+  updated_at timestamptz default now()
+);
+alter table plaid_items enable row level security;
+-- (intentionally no policy — service-key-only access)
 ```
 
 Cron schedule (in `wrangler.toml`): `* * * * *` (every minute) — keeps reminder

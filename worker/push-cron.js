@@ -3,10 +3,15 @@
 //   /reconcile-extract (POST) — parse a bank-statement PDF's text into structured
 //                               transactions via the Claude API (auth'd by the
 //                               caller's Supabase token)
+//   /plaid/* — bank sync via Plaid: status (GET), link-token, exchange,
+//              transactions, disconnect (all POST, auth'd by Supabase token).
+//              The Plaid access_token is stored server-side only (plaid_items).
 //   anything else → static assets (index.html, sw.js, manifest.json, version.json, icons)
 //
 // Required Worker secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY,
 // VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, MANUAL_KEY, ANTHROPIC_API_KEY.
+// Optional (bank sync): PLAID_CLIENT_ID, PLAID_SECRET secrets + PLAID_ENV var
+// ('sandbox' | 'production', defaults to sandbox).
 
 const TZ = 'America/Denver';
 const FIRE_WINDOW_MS = 30 * 60 * 1000;
@@ -21,6 +26,11 @@ export default {
       return new Response(JSON.stringify(summary, null, 2), { headers: { 'content-type': 'application/json' } });
     }
     if (url.pathname === '/reconcile-extract' && req.method === 'POST') return reconcileExtract(req, env);
+    if (url.pathname === '/plaid/status' && req.method === 'GET') return plaidStatus(req, env);
+    if (url.pathname === '/plaid/link-token' && req.method === 'POST') return plaidLinkToken(req, env);
+    if (url.pathname === '/plaid/exchange' && req.method === 'POST') return plaidExchange(req, env);
+    if (url.pathname === '/plaid/transactions' && req.method === 'POST') return plaidTransactions(req, env);
+    if (url.pathname === '/plaid/disconnect' && req.method === 'POST') return plaidDisconnect(req, env);
     if (env.ASSETS) return env.ASSETS.fetch(req);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
   }
@@ -81,6 +91,155 @@ ${text}`;
   let parsed;
   try { parsed = JSON.parse(txt); } catch { return json({ error: 'Could not read that statement. Try a clearer PDF.' }, 502); }
   return json({ ok: true, ...parsed });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Plaid bank sync. Instead of (or alongside) uploading a PDF, the user links a
+// bank via Plaid Link; the Worker exchanges the public_token for a long-lived
+// access_token (stored server-side ONLY in the plaid_items table via the service
+// key — never handed to the browser) and, on demand, pulls a month's cleared
+// transactions. Those are mapped into the SAME statement shape the reconcile view
+// already consumes (sign flipped: Plaid amounts are +out/−in), so all downstream
+// matching, buckets, and the audit grid work unchanged.
+const PLAID_HOSTS = { sandbox: 'https://sandbox.plaid.com', production: 'https://production.plaid.com' };
+function plaidHost(env) { return PLAID_HOSTS[(env.PLAID_ENV || 'sandbox').toLowerCase()] || PLAID_HOSTS.sandbox; }
+function plaidConfigured(env) { return !!(env.PLAID_CLIENT_ID && env.PLAID_SECRET); }
+const jsonResp = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { 'content-type': 'application/json' } });
+
+// Call a Plaid endpoint with the app credentials merged in. Throws on non-2xx,
+// attaching Plaid's structured error (error_code/error_message) to the Error.
+async function plaidApi(env, path, body) {
+  const r = await fetch(plaidHost(env) + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: env.PLAID_CLIENT_ID, secret: env.PLAID_SECRET, ...body })
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(data.error_message || `Plaid ${r.status}`); e.plaid = data; e.status = r.status; throw e; }
+  return data;
+}
+
+// Persist / read the per-user Plaid item (access_token, item_id, institution).
+// plaid_items has RLS enabled with NO authenticated policy, so only the Worker's
+// service key can touch it — the browser can never read the access_token.
+async function plaidStore(env, userId, row) {
+  await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?on_conflict=user_id`, {
+    method: 'POST',
+    headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({ user_id: userId, ...row, updated_at: new Date().toISOString() })
+  });
+}
+async function plaidLoad(env, userId) {
+  const rows = await supaGet(env, `plaid_items?user_id=eq.${userId}&select=access_token,item_id,institution`);
+  return rows && rows[0];
+}
+
+// Is Plaid set up, and has this user linked a bank yet? (Non-sensitive — drives UI.)
+async function plaidStatus(req, env) {
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  let item = null;
+  if (plaidConfigured(env)) { try { item = await plaidLoad(env, user.id); } catch (e) { console.error('plaid status load', e); } }
+  return jsonResp({ ok: true, configured: plaidConfigured(env), connected: !!(item && item.access_token), institution: (item && item.institution) || null });
+}
+
+// Mint a short-lived Link token so the browser can open Plaid Link.
+async function plaidLinkToken(req, env) {
+  if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured (missing PLAID_CLIENT_ID / PLAID_SECRET).' }, 500);
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  try {
+    const data = await plaidApi(env, '/link/token/create', {
+      user: { client_user_id: user.id },
+      client_name: 'Bookkeeper',
+      products: ['transactions'],
+      country_codes: ['US'],
+      language: 'en'
+    });
+    return jsonResp({ ok: true, link_token: data.link_token });
+  } catch (e) { console.error('plaid link-token', e.plaid || e); return jsonResp({ error: e.message || 'Plaid error' }, 502); }
+}
+
+// Swap the browser's public_token for a stored access_token; record the bank name.
+async function plaidExchange(req, env) {
+  if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured.' }, 500);
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  let b; try { b = await req.json(); } catch { return jsonResp({ error: 'Bad request.' }, 400); }
+  if (!b.public_token) return jsonResp({ error: 'Missing public_token.' }, 400);
+  try {
+    const ex = await plaidApi(env, '/item/public_token/exchange', { public_token: b.public_token });
+    let institution = null;
+    try {
+      const item = await plaidApi(env, '/item/get', { access_token: ex.access_token });
+      const instId = item.item && item.item.institution_id;
+      if (instId) {
+        const inst = await plaidApi(env, '/institutions/get_by_id', { institution_id: instId, country_codes: ['US'] });
+        institution = inst.institution && inst.institution.name;
+      }
+    } catch (e) { /* institution name is best-effort */ }
+    await plaidStore(env, user.id, { access_token: ex.access_token, item_id: ex.item_id, institution });
+    // Mirror the (non-sensitive) bank name onto profiles for the UI. Best-effort:
+    // silently no-ops if the plaid_institution column hasn't been added yet.
+    await supaPatch(env, `profiles?id=eq.${user.id}`, { plaid_institution: institution || 'bank' });
+    return jsonResp({ ok: true, institution });
+  } catch (e) { console.error('plaid exchange', e.plaid || e); return jsonResp({ error: e.message || 'Plaid error' }, 502); }
+}
+
+// Pull one date range of cleared transactions, mapped into the statement shape the
+// reconcile view consumes. Sign is flipped: Plaid uses +money-out / −money-in, but
+// the app's convention (matching the bank ledger) is −out / +in.
+async function plaidTransactions(req, env) {
+  if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured.' }, 500);
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  const item = await plaidLoad(env, user.id).catch(() => null);
+  if (!item || !item.access_token) return jsonResp({ error: 'No bank connected yet.' }, 400);
+  let b; try { b = await req.json(); } catch { b = {}; }
+  const start = (b.start_date || '').slice(0, 10), end = (b.end_date || '').slice(0, 10);
+  const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
+  if (!isDate(start) || !isDate(end)) return jsonResp({ error: 'Bad date range.' }, 400);
+  try {
+    let all = [], offset = 0, total = Infinity, accounts = [];
+    while (offset < total) {
+      const data = await plaidApi(env, '/transactions/get', {
+        access_token: item.access_token, start_date: start, end_date: end, options: { count: 500, offset }
+      });
+      total = data.total_transactions || 0;
+      if (data.accounts) accounts = data.accounts;
+      const batch = data.transactions || [];
+      all = all.concat(batch);
+      offset += batch.length;
+      if (!batch.length) break;
+    }
+    const transactions = all
+      .filter(t => !t.pending)   // only cleared lines reconcile against the ledger
+      .map(t => ({ date: t.date, description: t.merchant_name || t.name || 'Transaction', amount: -(Number(t.amount) || 0), balance: null }));
+    return jsonResp({ ok: true, institution: item.institution || null, transactions, accounts: accounts.map(a => ({ name: a.name, mask: a.mask, subtype: a.subtype })) });
+  } catch (e) {
+    console.error('plaid transactions', e.plaid || e);
+    const code = e.plaid && e.plaid.error_code;
+    if (code === 'PRODUCT_NOT_READY') return jsonResp({ error: 'Plaid is still preparing your transactions — try again in a minute.' }, 503);
+    if (code === 'ITEM_LOGIN_REQUIRED') return jsonResp({ error: 'Your bank needs re-authentication — reconnect the account.', reconnect: true }, 409);
+    return jsonResp({ error: e.message || 'Plaid error' }, 502);
+  }
+}
+
+// Unlink: invalidate the item at Plaid, then drop our stored token + bank name.
+async function plaidDisconnect(req, env) {
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  const item = await plaidLoad(env, user.id).catch(() => null);
+  if (item && item.access_token && plaidConfigured(env)) {
+    try { await plaidApi(env, '/item/remove', { access_token: item.access_token }); } catch (e) { console.error('plaid item/remove', e.plaid || e); }
+  }
+  try {
+    await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?user_id=eq.${user.id}`, {
+      method: 'DELETE', headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' }
+    });
+  } catch (e) { console.error('plaid_items delete', e); }
+  await supaPatch(env, `profiles?id=eq.${user.id}`, { plaid_institution: null });
+  return jsonResp({ ok: true });
 }
 
 // ──────────────────────────────────────────────────────────────────────
