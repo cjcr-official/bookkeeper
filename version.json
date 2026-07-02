@@ -1,1 +1,1 @@
-{"version":220,"note":"v220: on the Bank reconciliation tab, tap any month in the AUDIT grid to pull & reconcile that month straight from the linked bank — no need to use the month picker. Future months stay disabled."}
+{"version":221,"note":"v221: polished the Bank reconciliation top section — the connection, month picker, and controls now sit in a clean card, and the audit grid is a proper carded month strip with a legend. Includes v220's tap-a-month-to-reconcile."}
