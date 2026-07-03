@@ -841,23 +841,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- STATEMENTS (Accounts page) -->
       <div id="page-accounts" class="page">
-        <div class="rec-tabs" style="max-width:460px">
-          <button type="button" id="acct-tab-bank" class="rec-tab active" onclick="switchAcctTab('bank')"><i class="ti ti-building-bank"></i> Bank reconciliation</button>
-          <button type="button" id="acct-tab-pdf" class="rec-tab" onclick="switchAcctTab('pdf')"><i class="ti ti-file-text"></i> PDF</button>
-        </div>
-        <!-- Bank reconciliation (Plaid) — inline, no popup -->
-        <div id="acct-pane-bank">
-          <div id="rec-plaid"></div>
-        </div>
-        <!-- PDF statements — inline, no popup -->
-        <div id="acct-pane-pdf" style="display:none">
-          <div class="form-group"><label>Upload bank statement(s) (PDF)</label><input type="file" id="rec-file" accept="application/pdf,.pdf" multiple></div>
-          <button class="btn btn-primary" id="rec-run-btn" onclick="runReconcile()"><i class="ti ti-scale"></i> Read &amp; reconcile</button>
-          <div style="font-size:11px;color:var(--text3);margin:.5rem 0 1.25rem">Each PDF is saved privately to your account so you can re-open it any time from the list below. Pick several to import a batch.</div>
-          <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:.5rem 0;font-family:'JetBrains Mono',monospace">Saved statements</h3>
-          <div class="card list-card"><div id="accounts-table"></div></div>
-        </div>
-        <!-- Shared reconcile output: audit grid + matched/unmatched buckets -->
+        <!-- Bank reconciliation (Plaid) — inline -->
+        <div id="rec-plaid"></div>
+        <!-- Reconcile output: audit grid + matched/unmatched buckets -->
         <div id="rec-result" style="margin-top:1.25rem"><div id="rec-audit"></div></div>
         <h3 onclick="toggleOwnerActivity()" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"><span>Owner Activity</span><i class="ti ti-chevron-down" id="owner-activity-chevron" style="transition:transform .2s;color:var(--text3);font-size:15px"></i></h3>
         <div id="owner-activity-body">
@@ -1304,10 +1290,10 @@ let currentPage = 'dashboard';
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
 const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, settings: loadSettingsForm };
 function renderAccountsPage() {
-  renderStatementsTable(); renderOwnerTx(); renderStoreCredits();
-  // Inline reconcile lives on this page now: keep the audit grid visible and
-  // refresh the bank-sync card. Don't wipe a loaded reconcile result on a plain
-  // re-render (e.g. rotation) — only reset the result area when nothing's loaded.
+  renderOwnerTx(); renderStoreCredits();
+  // Reconciliation is inline (Plaid only): keep the audit grid visible and refresh
+  // the bank card. Don't wipe a loaded reconcile result on a plain re-render
+  // (e.g. rotation) — only reset the result area when nothing's loaded.
   if (!_recState) {
     const res = document.getElementById('rec-result');
     if (res) { res.innerHTML = '<div id="rec-audit"></div>'; renderAuditBlock(null, '', '', null); }
@@ -2008,8 +1994,8 @@ let lastInvoiceTitle = 'Invoice';
 let lastReportHTML = '';
 let lastReportTitle = 'Report';
 
-// Lazy-load the heavy PDF stack (html2canvas + jsPDF, ~500KB) only when a PDF is
-// actually built, keeping it off the app's launch path. Mirrors loadPdfJs().
+// Lazy-load the heavy PDF stack (html2canvas + jsPDF, ~500KB) only when an invoice
+// or report PDF is actually built, keeping it off the app's launch path.
 let _pdfLibsReady = null;
 function loadPdfLibs() {
   if (window.html2canvas && window.jspdf) return Promise.resolve();
@@ -3210,6 +3196,7 @@ async function deleteRecurring(id) {
 // ====== ACCOUNTS ======
 function renderAccounts() {
   const el = document.getElementById('accounts-table');
+  if (!el) return;   // chart-of-accounts table isn't mounted on the Plaid-only Statements page
   if (!cache.accounts.length) { el.innerHTML=`<div class="empty"><i class="ti ti-credit-card"></i><p>No accounts yet</p></div>`; return; }
   const types=['Bank','Accounts Receivable','Accounts Payable','Credit Card','Income','Expense','Equity','Other Asset','Other Liability'];
   const esc = escHtml;
@@ -3389,71 +3376,28 @@ function buildReportPDF() { return htmlToPDF(lastReportHTML, '#report-print-area
 function printReport() { printDocInIframe(lastReportHTML, lastReportTitle, '', printReportFallback); }
 function printReportFallback() { return openPDFBlob(buildReportPDF); }
 
-// ====== BANK RECONCILIATION ======
-// Lazy-load pdf.js (only when the user actually reconciles).
-let _pdfjsReady = null;
-function loadPdfJs() {
-  if (window.pdfjsLib) return Promise.resolve();
-  if (_pdfjsReady) return _pdfjsReady;
-  _pdfjsReady = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    s.onload = () => { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch(e){} resolve(); };
-    s.onerror = () => reject(new Error('Could not load the PDF reader.'));
-    document.head.appendChild(s);
-  });
-  return _pdfjsReady;
-}
-// Extract plain text from a PDF File, reconstructing line breaks by y-position.
-async function extractPdfText(file) {
-  await loadPdfJs();
-  const buf = await file.arrayBuffer();
-  const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-  let out = '';
-  for (let p = 1; p <= pdf.numPages; p++) {
-    const page = await pdf.getPage(p);
-    const tc = await page.getTextContent();
-    let lastY = null, line = '';
-    for (const it of tc.items) {
-      const y = it.transform[5];
-      if (lastY !== null && Math.abs(y - lastY) > 3) { out += line.trim() + '\n'; line = ''; }
-      line += it.str + ' ';
-      lastY = y;
-    }
-    out += line.trim() + '\n\n';
-  }
-  return out;
-}
-
-// Statements page: switch between the Bank reconciliation (Plaid) and PDF views,
-// both rendered INLINE on the page (no popup). The shared result area (#rec-result:
-// audit grid + matched/unmatched buckets) sits below both. Switching wipes the
-// other method's output so the two flows never bleed together; the audit grid is
-// universal, so it's kept. _recTabKeep=true lets a caller (viewStatement) switch
-// tabs without clearing the results it's about to render.
-let _recTabKeep = false;
-let _acctTab = 'bank';        // which Statements tab is showing ('bank' | 'pdf')
+// ====== BANK RECONCILIATION (Plaid only) ======
 let _plaidConnected = false;  // true once renderPlaidBlock sees a linked bank
-function switchAcctTab(which) {
-  const bank = which !== 'pdf';
-  _acctTab = bank ? 'bank' : 'pdf';
-  const pB = document.getElementById('acct-pane-bank'), pF = document.getElementById('acct-pane-pdf');
-  const tB = document.getElementById('acct-tab-bank'), tF = document.getElementById('acct-tab-pdf');
-  if (!pB || !pF) return;
-  pB.style.display = bank ? '' : 'none';
-  pF.style.display = bank ? 'none' : '';
-  if (tB) tB.classList.toggle('active', bank);
-  if (tF) tF.classList.toggle('active', !bank);
-  if (!_recTabKeep) {
-    const res = document.getElementById('rec-result');
-    if (res) { _recState = null; res.innerHTML = '<div id="rec-audit"></div>'; renderAuditBlock(null, '', '', null); }
+
+// Cross-month "ownership": the record-fps (manual matches + tight matches) that
+// OTHER reconciled months have already claimed, so one month can't steal a record
+// another month legitimately matched (e.g. a recurring same-amount charge). Sourced
+// from profiles.plaid_recon, excluding the month currently being reconciled.
+function plaidFps(excludeMonth) {
+  const manual = new Set(), owned = new Set();
+  const rec = profile.plaid_recon || {};
+  for (const mk in rec) {
+    if (mk === excludeMonth) continue;
+    const r = rec[mk] || {};
+    (r.manual_matches || []).forEach(m => (m.rFps || []).forEach(fp => manual.add(fp)));
+    (r.owned_fps || []).forEach(fp => owned.add(fp));
   }
-  if (bank) renderPlaidBlock(); else renderStatementsTable();
+  return { manual, owned };
 }
 
 // ─── Plaid bank sync ─────────────────────────────────────────────────────────
-// An alternative to uploading a PDF: link a bank once, then pull a month's cleared
-// transactions on demand. Those feed the exact same reconcile view as a statement.
+// Link a bank once, then pull a month's cleared transactions on demand and
+// reconcile them against the books. Plaid is the only reconciliation source.
 let _plaidReady = null;
 function loadPlaidLink() {
   if (window.Plaid) return Promise.resolve();
@@ -3484,12 +3428,11 @@ async function renderPlaidBlock() {
   el.innerHTML = `<div style="font-size:11.5px;color:var(--text3)">Checking bank sync…</div>`;
   let status;
   try { status = await plaidFetch('/plaid/status', { method: 'GET' }); }
-  catch (e) { el.innerHTML = ''; return; }   // stay quiet on transient errors — PDF upload still works
+  catch (e) { el.innerHTML = ''; return; }   // stay quiet on transient errors
   if (!status.configured) {
-    // Nothing to do on this tab — send the user to the method that works today.
     _plaidConnected = false;
-    el.innerHTML = `<div style="font-size:12px;color:var(--text3);line-height:1.6">Bank sync isn’t set up on this account yet. Use <b>Upload PDF</b> instead, or add your Plaid keys to enable it.</div>`;
-    switchAcctTab('pdf');
+    el.innerHTML = `<div class="card" style="padding:1.15rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">Bank sync isn’t set up on this account yet. Add your Plaid keys (<code>PLAID_CLIENT_ID</code> / <code>PLAID_SECRET</code>) to the Worker to enable reconciliation.</div>`;
+    if (!_recState) renderAuditBlock(null, '', '', null);
     return;
   }
   if (!status.connected) {
@@ -3599,13 +3542,8 @@ async function plaidPull(monthArg, force) {
       unmatch_r: saved.unmatch_r || [],
       owned_fps: saved.owned_fps || []
     };
-    const sidecars = await loadSidecars();
-    const mMap = monthMapFromSidecars(sidecars);
-    // A Plaid pull is the authoritative statement for its month, so ignore any
-    // same-month PDF sidecar's record claims — otherwise records that PDF already
-    // matched (owner draws, payments, expenses) would be held back here.
-    renderReconcile(stmt, null, null, fpsFromSidecars(sidecars, mMap[month] || null), mMap);
-    refreshAllAudits(sidecars);
+    // Defer only to OTHER months' claims (from plaid_recon); this month owns itself.
+    renderReconcile(stmt, null, null, plaidFps(month), null);
   } catch (e) {
     console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="color:#b91c1c;font-size:13px">${escHtml(e.message || 'Pull failed.')}</div>`; renderAuditBlock(null, '', '', null);
     if (e.data && e.data.reconnect) renderPlaidBlock();
@@ -3622,184 +3560,10 @@ async function plaidDisconnect() {
   } catch (e) { showToast(e.message || 'Failed to disconnect', 'error'); }
 }
 
-// Save a statement PDF to storage under <uid>/<name>, de-duping the name.
-// Returns { path } on success or { error } with the real Supabase message.
-async function saveStatement(file, name) {
-  const clean = (name||'statement.pdf').replace(/[^a-z0-9._-]+/gi,'_');
-  let path = currentUser.id + '/' + clean;
-  let up = await sb.storage.from('statements').upload(path, file, { upsert:false, contentType:'application/pdf' });
-  if (up.error && /exists|duplicate/i.test(up.error.message||'')) {   // name taken — retry with a timestamp
-    path = currentUser.id + '/' + Date.now() + '__' + clean;
-    up = await sb.storage.from('statements').upload(path, file, { upsert:false, contentType:'application/pdf' });
-  }
-  if (up.error) { console.error('statement save failed:', up.error); return { error: up.error.message || 'upload failed' }; }
-  return { path };
-}
-
-// Get the parsed statement for a PDF: reuse the cached extraction (sibling
-// <path>.json) when present so re-opening is free; otherwise call the AI once
-// and cache the result. `source` is the PDF File/Blob; `pdfPath` enables caching.
-async function getStatement(source, pdfPath) {
-  if (pdfPath) {
-    try {
-      const dl = await sb.storage.from('statements').download(pdfPath + '.json');
-      if (dl.data) return JSON.parse(await dl.data.text());
-    } catch(e) { /* no cache yet */ }
-  }
-  const text = await extractPdfText(source);
-  const { data: sess } = await sb.auth.getSession();
-  const token = sess && sess.session && sess.session.access_token;
-  if (!token) throw new Error('Please sign in again.');
-  const res = await fetch('/reconcile-extract', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-    body: JSON.stringify({ text })
-  });
-  const data = await res.json().catch(()=>({}));
-  if (!res.ok || !data.ok) throw new Error(data.error || ('Failed (' + res.status + ')'));
-  if (pdfPath) { try { await sb.storage.from('statements').upload(pdfPath + '.json', new Blob([JSON.stringify(data)], { type:'application/json' }), { upsert:true, contentType:'application/json' }); } catch(e){} }
-  return data;
-}
-
-// Upload one or more PDFs: save each, reconcile each, render the last one.
-async function runReconcile() {
-  const files = [...document.getElementById('rec-file').files];
-  if (!files.length) { showToast('Pick at least one PDF first.', 'error'); return; }
-  const btn = document.getElementById('rec-run-btn');
-  const orig = btn.innerHTML; btn.disabled = true;
-  const out = document.getElementById('rec-result');
-  let last = null, lastPath = null;
-  for (let n=0; n<files.length; n++) {
-    const f = files[n];
-    btn.innerHTML = `<span class="spinner"></span> ${n+1}/${files.length}`;
-    out.innerHTML = `<div style="color:var(--text3);font-size:13px">Reading ${escHtml(f.name)} (${n+1} of ${files.length})…</div>`;
-    try {
-      const saved = await saveStatement(f, f.name);
-      if (saved.error) showToast('Couldn’t save ' + f.name + ': ' + saved.error, 'error');
-      lastPath = saved.path || null;
-      last = await getStatement(f, lastPath);
-    } catch(e) {
-      console.error(e); showToast('Failed on ' + f.name + ': ' + (e.message||''), 'error');
-    }
-  }
-  btn.disabled = false; btn.innerHTML = orig;
-  document.getElementById('rec-file').value = '';
-  if (last) {
-    const sidecars = await loadSidecars();
-    renderReconcile(last, null, lastPath, fpsFromSidecars(sidecars, lastPath), monthMapFromSidecars(sidecars));
-    refreshAllAudits(sidecars);   // refresh pass/fail for ALL months, not just this one
-  }
-  if (files.length > 1) showToast(`Imported ${files.length} statements`, 'success');
-  renderStatementsTable();
-}
-
-// Open a saved statement in the reconcile view (uses the cached extraction).
-async function viewStatement(path) {
-  _recTabKeep = true; switchAcctTab('pdf'); _recTabKeep = false;   // saved statements are PDFs; keep the results we're about to render
-  const out = document.getElementById('rec-result');
-  out.innerHTML = '<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">Loading…</div>';
-  try {
-    const [dl, sidecars] = await Promise.all([
-      sb.storage.from('statements').download(path),
-      loadSidecars(),
-    ]);
-    if (dl.error || !dl.data) { out.innerHTML = '<div style="color:#b91c1c;font-size:13px">Could not load that statement.</div>'; return; }
-    const stmt = await getStatement(dl.data, path);
-    renderReconcile(stmt, null, path, fpsFromSidecars(sidecars, path), monthMapFromSidecars(sidecars));
-    refreshAllAudits(sidecars);   // refresh pass/fail for ALL months, not just this one
-  } catch(e) { console.error(e); out.innerHTML = `<div style="color:#b91c1c;font-size:13px">${escHtml(e.message||'Failed to read that statement.')}</div>`; }
-}
-
-// Jump to another month's statement from the audit grid chip.
-function jumpToMonth(month) {
-  const s = _recState; if (!s || !s.monthMap) return;
-  const path = s.monthMap[month];
-  if (!path) { showToast('No statement saved for ' + month, 'error'); return; }
-  if (path === s.path) return;
-  viewStatement(path);
-}
-
-// Download every sidecar JSON once: [{ pdfPath, json }]. Opening a statement needs
-// both the cross-month fingerprint set AND the month→pdf map, so derive both from a
-// single pass instead of listing + downloading every sidecar twice.
-async function loadSidecars() {
-  const out = [];
-  try {
-    const { data } = await sb.storage.from('statements').list(currentUser.id, { limit: 500 });
-    if (!data) return out;
-    const sidecars = data.filter(f => f && /\.pdf\.json$/i.test(f.name||''));
-    await Promise.all(sidecars.map(async f => {
-      const pdfPath = (currentUser.id + '/' + f.name).replace(/\.json$/i, '');
-      try {
-        const dl = await sb.storage.from('statements').download(currentUser.id + '/' + f.name);
-        if (!dl.data) return;
-        out.push({ pdfPath, json: JSON.parse(await dl.data.text()) });
-      } catch(e) { /* ignore individual */ }
-    }));
-  } catch(e) { console.error('loadSidecars failed', e); }
-  return out;
-}
-
-// Build a { 'YYYY-MM' → pdfPath } map from loaded sidecars (resolved month per
-// statement). Lets the audit grid chips jump to whatever statement covers a month.
-function monthMapFromSidecars(sidecars) {
-  const map = {};
-  (sidecars||[]).forEach(({ pdfPath, json }) => {
-    let month = json.statement_month;
-    if (!month) {
-      const ds = (json.transactions||[]).map(t=>t.date).filter(Boolean).sort();
-      if (ds.length) month = ds[Math.floor(ds.length/2)].slice(0,7);
-      else month = (json.period_start||'').slice(0,7) || (json.period_end||'').slice(0,7);
-    }
-    if (month) map[month] = pdfPath;
-  });
-  return map;
-}
-
-// Build the record fingerprints claimed in OTHER statements, split by authority:
-//   manual = deliberate manual_matches (block everywhere)
-//   owned  = records the other statement TIGHT-matched (±5d); only these suppress
-//            this statement's loose/combo passes + cross-month search.
-// excludePath skips the statement currently being rendered. The legacy
-// auto_matched_fps field is intentionally NOT read — it included loose grabs and
-// caused records to be stolen from the month that owns them.
-function fpsFromSidecars(sidecars, excludePath) {
-  const manual = new Set(), owned = new Set();
-  (sidecars||[]).forEach(({ pdfPath, json }) => {
-    if (excludePath && pdfPath === excludePath) return;
-    (json.manual_matches||[]).forEach(m => (m.rFps||[]).forEach(fp => manual.add(fp)));
-    (json.owned_fps||[]).forEach(fp => owned.add(fp));
-  });
-  return { manual, owned };
-}
-
-// Save the current statement's cached extraction (sidecar JSON) after a user edit.
-// First try upsert (works if the bucket policy allows update). If that fails because
-// the bucket policy only permits insert/select/delete, fall back to delete-then-insert.
+// Persist the current month's reconcile edits after a user action. Plaid is the
+// only source now, so this always writes to plaid_recon (the `path` arg is vestigial).
 async function saveStmtSidecar(stmt, path) {
-  // Plaid statements have no PDF/sidecar (path is null) — their transactions are
-  // re-pulled live each time, so we persist just the user's manual edits (matches,
-  // unmatches, month override) per month on the profile, keyed by YYYY-MM.
-  if (!path && stmt && stmt.source === 'plaid') return savePlaidRecon(stmt);
-  if (!path) return;
-  const jsonPath = path + '.json';
-  const body = new Blob([JSON.stringify(stmt)], { type:'application/json' });
-  let r;
-  try {
-    r = await sb.storage.from('statements').upload(jsonPath, body, { upsert:true, contentType:'application/json' });
-    if (r && r.error) {
-      await sb.storage.from('statements').remove([jsonPath]).catch(()=>{});
-      r = await sb.storage.from('statements').upload(jsonPath, body, { upsert:false, contentType:'application/json' });
-    }
-  } catch(e) {
-    console.error('sidecar save crashed', e);
-    showToast('Save failed: ' + (e.message||e), 'error');
-    return;
-  }
-  if (r && r.error) {
-    console.error('sidecar save failed', r.error);
-    showToast('Save failed: ' + (r.error.message||'unknown'), 'error');
-  }
+  return savePlaidRecon(stmt);
 }
 
 // Persist a Plaid month's manual reconcile edits on profiles.plaid_recon (jsonb,
@@ -4321,7 +4085,6 @@ async function clearStmtMonthOverride() {
   delete s.stmt.statement_month;
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
-  renderStatementsTable();
 }
 
 // Override the parsed statement month (user correction) and re-record audit.
@@ -4334,73 +4097,8 @@ async function changeStmtMonth(newM) {
     delete profile.audited_months[key][s.monthKey];
   }
   s.stmt.statement_month = newM;
-  await saveStmtSidecar(s.stmt, s.path);   // shares the upsert→delete/insert fallback
+  await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
-  renderStatementsTable();
-}
-
-// Open the raw PDF in a new tab via a short-lived signed URL.
-async function viewStatementPdf(path) {
-  const { data, error } = await sb.storage.from('statements').createSignedUrl(path, 3600);
-  if (error || !data) { showToast('Could not open the PDF.', 'error'); return; }
-  window.open(data.signedUrl, '_blank');
-}
-
-async function deleteStatement(path) {
-  if (!confirm('Delete this saved statement? (Your records aren’t affected.)')) return;
-  await sb.storage.from('statements').remove([path, path + '.json']);
-  showToast('Statement deleted');
-  renderStatementsTable();
-}
-
-// The "Bank Statements" page: list saved PDFs like the app's other tables.
-async function renderStatementsTable() {
-  const el = document.getElementById('accounts-table'); if (!el) return;
-  el.innerHTML = '<div style="color:var(--text3);font-size:13px;padding:.5rem .25rem">Loading…</div>';
-  let files = [];
-  try {
-    const { data, error } = await sb.storage.from('statements').list(currentUser.id, { limit: 500, sortBy: { column: 'created_at', order: 'desc' } });
-    if (error) throw error;
-    files = (data||[]).filter(f => f.name && /\.pdf$/i.test(f.name));
-  } catch(e) {
-    el.innerHTML = `<div class="empty"><i class="ti ti-file-dollar"></i><p>Statement storage isn’t set up yet</p></div>`; return;
-  }
-  if (!files.length) { el.innerHTML = `<div class="empty"><i class="ti ti-file-dollar"></i><p>No statements yet</p><p style="font-size:12px;color:var(--text3)">Tap “Reconcile bank statement” to add one.</p></div>`; return; }
-  const esc = escHtml;
-  const rows = files.map(f => ({ name:f.name, path:currentUser.id+'/'+f.name, when:f.created_at?fmtDate(f.created_at.slice(0,10)):'' }));
-  // Look up each statement's period (from its cached extraction sidecar) in parallel,
-  // then sort by it desc so months read chronologically regardless of upload order.
-  const periods = await Promise.all(rows.map(async r => {
-    try {
-      const dl = await sb.storage.from('statements').download(r.path + '.json');
-      if (!dl.data) return '';
-      const j = JSON.parse(await dl.data.text());
-      if (j.statement_month) return j.statement_month;
-      // Same heuristic as renderReconcile: median transaction date beats period_end
-      // (banks like Glacier label Jan's statement "1/01 thru 2/01" — period_end is Feb).
-      const ds = (j.transactions||[]).map(t=>t.date).filter(Boolean).sort();
-      if (ds.length) return ds[Math.floor(ds.length/2)].slice(0,7);
-      return (j.period_start||'').slice(0,7) || (j.period_end||'').slice(0,7) || '';
-    } catch(e) { return ''; }
-  }));
-  rows.forEach((r,i)=>r.period = periods[i]);
-  rows.sort((a,b)=> (b.period||'').localeCompare(a.period||'') || (b.when||'').localeCompare(a.when||''));
-  const perLabel = p => p ? parseDate(p+'-01').toLocaleDateString(undefined,{month:'short',year:'numeric'}) : '—';
-  if (window.innerWidth <= 768) {
-    el.innerHTML = rows.map(r=>`
-      <div class="m-card" onclick="viewStatement('${r.path}')">
-        <div class="m-card-main">
-          <div class="m-card-title" style="word-break:break-all">${esc(r.name)}</div>
-          <div class="m-card-meta">${perLabel(r.period)} · uploaded ${r.when}</div>
-        </div>
-        <div class="m-card-right"><div class="m-card-actions">
-          <button class="btn btn-sm" onclick="event.stopPropagation();viewStatementPdf('${r.path}')" title="View PDF"><i class="ti ti-file-text"></i></button>
-          <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteStatement('${r.path}')"><i class="ti ti-trash"></i></button>
-        </div></div>
-      </div>`).join('');
-  } else {
-    el.innerHTML = `<table><thead><tr><th>Period</th><th>Statement</th><th>Uploaded</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr style="cursor:pointer" onclick="viewStatement('${r.path}')"><td style="font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--accent);white-space:nowrap">${perLabel(r.period)}</td><td style="font-weight:500;word-break:break-all">${esc(r.name)}</td><td>${r.when}</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-sm" style="margin-right:4px" onclick="viewStatement('${r.path}')" title="Reconcile / view transactions"><i class="ti ti-scale"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="viewStatementPdf('${r.path}')" title="View PDF"><i class="ti ti-file-text"></i></button><button class="btn btn-sm btn-danger" onclick="deleteStatement('${r.path}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
-  }
 }
 
 // Pure matching core (no DOM) shared by the reconcile VIEW and the audit refresh.
@@ -4614,8 +4312,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const oldKey = (stmt.owned_fps || []).slice().sort().join(',');
   if (newKey !== oldKey) {
     stmt.owned_fps = tightFps;
-    delete stmt.auto_matched_fps;   // retire the old, over-eager field
-    if (path) saveStmtSidecar(stmt, path);   // fire-and-forget
+    saveStmtSidecar(stmt, path);   // fire-and-forget (persists to plaid_recon)
   }
   // Month picker is now optional — only shown if the user manually overrode it
   // before (rare). The median-transaction-date heuristic gets it right normally.
@@ -4734,64 +4431,27 @@ async function recordAudit(acctId, monthKey, passed, monthLabel) {
   if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
 }
 
-// Re-evaluate pass/fail for EVERY saved statement against the current books, so the
-// audit grid is right across all months — not just the one that's open. Read-only
-// on the sidecars; the currently-open statement is left to recordAudit (above).
-// Persists profile.audited_months once if anything changed, then repaints the grid.
-async function refreshAllAudits(sidecars) {
-  if (!Array.isArray(sidecars) || !sidecars.length) return;
-  if (!profile.audited_months || typeof profile.audited_months !== 'object') profile.audited_months = {};
-  const key = '_';
-  const byAcct = profile.audited_months[key] || (profile.audited_months[key] = {});
-  const curPath = _recState && _recState.path;
-  let changed = false;
-  const openMonth = _recState && _recState.monthKey;   // the live reconcile owns its month
-  for (const { pdfPath, json } of sidecars) {
-    if (pdfPath === curPath) continue;   // the open statement is handled by recordAudit
-    try {
-      const comp = reconcileMatch(json, null, fpsFromSidecars(sidecars, pdfPath));
-      if (!comp.txns.length || !comp.monthKey) continue;
-      if (openMonth && comp.monthKey === openMonth) continue;   // don't clobber the open (e.g. Plaid) month's result
-      const prev = byAcct[comp.monthKey];
-      if (!prev || prev.passed !== !!comp.passed) {
-        byAcct[comp.monthKey] = { passed: !!comp.passed, at: new Date().toISOString() };
-        changed = true;
-      }
-    } catch(e) { console.error('audit refresh failed for', pdfPath, e); }
-  }
-  // Repaint the grid, keeping the open statement's month + result in the header.
-  if (_recState && _recState.monthKey) {
-    const cur = byAcct[_recState.monthKey];
-    const lbl = parseDate(_recState.monthKey+'-01').toLocaleDateString(undefined,{month:'long',year:'numeric'});
-    renderAuditBlock(_recState.acctId, _recState.monthKey, lbl, cur ? cur.passed : null);
-  }
-  if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
-}
-
 // Year grid of audit marks for the selected account (✅ pass · ⚠️ needs review · · not yet).
 function renderAuditBlock(acctId, monthKey, monthLabel, passed) {
   const el = document.getElementById('rec-audit'); if (!el) return;
   const byAcct = ((profile.audited_months||{})[acctId||'_']) || {};
   const yr = (monthKey || today()).slice(0,4);
   const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const monthMap = (_recState && _recState.monthMap) || {};
   const curMonth = today().slice(0,7);   // don't offer to pull future months
   const chips = names.map((nm,idx)=>{
     const k = yr + '-' + String(idx+1).padStart(2,'0');
     const rec = byAcct[k];
     const cur = k===monthKey;
-    const hasStmt = !!monthMap[k];
-    // Bank tab + linked bank → tap any month up to today to pull & reconcile it.
-    // PDF tab → tap a month that has a saved statement to reopen it.
-    const bankPull = _acctTab === 'bank' && _plaidConnected && k <= curMonth;
-    const click = bankPull ? ` onclick="plaidPullMonth('${k}')"` : (hasStmt && !cur ? ` onclick="jumpToMonth('${k}')"` : '');
-    const clickable = bankPull || (hasStmt && !cur);
-    const dim = !clickable && !hasStmt;   // future months / nothing to do → faded
+    // With a linked bank, tap any month up to today to pull & reconcile it.
+    const bankPull = _plaidConnected && k <= curMonth;
+    const click = bankPull ? ` onclick="plaidPullMonth('${k}')"` : '';
+    const clickable = bankPull;
+    const dim = !clickable;   // future months → faded
     // Small status dot: filled green = passed, amber = needs review, hollow = not yet.
     const dot = rec
       ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${rec.passed?'#16a34a':'#d97706'}"></span>`
       : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;border:1.5px solid var(--border)"></span>`;
-    const tip = bankPull ? `${nm} ${yr} — tap to reconcile` : `${nm} ${yr}${hasStmt?(cur?' — current':' — open statement'):''}`;
+    const tip = bankPull ? `${nm} ${yr} — tap to reconcile` : `${nm} ${yr}`;
     return `<div title="${tip}"${click} style="text-align:center;padding:.45rem .1rem;border-radius:9px;background:${cur?'var(--accent-bg)':'var(--bg2)'};${cur?'box-shadow:inset 0 0 0 1.5px var(--accent);':''}${clickable?'cursor:pointer;':''}${dim?'opacity:.4;':''}"><div style="color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace;margin-bottom:5px">${nm}</div><div style="display:flex;justify-content:center;align-items:center;height:9px">${dot}</div></div>`;
   }).join('');
   const head = monthKey ? `<div style="font-size:13px;margin-bottom:.5rem;color:var(--text2)">${escHtml(monthLabel||monthKey)} · <span style="font-weight:600;color:${passed?'#16a34a':'#d97706'}">${passed?'Passed':'Needs review'}</span></div>` : '';
