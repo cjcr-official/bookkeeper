@@ -3379,22 +3379,6 @@ function printReportFallback() { return openPDFBlob(buildReportPDF); }
 // ====== BANK RECONCILIATION (Plaid only) ======
 let _plaidConnected = false;  // true once renderPlaidBlock sees a linked bank
 
-// Cross-month "ownership": the record-fps (manual matches + tight matches) that
-// OTHER reconciled months have already claimed, so one month can't steal a record
-// another month legitimately matched (e.g. a recurring same-amount charge). Sourced
-// from profiles.plaid_recon, excluding the month currently being reconciled.
-function plaidFps(excludeMonth) {
-  const manual = new Set(), owned = new Set();
-  const rec = profile.plaid_recon || {};
-  for (const mk in rec) {
-    if (mk === excludeMonth) continue;
-    const r = rec[mk] || {};
-    (r.manual_matches || []).forEach(m => (m.rFps || []).forEach(fp => manual.add(fp)));
-    (r.owned_fps || []).forEach(fp => owned.add(fp));
-  }
-  return { manual, owned };
-}
-
 // ─── Plaid bank sync ─────────────────────────────────────────────────────────
 // Link a bank once, then pull a month's cleared transactions on demand and
 // reconcile them against the books. Plaid is the only reconciliation source.
@@ -3542,8 +3526,7 @@ async function plaidPull(monthArg, force) {
       unmatch_r: saved.unmatch_r || [],
       owned_fps: saved.owned_fps || []
     };
-    // Defer only to OTHER months' claims (from plaid_recon); this month owns itself.
-    renderReconcile(stmt, null, null, plaidFps(month), null);
+    renderReconcile(stmt, null, null, {}, null);
   } catch (e) {
     console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="color:#b91c1c;font-size:13px">${escHtml(e.message || 'Pull failed.')}</div>`; renderAuditBlock(null, '', '', null);
     if (e.data && e.data.reconnect) renderPlaidBlock();
@@ -4075,6 +4058,21 @@ function refreshReconcileIfOpen() {
   }
 }
 
+// Wipe this month's saved manual matches/unmatches and re-run the auto-matcher
+// from scratch — a clean-slate escape hatch if the saved edits are stale/wrong.
+async function resetMonthMatches() {
+  const s = _recState; if (!s) return;
+  if (!confirm('Clear your manual matches for this month and re-auto-match from scratch?')) return;
+  const month = (s.stmt.statement_month || '').slice(0, 7);
+  s.stmt.manual_matches = []; s.stmt.unmatch_t = []; s.stmt.unmatch_r = []; s.stmt.owned_fps = [];
+  if (month && profile.plaid_recon && profile.plaid_recon[month]) {
+    delete profile.plaid_recon[month];
+    try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); }
+  }
+  renderReconcile(s.stmt, s.acctId, s.path);
+  showToast('Re-matched from scratch');
+}
+
 // Clear a previously-set manual month override and fall back to auto-detect.
 async function clearStmtMonthOverride() {
   const s = _recState; if (!s) return;
@@ -4171,43 +4169,34 @@ function reconcileMatch(stmt, acctId, gFps) {
     matched.push({ tIdxs, rIdxs, manualIdx: mi });
   });
 
-  // Records OTHER statements have already claimed, split by authority:
-  //   • MANUAL matches are deliberate — block them everywhere (mark used now).
-  //   • OWNED = records another statement matched TIGHTLY (±5 days, one-to-one).
-  //     A tight match is reliable proof that statement owns the record, so this
-  //     statement's LOOSE/combo passes (and the cross-month search) won't grab it
-  //     — that's what stops a recurring same-amount charge (e.g. $14.99 monthly
-  //     Amazon Prime) or an owner contribution from being stolen by an adjacent
-  //     month. The TIGHT pass below is NOT suppressed: every statement can always
-  //     tight-match its own record, regardless of the AI's period guess (which is
-  //     why this replaces the old, fragile in-period test).
-  const gManual = (gFps && gFps.manual) || new Set();
-  const gOwned = (gFps && gFps.owned) || new Set();
-  recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
-  const ownedElsewhere = i => gOwned.has(recs[i].fp);
-  const tightFps = [];   // records THIS render claimed via a ±5-day one-to-one match
+  // Cross-statement ownership is retired (it was fragile and over-blocked). Plaid
+  // reconciles one month at a time; a record is scoped to the month it clears in by
+  // a date window instead — simpler and can't spuriously suppress a match.
+  const gManual = new Set(), gOwned = new Set();   // kept empty for return-shape compat
+  const tightFps = [];
 
-  // Passes 1–2: one-to-one. Tight (±5 days) first, then a loose window (±45
-  // days) so a payment recorded in a different month than the bank cleared it
-  // still matches. Loose pass picks the closest date.
-  for (const win of [5, 45]) {
-    const loose = win > 5;   // only the loose pass defers to another month's tight ownership
+  // Auto-match window: a record only auto-matches a bank line when its recorded date
+  // is within ~18 days of the statement period, so an unrelated month can't grab it.
+  const shiftDate = (d, days) => { const x = parseDate(d); x.setDate(x.getDate() + days); return x.toISOString().slice(0,10); };
+  const winStart = periodStart ? shiftDate(periodStart, -18) : null;
+  const winEnd   = periodEnd   ? shiftDate(periodEnd,   +18) : null;
+  const inWin = d => !d || ((!winStart || d >= winStart) && (!winEnd || d <= winEnd));
+
+  // Passes 1–2: one-to-one by amount (±$0.01), closest date wins. Tight (±7 days)
+  // first, then wider (±18) for records posted a bit off from when they cleared.
+  for (const win of [7, 18]) {
     for (let ti=0; ti<txns.length; ti++) {
       if (usedT[ti] || blockedT.has(ti)) continue;
       let best=-1, bestD=Infinity;
       for (let ri=0; ri<recs.length; ri++) {
-        if (usedR[ri] || blockedR.has(recs[ri].fp) || !close(txns[ti].amount, recs[ri].amount)) continue;
-        if (loose && ownedElsewhere(ri)) continue;
+        if (usedR[ri] || blockedR.has(recs[ri].fp) || !inWin(recs[ri].date) || !close(txns[ti].amount, recs[ri].amount)) continue;
         if (txns[ti].date && recs[ri].date) {
           const d = dayDiff(txns[ti].date, recs[ri].date);
           if (d > win) continue;
           if (d < bestD) { bestD = d; best = ri; }
         } else if (best < 0) { best = ri; bestD = win; }
       }
-      if (best>=0) {
-        usedT[ti]=true; usedR[best]=true; matched.push({ tIdxs:[ti], rIdxs:[best] });
-        if (!loose && recs[best].fp) tightFps.push(recs[best].fp);   // ±5-day match = ownership
-      }
+      if (best>=0) { usedT[ti]=true; usedR[best]=true; matched.push({ tIdxs:[ti], rIdxs:[best] }); }
     }
   }
 
@@ -4235,8 +4224,7 @@ function reconcileMatch(stmt, acctId, gFps) {
     const t = txns[ti];
     const pool = [];
     for (let ri=0; ri<recs.length; ri++) {
-      if (usedR[ri] || blockedR.has(recs[ri].fp) || ownedElsewhere(ri) || Math.sign(recs[ri].amount)!==Math.sign(t.amount)) continue;
-      if (t.date && recs[ri].date && dayDiff(t.date, recs[ri].date) > 45) continue;
+      if (usedR[ri] || blockedR.has(recs[ri].fp) || !inWin(recs[ri].date) || Math.sign(recs[ri].amount)!==Math.sign(t.amount)) continue;
       pool.push({ idx:ri, amount:recs[ri].amount });
     }
     const combo = findCombo(pool, t.amount, 4);
@@ -4244,12 +4232,11 @@ function reconcileMatch(stmt, acctId, gFps) {
   }
   // Pass 4: the reverse — one record = several bank lines.
   for (let ri=0; ri<recs.length; ri++) {
-    if (usedR[ri] || blockedR.has(recs[ri].fp) || ownedElsewhere(ri)) continue;
+    if (usedR[ri] || blockedR.has(recs[ri].fp) || !inWin(recs[ri].date)) continue;
     const r = recs[ri];
     const pool = [];
     for (let ti=0; ti<txns.length; ti++) {
       if (usedT[ti] || blockedT.has(ti) || Math.sign(txns[ti].amount)!==Math.sign(r.amount)) continue;
-      if (r.date && txns[ti].date && dayDiff(r.date, txns[ti].date) > 45) continue;
       pool.push({ idx:ti, amount:txns[ti].amount });
     }
     const combo = findCombo(pool, r.amount, 4);
@@ -4302,18 +4289,8 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const comp = reconcileMatch(stmt, acctId, gFps);
   if (!comp.txns.length) { out.innerHTML = '<div style="color:var(--text3);font-size:13px">No transactions found in that statement.</div>'; return; }
   const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned } = comp;
-  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs, globalMatchedFps: { manual: gManual, owned: gOwned }, monthMap: monthMap || (_recState && _recState.monthMap) || {} };
+  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs };
 
-  // Persist the fps this statement TIGHT-matched (±5 days), so other statements'
-  // loose passes + cross-month search defer to this ownership. Only tight matches
-  // count — a loose match is too weak to claim a record away from another month.
-  // Write only when the set changes (avoids spamming saves on internal re-renders).
-  const newKey = tightFps.slice().sort().join(',');
-  const oldKey = (stmt.owned_fps || []).slice().sort().join(',');
-  if (newKey !== oldKey) {
-    stmt.owned_fps = tightFps;
-    saveStmtSidecar(stmt, path);   // fire-and-forget (persists to plaid_recon)
-  }
   // Month picker is now optional — only shown if the user manually overrode it
   // before (rare). The median-transaction-date heuristic gets it right normally.
   const monthPicker = stmt.statement_month ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
@@ -4407,7 +4384,10 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <div id="rec-search-results"></div>
     </div>
     <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">Matched <span style="color:var(--text3);font-weight:600">${matched.length}</span></summary><div style="margin-top:.3rem">${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>
-    <div style="font-size:10.5px;color:var(--text3);margin-top:.9rem;line-height:1.5">Read by AI from the PDF — double-check anything important. Only the month’s audit check is saved; your records aren’t changed.</div>`;
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
+      <div style="font-size:10.5px;color:var(--text3);line-height:1.5;flex:1;min-width:180px">Auto-matched by amount + date. Only the month’s audit check is saved; your records aren’t changed.</div>
+      <button class="btn btn-sm" onclick="resetMonthMatches()" style="font-size:11px"><i class="ti ti-refresh"></i> Reset this month</button>
+    </div>`;
   recordAudit(acctId, monthKey, passed, monthLabel);
 }
 
