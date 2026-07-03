@@ -59,27 +59,27 @@ Worker secrets (Cloudflare dashboard → Workers & Pages → `bookkeeper` → Se
 | `VAPID_PRIVATE_KEY` | secret | Web Push signing |
 | `VAPID_SUBJECT` | plaintext (in wrangler.toml) | Web Push contact `mailto:` |
 | `MANUAL_KEY` | secret | gates the `/run` test endpoint |
-| `ANTHROPIC_API_KEY` | secret | bank-statement parsing (`/reconcile-extract` → Claude API) |
+| `ANTHROPIC_API_KEY` | secret | no longer used (PDF statement parsing was removed); safe to drop |
 | `PLAID_CLIENT_ID` | secret | Plaid bank sync (`/plaid/*` endpoints) — optional |
 | `PLAID_SECRET` | secret | Plaid bank sync — the secret for the chosen `PLAID_ENV` |
 | `PLAID_ENV` | plaintext (in wrangler.toml) | `sandbox` (default) or `production` |
 
-**Bank reconciliation:** the Statements (Accounts) page has two inline tabs —
-**Bank reconciliation** (Plaid bank sync) and **PDF** — rendered directly on the
-page (no modal). The PDF tab lazy-loads pdf.js (cdnjs) to extract the statement
-PDF's text client-side,
-POSTs it to the Worker `/reconcile-extract` (gated by the caller's Supabase
-token), which calls the Claude API (`claude-haiku-4-5`) to return structured
-transactions as JSON. The client then matches them against recorded expenses +
-invoice payments (amount ±$0.01, date ±5 days) and shows matched / in-records-only
-/ on-statement-only buckets plus a balance check. The only thing it writes is a
-per-month audit result: `profiles.audited_months` (jsonb, keyed
+**Bank reconciliation (Plaid only):** reconciliation happens **inline** on the
+Statements (Accounts) page — no modal, no PDF upload (the PDF/pdf.js/
+`/reconcile-extract`/Claude flow was removed; Plaid is the single source). The
+client pulls a month's transactions from the bank, matches them against recorded
+expenses + invoice payments + owner activity + gift cards (amount ±$0.01, date
+window), and shows matched / in-records-only / on-statement-only buckets. It writes
+a per-month audit result: `profiles.audited_months` (jsonb, keyed
 `{accountId: {"YYYY-MM": {passed, at}}}`) — a month "passes" when nothing is
-unmatched and the balance isn't wrong. The modal shows a 12-month grid of
-✅/⚠️/· marks per account. It never touches the user's financial records.
+unmatched. The page shows a 12-month grid of ✅/⚠️/· marks; **tap a month to pull &
+reconcile it.** Manual matches/unmatches persist per month in `profiles.plaid_recon`
+(there's no PDF sidecar). Cross-month "ownership" (so a record isn't matched in two
+months) is derived from `plaid_recon` via `plaidFps(excludeMonth)`. It never touches
+the user's financial records.
 
-**Plaid bank sync (optional alternative to PDF upload):** the Bank reconciliation
-tab hosts the Plaid card (`#rec-plaid`). "Connect a bank" lazy-loads Plaid Link
+**Plaid bank sync:** the reconcile card (`#rec-plaid`) sits directly on the
+page. "Connect a bank" lazy-loads Plaid Link
 (`cdn.plaid.com`), and the Worker mints a link token (`/plaid/link-token`),
 exchanges the returned `public_token` for a long-lived `access_token`
 (`/plaid/exchange`), and stores it **server-side only** in the `plaid_items` table

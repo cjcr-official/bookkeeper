@@ -1,21 +1,17 @@
 // Bookkeeper Worker.
 //   /run?key=... — push reminder cron trigger (per-job + recurring, every minute)
-//   /reconcile-extract (POST) — parse a bank-statement PDF's text into structured
-//                               transactions via the Claude API (auth'd by the
-//                               caller's Supabase token)
-//   /plaid/* — bank sync via Plaid: status (GET), link-token, exchange,
+//   /plaid/* — bank reconciliation via Plaid: status (GET), link-token, exchange,
 //              transactions, disconnect (all POST, auth'd by Supabase token).
 //              The Plaid access_token is stored server-side only (plaid_items).
 //   anything else → static assets (index.html, sw.js, manifest.json, version.json, icons)
 //
 // Required Worker secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY,
-// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, MANUAL_KEY, ANTHROPIC_API_KEY.
-// Optional (bank sync): PLAID_CLIENT_ID, PLAID_SECRET secrets + PLAID_ENV var
+// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, MANUAL_KEY.
+// Bank reconciliation (Plaid): PLAID_CLIENT_ID, PLAID_SECRET secrets + PLAID_ENV var
 // ('sandbox' | 'production', defaults to sandbox).
 
 const TZ = 'America/Denver';
 const FIRE_WINDOW_MS = 30 * 60 * 1000;
-const RECONCILE_MODEL = 'claude-haiku-4-5';   // cheap, fine for structured extraction
 
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(Promise.all([runReminders(env), runRecurringReminders(env)])); },
@@ -25,7 +21,6 @@ export default {
       const summary = { jobs: await runReminders(env), recurring: await runRecurringReminders(env) };
       return new Response(JSON.stringify(summary, null, 2), { headers: { 'content-type': 'application/json' } });
     }
-    if (url.pathname === '/reconcile-extract' && req.method === 'POST') return reconcileExtract(req, env);
     if (url.pathname === '/plaid/status' && req.method === 'GET') return plaidStatus(req, env);
     if (url.pathname === '/plaid/link-token' && req.method === 'POST') return plaidLinkToken(req, env);
     if (url.pathname === '/plaid/exchange' && req.method === 'POST') return plaidExchange(req, env);
@@ -50,51 +45,7 @@ async function authUser(req, env) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Parse bank-statement text into structured transactions via the Claude API.
-async function reconcileExtract(req, env) {
-  const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { 'content-type': 'application/json' } });
-  if (!env.ANTHROPIC_API_KEY) return json({ error: 'Statement reading isn’t configured (missing ANTHROPIC_API_KEY).' }, 500);
-  const user = await authUser(req, env);
-  if (!user) return json({ error: 'Session expired — sign in again.' }, 401);
-
-  let b; try { b = await req.json(); } catch { return json({ error: 'Bad request.' }, 400); }
-  const text = (b.text || '').toString().slice(0, 120000);   // ~30k tokens cap
-  if (text.trim().length < 20) return json({ error: 'No readable text found in that PDF.' }, 400);
-
-  const prompt =
-`You are a bank-statement parser. Extract every transaction from the statement text below.
-Return ONLY a JSON object (no markdown, no commentary) of this exact shape:
-{"account_name": string|null, "period_start": "YYYY-MM-DD"|null, "period_end": "YYYY-MM-DD"|null, "opening_balance": number|null, "closing_balance": number|null, "transactions": [{"date":"YYYY-MM-DD","description": string, "amount": number, "balance": number|null}]}
-Rules:
-- amount is NEGATIVE for money out (debits, withdrawals, payments, fees) and POSITIVE for money in (deposits, credits).
-- Infer the full year for each date from the statement period.
-- Include only real transactions; skip summary, subtotal, and running-total-only lines.
-- If a value is unknown, use null.
-
-STATEMENT TEXT:
-${text}`;
-
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: RECONCILE_MODEL, max_tokens: 8000, messages: [{ role: 'user', content: prompt }] })
-  });
-  if (!r.ok) {
-    const d = await r.text().catch(() => '');
-    console.error('anthropic error', r.status, d);
-    return json({ error: `Statement reader error (${r.status}).` }, 502);
-  }
-  const data = await r.json();
-  let txt = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
-  const m = txt.match(/\{[\s\S]*\}/);              // tolerate stray prose/code fences
-  if (m) txt = m[0];
-  let parsed;
-  try { parsed = JSON.parse(txt); } catch { return json({ error: 'Could not read that statement. Try a clearer PDF.' }, 502); }
-  return json({ ok: true, ...parsed });
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Plaid bank sync. Instead of (or alongside) uploading a PDF, the user links a
+// Plaid bank reconciliation. The user links a
 // bank via Plaid Link; the Worker exchanges the public_token for a long-lived
 // access_token (stored server-side ONLY in the plaid_items table via the service
 // key — never handed to the browser) and, on demand, pulls a month's cleared
