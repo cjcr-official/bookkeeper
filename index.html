@@ -4207,11 +4207,11 @@ async function changeStmtMonth(newM) {
 // Compares the statement's transactions against recorded expenses + invoice
 // payments + owner activity + gift cards, by amount (±$0.01) and date, and returns
 // the matched/unmatched buckets, balance check, resolved month, and pass/fail.
-// gFps = { manual, owned } record-fp sets claimed in OTHER statements. Manual claims
-// block everywhere; owned (tight ±5-day matches) only block this statement's
-// loose/combo passes, so the month that tight-matches a record keeps it while still
-// letting a genuine cross-month record match where it belongs.
-function reconcileMatch(stmt, acctId, gFps) {
+// Records manually matched in ANOTHER month (saved in profiles.plaid_recon) are
+// excluded from this month's pool, lists, and cross-month search, so one record
+// can never be claimed by two months. Only manual claims persist across months;
+// auto-matches are re-derived per pull and already date-scoped.
+function reconcileMatch(stmt, acctId) {
   const txns = (stmt.transactions||[]).map(t=>({ ...t, amount: parseFloat(t.amount)||0 }));
   const dates = txns.map(t=>t.date).filter(Boolean).sort();
   const periodStart = stmt.period_start || dates[0];
@@ -4273,10 +4273,17 @@ function reconcileMatch(stmt, acctId, gFps) {
     matched.push({ tIdxs, rIdxs, manualIdx: mi });
   });
 
-  // Cross-statement ownership is retired (it was fragile and over-blocked). Plaid
-  // reconciles one month at a time; a record is scoped to the month it clears in by
-  // a date window instead — simpler and can't spuriously suppress a match.
-  const gManual = new Set(), gOwned = new Set();   // kept empty for return-shape compat
+  // A record manually matched in ANOTHER month is spoken for — mark it used so it
+  // can't auto-match here, and it disappears from "In your books" + the search list.
+  // (This month's own claims were consumed by Pass 0 above, so they always win.)
+  const thisMonth = (stmt.statement_month || '').slice(0,7);
+  const gManual = new Set();
+  Object.entries(profile.plaid_recon || {}).forEach(([m, saved]) => {
+    if (m === thisMonth) return;
+    (saved.manual_matches||[]).forEach(mm => (mm.rFps||[]).forEach(fp => gManual.add(fp)));
+  });
+  recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
+  const gOwned = new Set();   // tight-ownership retired in v226; kept for return-shape compat
   const tightFps = [];
 
   // Auto-match window: a record only auto-matches a bank line when its recorded date
@@ -4389,8 +4396,7 @@ function reconcileMatch(stmt, acctId, gFps) {
 // then render the buckets + the audit grid for this statement's month.
 function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const out = document.getElementById('rec-result');
-  const gFps = globalMatchedFps || (_recState && _recState.globalMatchedFps) || {};
-  const comp = reconcileMatch(stmt, acctId, gFps);
+  const comp = reconcileMatch(stmt, acctId);
   if (!comp.txns.length) { out.innerHTML = '<div style="color:var(--text3);font-size:13px">No transactions found in that statement.</div>'; return; }
   const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned } = comp;
   _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs };

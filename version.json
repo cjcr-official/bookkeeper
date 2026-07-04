@@ -1,1 +1,1 @@
-{"version":227,"note":"v227: reconcile — labeled ⋯ action menu on unmatched bank lines replaces the icon-button row, plus the two missing everyday actions: Add as expense (pre-filled form, auto-paired on save) and Payment on an invoice (picker, exact-balance match highlighted). Audit grid explains what makes a month pass."}
+{"version":228,"note":"v228: reconcile — a record manually matched in one month is now excluded from every other month's lists, auto-matching, and cross-month search (no double-claiming; sourced from plaid_recon)."}
