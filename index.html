@@ -1269,6 +1269,13 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-txn-menu">
+  <div class="modal" style="width:440px">
+    <div class="modal-header"><h2 id="txn-menu-title">Bank line</h2><button class="btn btn-sm" onclick="closeModal('modal-txn-menu')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body" id="txn-menu-body"></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -2967,6 +2974,7 @@ async function viewReceipt(path) {
 function openExpenseModal(exp) {
   editingExpense = exp || null;
   pendingReceiptFile = null; pendingReceiptRemove = false;
+  _recPairTxn = null;   // only addExpenseFromTxn re-arms this after opening
   const e = exp || {};
   document.getElementById('exp-title').textContent = exp?'Edit Expense':'New Expense';
   document.getElementById('exp-id').value = e.id||'';
@@ -3005,11 +3013,17 @@ async function saveExpense() {
     row.receipt_path = null;
     if (id) { const old=cache.expenses.find(e=>e.id===id); if(old&&old.receipt_path) sb.storage.from('receipts').remove([old.receipt_path]); }
   }
-  let err;
+  let err, newId=null;
   if (id) { const r=await sb.from('expenses').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.expenses.findIndex(e=>e.id===id);cache.expenses[idx]={...cache.expenses[idx],...row};} }
-  else { const r=await sb.from('expenses').insert(row).select().single(); err=r.error; if(!err)cache.expenses.unshift(r.data); }
+  else { const r=await sb.from('expenses').insert(row).select().single(); err=r.error; if(!err){cache.expenses.unshift(r.data); newId=r.data.id;} }
   if (err) { showToast(err.message,'error'); return; }
-  showToast('Expense saved','success'); closeModal('modal-expense'); renderExpenses();
+  // Launched from a reconcile bank line ("Add as expense") → explicit-pair it.
+  if (newId && _recPairTxn != null && _recState) {
+    _recState.stmt.manual_matches = (_recState.stmt.manual_matches||[]).concat([{ tIdxs:[_recPairTxn], rFps:['e:'+newId] }]);
+    await saveStmtSidecar(_recState.stmt, _recState.path);
+  }
+  _recPairTxn = null;
+  showToast('Expense saved','success'); closeModal('modal-expense'); renderExpenses(); refreshReconcileIfOpen();
 }
 
 async function deleteExpense(id) {
@@ -3888,6 +3902,96 @@ async function editTxnAmt(idx) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// ====== BANK-LINE ACTION MENU (the ⋯ on unmatched bank rows) ======
+// Tidy a noisy bank description down to the readable part.
+function cleanBankDesc(s) {
+  let x = (''+(s||'')).trim(); if (!x) return '—';
+  x = x.replace(/^(DBT CRD|DDA|POS|ACH|DEBIT|CREDIT|CHECK\s*CARD|CHK CARD|B\/P)\b[\s:]*/i,'');
+  x = x.replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,' ');   // embedded dates
+  x = x.replace(/\b\d{6,}\b/g,' ');                       // long reference numbers
+  x = x.replace(/\bC#\s*\d+\b/ig,' ');
+  x = x.replace(/\b\d{3}-\d{3}-\d{4}\b/g,' ');            // phone numbers
+  x = x.replace(/[*#]+/g,' ').replace(/\s{2,}/g,' ').trim();
+  return x || (''+s).trim();
+}
+
+// One labeled menu instead of a row of icon-only buttons. Every action either
+// records the line into the books (and explicit-pairs it) or fixes the line.
+function openTxnMenu(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const amt = parseFloat(t.amount)||0;
+  document.getElementById('txn-menu-title').textContent = fmt(amt) + ' · ' + (t.date ? fmtDate(t.date) : '—');
+  const act = (js, icon, label, sub) => `<button class="btn" onclick="closeModal('modal-txn-menu');${js}" style="display:flex;width:100%;align-items:flex-start;gap:.7rem;margin-bottom:.5rem;padding:.65rem .8rem;white-space:normal;text-align:left"><i class="ti ti-${icon}" style="font-size:17px;flex-shrink:0;margin-top:1px;color:var(--accent)"></i><span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">${label}</span><span style="display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px">${sub}</span></span></button>`;
+  const isSplit = !!t.splitGroup || /· part \d+\/\d+$/.test(t.description||'');
+  const rejoinArg = t.splitGroup ? `'${t.splitGroup}'` : String(idx);
+  let html = `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem;word-break:break-word">${escHtml(cleanBankDesc(t.description))}</div>`;
+  if (amt < 0) html += act(`addExpenseFromTxn(${idx})`, 'receipt', 'Add as expense', 'A business purchase you haven\'t recorded — opens the expense form pre-filled, then matches it.');
+  if (amt > 0) html += act(`payInvoiceFromTxn(${idx})`, 'file-dollar', 'Payment on an invoice', 'A customer paid you — pick which invoice this deposit pays.');
+  html += act(`recordOwnerFromTxn(${idx})`, 'wallet', amt < 0 ? 'Owner draw' : 'Owner contribution', amt < 0 ? 'You paid yourself / moved money to personal. Equity, not an expense.' : 'You covered the business from personal funds. Equity, not income.');
+  if (amt < 0) html += act(`recordPartialReturn(${idx})`, 'gift', 'Partly returned to a gift card', 'Part of this charge came back as store credit instead of a bank refund.');
+  if (amt > 0) html += act(`recordPriorPayment(${idx})`, 'calendar-plus', 'Prior-year invoice payment', 'Money for work billed last year — books the income in last year, not this one.');
+  if (amt > 0) html += act(`recordPriorRefund(${idx})`, 'receipt-refund', 'Refund of a prior-year expense', 'A vendor refunded something you expensed last year — reduces last year\'s expenses.');
+  html += act(`splitTxn(${idx})`, 'arrows-split', 'Split into parts', 'One bank line that covers several records — split it so each part can match.');
+  if (isSplit) html += act(`rejoinSplit(${rejoinArg})`, 'arrows-join-2', 'Rejoin split parts', 'Undo the split and restore the original single line.');
+  html += act(`editTxnAmt(${idx})`, 'pencil', 'Fix the amount', 'Correct this line\'s amount if it was read wrong.');
+  document.getElementById('txn-menu-body').innerHTML = html;
+  openModal('modal-txn-menu');
+}
+
+// "Add as expense": open the real expense form pre-filled from the bank line;
+// saveExpense() explicit-pairs the new expense to this line via _recPairTxn.
+let _recPairTxn = null;   // bank txn index awaiting the next saved expense
+function addExpenseFromTxn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  openExpenseModal();
+  document.getElementById('exp-date').value = t.date || today();
+  document.getElementById('exp-amount').value = Math.abs(parseFloat(t.amount)||0) || '';
+  document.getElementById('exp-vendor').value = cleanBankDesc(t.description).slice(0, 40);
+  document.getElementById('exp-method').value = 'Debit Card';
+  document.getElementById('exp-desc').value = (t.description||'').slice(0, 120);
+  _recPairTxn = idx;
+}
+
+// "Payment on an invoice": pick which open invoice this deposit pays.
+// Exact-balance matches float to the top and get an accent border.
+function payInvoiceFromTxn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const amt = parseFloat(t.amount)||0;
+  const exact = i => Math.abs(balanceDue(i)-amt) <= 0.01;
+  const open = (cache.invoices||[]).filter(i=>balanceDue(i)>0.005)
+    .sort((a,b)=>(exact(a)?0:1)-(exact(b)?0:1) || (b.date||'').localeCompare(a.date||''));
+  if (!open.length) { showToast('No invoices with a balance due. If it’s for old work, use “Prior-year invoice payment”.', 'error'); return; }
+  document.getElementById('txn-menu-title').textContent = 'Apply ' + fmt(amt);
+  document.getElementById('txn-menu-body').innerHTML =
+    `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">Which invoice does this ${t.date?fmtDate(t.date):''} deposit pay?</div>` +
+    open.map(i=>`<button class="btn" onclick="applyPaymentFromTxn(${idx},'${i.id}')" style="display:flex;width:100%;align-items:center;gap:.7rem;margin-bottom:.5rem;padding:.65rem .8rem;white-space:normal;text-align:left${exact(i)?';border-color:var(--accent)':''}">
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">#${escHtml(i.number||'—')} — ${escHtml(i.customer_name||'')}</span><span style="display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px">${fmtDate(i.date)}${exact(i)?' · exact balance match':''}</span></span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#16a34a">${fmt(balanceDue(i))}</span>
+      </button>`).join('');
+  openModal('modal-txn-menu');
+}
+
+// Record the deposit as a payment on the chosen invoice and explicit-pair it.
+async function applyPaymentFromTxn(idx, invId) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const inv = (cache.invoices||[]).find(i=>i.id===invId); if (!inv) return;
+  const amt = parseFloat(t.amount)||0; if (amt <= 0) return;
+  const row = { amount_paid: (parseFloat(inv.amount_paid)||0) + amt, paid_date: t.date || today(), payment_method: inv.payment_method || 'bank' };
+  const r = await sb.from('invoices').update(row).eq('id', invId);
+  if (r.error) { showToast(r.error.message, 'error'); return; }
+  Object.assign(inv, row);
+  s.stmt.manual_matches = (s.stmt.manual_matches||[]).concat([{ tIdxs:[idx], rFps:['p:'+invId] }]);
+  await saveStmtSidecar(s.stmt, s.path);
+  closeModal('modal-txn-menu');
+  showToast('Payment recorded on #' + (inv.number||''), 'success');
+  renderInvoices();
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // ====== OWNER ACTIVITY (equity transactions — contributions in, draws out) ======
 // Summary stats above the owner-activity list: total in, total out, net invested.
 function renderOwnerTxStats(rows) {
@@ -4295,40 +4399,13 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   // before (rare). The median-transaction-date heuristic gets it right normally.
   const monthPicker = stmt.statement_month ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
 
-  // Tidy a noisy bank description down to the readable part.
-  const cleanDesc = s => {
-    let x = (''+(s||'')).trim(); if (!x) return '—';
-    x = x.replace(/^(DBT CRD|DDA|POS|ACH|DEBIT|CREDIT|CHECK\s*CARD|CHK CARD|B\/P)\b[\s:]*/i,'');
-    x = x.replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,' ');   // embedded dates
-    x = x.replace(/\b\d{6,}\b/g,' ');                       // long reference numbers
-    x = x.replace(/\bC#\s*\d+\b/ig,' ');
-    x = x.replace(/\b\d{3}-\d{3}-\d{4}\b/g,' ');            // phone numbers
-    x = x.replace(/[*#]+/g,' ').replace(/\s{2,}/g,' ').trim();
-    return x || (''+s).trim();
-  };
+  const cleanDesc = cleanBankDesc;   // hoisted to top level so the ⋯ menu shares it
   // Unmatched item row: checkbox + (bank-only) pencil/split + amount.
   // width:auto + flex:0 0 18px override the global "input{width:100%}" rule.
   const item = (d,label,amt,sub,fp,editTxnIdx) => {
     const check = fp ? `<input type="checkbox" class="rec-check" data-fp="${fp}" data-amt="${amt}" onchange="updateMatchBar()" style="width:18px;flex:0 0 18px;margin:.5rem 0 0;cursor:pointer;padding:0">` : '';
-    const txn = (editTxnIdx!=null) ? txns[editTxnIdx] : null;
-    const priorBtn = (editTxnIdx!=null && amt > 0) ? `
-      <button onclick="recordPriorPayment(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as a prior-year invoice payment (income)"><i class="ti ti-calendar-plus"></i></button>
-      <button onclick="recordPriorRefund(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as a refund of a prior-year expense (reduces last year's expenses)"><i class="ti ti-receipt-refund"></i></button>` : '';
-    const isLegacySplit = txn && !txn.splitGroup && /· part \d+\/\d+$/.test(txn.description||'');
-    const rejoinArg = txn && txn.splitGroup ? `'${txn.splitGroup}'` : (isLegacySplit ? String(editTxnIdx) : '');
-    const rejoinBtn = (txn && (txn.splitGroup || isLegacySplit)) ? `
-      <button onclick="rejoinSplit(${rejoinArg})" class="btn btn-sm" style="background:transparent;border:none;color:var(--accent);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Rejoin split parts back into one line"><i class="ti ti-arrows-join-2"></i></button>` : '';
-    const giftBtn = (editTxnIdx!=null && amt < 0) ? `
-      <button onclick="recordPartialReturn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Mark portion as returned to a gift card / store credit"><i class="ti ti-gift"></i></button>` : '';
-    const ownerBtn = (editTxnIdx!=null) ? `
-      <button onclick="recordOwnerFromTxn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record as owner ${amt<0?'draw':'contribution'} (equity transfer)"><i class="ti ti-wallet"></i></button>` : '';
     const bankBtns = (editTxnIdx!=null) ? `
-      ${priorBtn}
-      ${giftBtn}
-      ${ownerBtn}
-      ${rejoinBtn}
-      <button onclick="splitTxn(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Split into multiple amounts"><i class="ti ti-arrows-split"></i></button>
-      <button onclick="editTxnAmt(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .3rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Fix amount"><i class="ti ti-pencil"></i></button>` : '';
+      <button onclick="openTxnMenu(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record or fix this line"><i class="ti ti-dots"></i></button>` : '';
     return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
       ${check}
       <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
@@ -4369,7 +4446,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     <div id="rec-match-bar" style="display:none;position:sticky;top:0;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:.55rem .75rem;margin-bottom:.75rem;z-index:10;align-items:center;gap:.6rem;flex-wrap:wrap"></div>
     <div style="margin-bottom:1.1rem">
       ${secHead('On the bank, not in your books', onBankOnly.length)}
-      ${onBankOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes here + on the books side, then Match. Pencil edits the AI's amount.</div>`:''}
+      ${onBankOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Tap ⋯ to record a line in your books (expense, invoice payment, owner move). Or tick a box on each side and Match.</div>`:''}
       ${list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t))))}
     </div>
     <div style="margin-bottom:1.1rem">
@@ -4385,7 +4462,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     </div>
     <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">Matched <span style="color:var(--text3);font-weight:600">${matched.length}</span></summary><div style="margin-top:.3rem">${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
-      <div style="font-size:10.5px;color:var(--text3);line-height:1.5;flex:1;min-width:180px">Auto-matched by amount + date. Only the month’s audit check is saved; your records aren’t changed.</div>
+      <div style="font-size:10.5px;color:var(--text3);line-height:1.5;flex:1;min-width:180px">Auto-matched by amount + date. Matches and ⋯ actions are saved per month.</div>
       <button class="btn btn-sm" onclick="resetMonthMatches()" style="font-size:11px"><i class="ti ti-refresh"></i> Reset this month</button>
     </div>`;
   recordAudit(acctId, monthKey, passed, monthLabel);
@@ -4444,6 +4521,7 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed) {
       </span>
     </div>
     <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:5px">${chips}</div>
+    <div style="font-size:10.5px;color:var(--text3);line-height:1.5;margin-top:.6rem">A month turns green when every bank line is matched to a record in your books.</div>
   </div>`;
 }
 

@@ -75,8 +75,14 @@ a per-month audit result: `profiles.audited_months` (jsonb, keyed
 unmatched. The page shows a 12-month grid of ✅/⚠️/· marks; **tap a month to pull &
 reconcile it.** Manual matches/unmatches persist per month in `profiles.plaid_recon`
 (there's no PDF sidecar). Cross-month "ownership" (so a record isn't matched in two
-months) is derived from `plaid_recon` via `plaidFps(excludeMonth)`. It never touches
-the user's financial records.
+months) is derived from `plaid_recon` via `plaidFps(excludeMonth)`. Each unmatched
+bank line has a labeled ⋯ menu (`openTxnMenu`) that records the line into the books
+and explicit-pairs it via `manual_matches`: Add as expense (pre-fills the expense
+modal; `_recPairTxn` makes `saveExpense` pair it), Payment on an invoice (picker
+over `balanceDue > 0`, exact-balance match first), owner draw/contribution,
+gift-card split, prior-year income/refund, plus split/rejoin/fix-amount. Matching
+itself never silently alters records — only the ⋯ actions the user picks write
+anything.
 
 **Plaid bank sync:** the reconcile card (`#rec-plaid`) sits directly on the
 page. "Connect a bank" lazy-loads Plaid Link
