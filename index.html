@@ -3659,19 +3659,27 @@ async function savePlaidRecon(stmt) {
   catch (e) { console.error('plaid_recon save failed', e); showToast('Save failed: ' + (e.message || e), 'error'); }
 }
 
-// Search across the other-month unmatched records. Renders matching rows with the
-// same checkbox/fingerprint scheme, so Match works the same as on in-period rows.
+// Search across EVERY record (not just other-month unmatched ones) and show
+// each one's status, so a "missing" expense always has a visible explanation.
+// Unmatched other-month rows keep the checkbox/fingerprint scheme, so Match
+// works the same as on in-period rows. With an empty query, unmatched records
+// dated near this month surface automatically — the most likely strays.
 function searchOtherRecs() {
   const el = document.getElementById('rec-search-results'); if (!el) return;
-  const s = _recState; if (!s || !s.otherUnmatched) { el.innerHTML=''; return; }
+  const s = _recState; if (!s || !s.searchPool) { el.innerHTML=''; return; }
   const q = (document.getElementById('rec-rec-search').value || '').trim().toLowerCase();
-  if (!q) { el.innerHTML = '<div style="color:var(--text3);font-size:11.5px;padding:.3rem 0">Type to search across all other months…</div>'; return; }
+  if (!q) {
+    const nearby = s.searchPool.filter(p => p.nearby).slice(0, 8);
+    el.innerHTML = (nearby.length ? `<div style="font-size:11.5px;color:var(--text3);padding:.3rem 0">Unmatched records dated near this month:</div>` + nearby.map(p => p.html).join('') : '')
+      + '<div style="color:var(--text3);font-size:11.5px;padding:.3rem 0">Type to search every record — matched, set aside, or in another month.</div>';
+    return;
+  }
   const num = parseFloat(q);
-  const matches = s.otherUnmatched.filter(r => {
-    if (!isNaN(num) && Math.abs(Math.abs(parseFloat(r.amount)||0) - Math.abs(num)) <= 0.01) return true;
-    return (r.label||'').toLowerCase().includes(q);
+  const matches = s.searchPool.filter(p => {
+    if (!isNaN(num) && Math.abs(Math.abs(p.amount) - Math.abs(num)) <= 0.01) return true;
+    return p.text.includes(q);
   }).slice(0, 50);
-  el.innerHTML = matches.length ? matches.map(r => s.renderedOther[r.fp]).join('') : '<div style="color:var(--text3);font-size:11.5px;padding:.3rem 0">No matches in other months.</div>';
+  el.innerHTML = matches.length ? matches.map(p => p.html).join('') : '<div style="color:var(--text3);font-size:11.5px;padding:.3rem 0">No records match.</div>';
 }
 
 // Update the floating "Match" bar based on current selections in the reconcile view.
@@ -4400,13 +4408,14 @@ function reconcileMatch(stmt, acctId) {
   });
 
   // A record manually matched in ANOTHER month is spoken for — mark it used so it
-  // can't auto-match here, and it disappears from "In your books" + the search list.
+  // can't auto-match here, and it leaves "In your books". The all-record search
+  // still shows it, labeled with the claiming month (gManual maps fp → month).
   // (This month's own claims were consumed by Pass 0 above, so they always win.)
   const thisMonth = (stmt.statement_month || '').slice(0,7);
-  const gManual = new Set();
+  const gManual = new Map();
   Object.entries(profile.plaid_recon || {}).forEach(([m, saved]) => {
     if (m === thisMonth) return;
-    (saved.manual_matches||[]).forEach(mm => (mm.rFps||[]).forEach(fp => gManual.add(fp)));
+    (saved.manual_matches||[]).forEach(mm => (mm.rFps||[]).forEach(fp => { if (!gManual.has(fp)) gManual.set(fp, m); }));
   });
   recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
   const gOwned = new Set();   // tight-ownership retired in v226; kept for return-shape compat
@@ -4427,7 +4436,9 @@ function reconcileMatch(stmt, acctId) {
     const cashSkip = !userSkip && r.cash && !keepSet.has(r.fp);
     if (!userSkip && !cashSkip) return;
     usedR[i] = true;
-    if (inPeriod(r.date)) skippedRecs.push({ ...r, reason: userSkip ? 'skipped' : 'cash' });
+    // inP: only in-period set-asides show in the month's "Set aside" section;
+    // out-of-period ones still get their status reported by the record search.
+    skippedRecs.push({ ...r, reason: userSkip ? 'skipped' : 'cash', inP: inPeriod(r.date) });
   });
 
   // Auto-match window: a record only auto-matches a bank line when its recorded date
@@ -4551,15 +4562,16 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const out = document.getElementById('rec-result');
   const comp = reconcileMatch(stmt, acctId);
   const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned } = comp;
+  const setAside = skippedRecs.filter(r => r.inP);   // this month's set-asides (cash + skips)
   // A truly empty month (no bank lines, nothing recorded, nothing set aside)
   // still records its audit result — an empty month reconciles clean by definition.
-  if (!txns.length && !inRecordsOnly.length && !skippedRecs.length && !matched.length) {
+  if (!txns.length && !inRecordsOnly.length && !setAside.length && !matched.length) {
     _recState = null;
     out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No bank activity and nothing in your books for ${escHtml(monthLabel||'this month')} — nothing to reconcile. If this is an older month that should have transactions, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`;
     recordAudit(acctId, monthKey, passed, monthLabel);
     return;
   }
-  _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs };
+  _recState = { stmt, acctId, path, monthKey, searchPool: [], matchedGroups: matched, recs };
 
   // Month override picker is a PDF-era vestige — a Plaid month IS the pull month.
   const monthPicker = (stmt.statement_month && stmt.source!=='plaid') ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
@@ -4600,11 +4612,48 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       ${unlink}</div>`;
   };
 
-  // Pre-render out-of-period rec rows so the search handler doesn't need access
-  // to the item() closure — it just picks lines by fingerprint.
-  otherUnmatched.forEach(r => {
-    const periodTag = r.date ? parseDate(r.date+'').toLocaleDateString(undefined,{month:'short',year:'numeric'}) : '';
-    _recState.renderedOther[r.fp] = item(r.date, r.label, r.amount, r.kind + (periodTag?' · '+periodTag:''), r.fp);
+  // ── All-record search pool: EVERY record with a status, so "where did my
+  // expense go?" always has an answer. Rows are pre-rendered here so the search
+  // handler doesn't need access to the item() closure. Statuses:
+  //   matched here (auto/manual) · set aside (cash/user, with Restore) ·
+  //   matched in another month (with a button to open it) · in this month's
+  //   list above · unmatched in another month (actionable checkbox row).
+  const statusByFp = {};
+  matched.forEach(g => (g.rIdxs||[]).forEach(ri => { const r = recs[ri]; if (r) statusByFp[r.fp] = g.manualIdx!=null ? 'manual' : 'auto'; }));
+  skippedRecs.forEach(r => { statusByFp[r.fp] = r.reason; });
+  const skipInP = new Set(setAside.map(r => r.fp));   // Restore only applies to this month's set-asides
+  const inListFps = new Set(inRecordsOnly.map(r => r.fp));
+  const otherFps = new Set(otherUnmatched.map(r => r.fp));
+  const monthName = m => parseDate(m + '-01').toLocaleDateString(undefined, {month:'short', year:'numeric'});
+  const nearDays = d => {
+    if (!d || !stmt.period_start || !stmt.period_end) return Infinity;
+    return Math.min(Math.abs((parseDate(d) - parseDate(stmt.period_start)) / 864e5), Math.abs((parseDate(d) - parseDate(stmt.period_end)) / 864e5));
+  };
+  const infoRow = (r, note, btn) => `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.8">
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(r.label)}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:.12rem">${r.date?fmtDate(r.date):'—'} · ${escHtml(r.kind)} · ${note}</div></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${r.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(r.amount)}</div>
+      ${btn||''}</div>`;
+  const smallBtn = (js, label) => `<button onclick="${js}" class="btn btn-sm" style="font-size:11px;flex-shrink:0">${label}</button>`;
+  _recState.searchPool = recs.map(r => {
+    const st = statusByFp[r.fp] || (gManual.has(r.fp) ? 'claimed' : (inListFps.has(r.fp) ? 'listed' : (otherFps.has(r.fp) ? 'other' : '')));
+    const periodTag = r.date ? monthName((r.date+'').slice(0,7)) : '';
+    let html, nearby = false;
+    if (st === 'other') {   // unmatched, different month → actionable (checkbox + Match works cross-month)
+      html = item(r.date, r.label, r.amount, r.kind + (periodTag?' · '+periodTag:''), r.fp);
+      nearby = nearDays(r.date) <= 18;
+    } else if (st === 'manual' || st === 'auto') {
+      html = infoRow(r, `<span style="color:#16a34a">matched on this statement${st==='manual'?' (by you)':''}</span> — see the Matched list`);
+    } else if (st === 'cash' || st === 'skipped') {
+      html = infoRow(r, st==='cash' ? 'set aside — cash, not expected on the bank' : 'set aside by you for this month',
+        skipInP.has(r.fp) ? smallBtn(`unskipRec('${r.fp}')`, 'Restore') : '');
+    } else if (st === 'claimed') {
+      const m = gManual.get(r.fp);
+      html = infoRow(r, `matched on the ${escHtml(monthName(m))} statement`, _plaidConnected ? smallBtn(`plaidPullMonth('${m}')`, 'Open ' + escHtml(monthName(m))) : '');
+    } else {   // 'listed' (or anything else in-period + unmatched)
+      html = infoRow(r, 'unmatched — in this month\'s list above');
+    }
+    return { fp: r.fp, amount: r.amount, text: (r.label + ' ' + r.kind).toLowerCase(), html, nearby };
   });
 
   // Set-aside rows (auto cash + user skips): muted, with a Restore button.
@@ -4629,12 +4678,12 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       ${inRecordsOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line). Not on this statement at all? Tap the eye to set it aside.</div>`:''}
       ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true)))}
     </div>
-    ${skippedRecs.length?`<details style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Set aside — not expected on the bank <span style="font-weight:600">${skippedRecs.length}</span></summary>
+    ${setAside.length?`<details style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Set aside — not expected on the bank <span style="font-weight:600">${setAside.length}</span></summary>
       <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Cash records are set aside automatically; these don't block the month from passing. Restore one if it really did hit the bank.</div>
-      ${skippedRecs.map(skipRow).join('')}</details>`:''}
+      ${setAside.map(skipRow).join('')}</details>`:''}
     <div style="margin-bottom:1.1rem">
-      <div style="font-weight:700;font-size:13.5px;color:var(--text3)">Search records in other months</div>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">For prior-year payments, refunds, or anything that lives in a different month. Type text or an amount.</div>
+      <div style="font-weight:700;font-size:13.5px;color:var(--text3)">Find any record</div>
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Missing an expense or payment you know you entered? Search everything — it shows where each record went: matched, set aside, another month, or still open.</div>
       <input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin-bottom:.5rem">
       <div id="rec-search-results"></div>
     </div>
@@ -4643,6 +4692,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <div style="font-size:10.5px;color:var(--text3);line-height:1.5;flex:1;min-width:180px">Auto-matched by amount + date. Matches, splits, and ⋯ actions are saved per month.</div>
       <button class="btn btn-sm" onclick="resetMonthMatches()" style="font-size:11px"><i class="ti ti-refresh"></i> Reset this month</button>
     </div>`;
+  searchOtherRecs();   // pre-fill the finder with unmatched records dated near this month
   recordAudit(acctId, monthKey, passed, monthLabel);
 }
 

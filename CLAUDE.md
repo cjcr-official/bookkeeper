@@ -87,7 +87,13 @@ and invoices paid `Cash` are auto-set-aside into a collapsed "Set aside" section
 (restorable); any other record can be set aside per month via the eye-off button.
 Cross-month double-claims are prevented inside `reconcileMatch`: records manually
 matched in another month (per `plaid_recon`) are marked used up front, dropping
-them from that month's lists, auto-match pool, and cross-month search. Each
+them from that month's lists and auto-match pool (`gManual` maps fp → claiming
+month). The **"Find any record"** search (`searchOtherRecs` over
+`_recState.searchPool`) covers EVERY record with its status — matched here,
+matched in another month (button opens that month), set aside (cash/user, with
+Restore), in this month's list, or unmatched in another month (actionable
+checkbox row) — and, before typing, auto-surfaces unmatched records dated within
+±18 days of the month, so "an expense is missing" always has a visible answer. Each
 unmatched bank line has a labeled ⋯ menu (`openTxnMenu`) that records the line
 into the books and explicit-pairs it via `manual_matches`: Add as expense
 (pre-fills the expense modal; `_recPairTxn` makes `saveExpense` pair it), Payment

@@ -1,1 +1,1 @@
-{"version":229,"note":"v229: reconcile — splits/amount fixes now persist across pulls, cash records auto-set-aside, per-month skip ('not on this statement'), one-tap Check the last 12 months, income-without-invoice action, audit grid year arrows."}
+{"version":230,"note":"v230: reconcile — 'Find any record' search shows where every record went (matched here, matched in another month with an open button, set aside cash/user with restore, unmatched); near-month strays surface automatically."}
