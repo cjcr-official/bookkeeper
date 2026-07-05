@@ -1,1 +1,1 @@
-{"version":228,"note":"v228: reconcile — a record manually matched in one month is now excluded from every other month's lists, auto-matching, and cross-month search (no double-claiming; sourced from plaid_recon)."}
+{"version":230,"note":"v230: reconcile — 'Find any record' search shows where every record went (matched here, matched in another month with an open button, set aside cash/user with restore, unmatched); near-month strays surface automatically."}
