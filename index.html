@@ -3464,6 +3464,7 @@ async function renderPlaidBlock() {
       <label style="display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:.4rem;font-weight:700">Statement month</label>
       <input type="month" id="plaid-month" value="${defMonth}" max="${thisMonth}" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:.6rem .65rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:14px">
       <button class="btn btn-primary" id="plaid-pull-btn" onclick="plaidPull(null,true)" style="width:100%;margin-top:.6rem"><i class="ti ti-download"></i> Pull &amp; reconcile</button>
+      <button class="btn" id="plaid-year-btn" onclick="plaidCheckYear()" style="width:100%;margin-top:.5rem"><i class="ti ti-calendar-stats"></i> Check the last 12 months</button>
       <div style="font-size:11.5px;color:var(--text3);margin-top:.75rem;display:flex;align-items:center;gap:.35rem;justify-content:center"><i class="ti ti-hand-finger" style="font-size:13px"></i> Or tap a month in the audit grid below</div>
       <div style="display:flex;gap:.5rem;margin-top:.9rem;padding-top:.85rem;border-top:1px solid var(--border)">
         <button class="btn btn-sm" onclick="plaidConnect()" style="font-size:11.5px;padding:.34rem .65rem"><i class="ti ti-refresh"></i> Reconnect</button>
@@ -3523,24 +3524,7 @@ async function plaidPull(monthArg, force) {
       data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end }) });
       _plaidCache[month] = data;   // cache the raw response for this session
     }
-    if (!(data.transactions || []).length) { out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No cleared transactions from ${escHtml(data.institution || 'the bank')} for ${month}. If this is an older month, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`; renderAuditBlock(null, '', '', null); return; }
-    // Stable order (date, then description, then amount) so a manual match's bank-line
-    // indices stay valid across re-pulls — Plaid may return rows in a different order.
-    const txns = (data.transactions || []).slice().sort((a, b) =>
-      (a.date || '').localeCompare(b.date || '') || (a.description || '').localeCompare(b.description || '') || ((a.amount || 0) - (b.amount || 0)));
-    const saved = (profile.plaid_recon || {})[month] || {};
-    const stmt = {
-      account_name: data.institution || 'Bank (Plaid)',
-      period_start: start, period_end: end, statement_month: start,
-      opening_balance: null, closing_balance: null,   // Plaid doesn't give a per-month opening/closing balance
-      transactions: txns, source: 'plaid',
-      // Re-apply the user's saved manual edits for this month.
-      manual_matches: saved.manual_matches || [],
-      unmatch_t: saved.unmatch_t || [],
-      unmatch_r: saved.unmatch_r || [],
-      owned_fps: saved.owned_fps || []
-    };
-    renderReconcile(stmt, null, null, {}, null);
+    renderReconcile(buildPlaidStmt(month, data), null, null, {}, null);
   } catch (e) {
     console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="color:#b91c1c;font-size:13px">${escHtml(e.message || 'Pull failed.')}</div>`; renderAuditBlock(null, '', '', null);
     if (e.data && e.data.reconnect) renderPlaidBlock();
@@ -3555,6 +3539,97 @@ async function plaidDisconnect() {
     showToast('Bank disconnected');
     renderPlaidBlock();
   } catch (e) { showToast(e.message || 'Failed to disconnect', 'error'); }
+}
+
+// Rebuild a Plaid month's statement object from raw pulled data: stable sort,
+// then re-apply the user's saved per-month line edits (splits / amount fixes)
+// and manual reconcile state from profiles.plaid_recon.
+function buildPlaidStmt(month, data) {
+  const [y, m] = month.split('-').map(Number);
+  const start = month + '-01';
+  const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+  // Stable order (date, then description, then amount) so a manual match's bank-line
+  // indices stay valid across re-pulls — Plaid may return rows in a different order.
+  const txns = (data.transactions || []).slice().sort((a, b) =>
+    (a.date || '').localeCompare(b.date || '') || (a.description || '').localeCompare(b.description || '') || ((a.amount || 0) - (b.amount || 0)));
+  const saved = (profile.plaid_recon || {})[month] || {};
+  applyTxnEdits(txns, saved.txn_edits);
+  return {
+    account_name: data.institution || 'Bank (Plaid)',
+    period_start: start, period_end: end, statement_month: start,
+    opening_balance: null, closing_balance: null,   // Plaid doesn't give a per-month opening/closing balance
+    transactions: txns, source: 'plaid',
+    manual_matches: saved.manual_matches || [],
+    unmatch_t: saved.unmatch_t || [],
+    unmatch_r: saved.unmatch_r || [],
+    owned_fps: saved.owned_fps || [],
+    txn_edits: saved.txn_edits || [],
+    skip_fps: saved.skip_fps || [],
+    keep_fps: saved.keep_fps || []
+  };
+}
+// Re-apply saved bank-line edits (splits, amount fixes) to a fresh pull, in the
+// order they were made — deterministic, so manual-match indices recorded after an
+// edit still line up on the next pull. Each edit finds its line by (date,
+// description, amount); if the bank data changed and the line is gone, that edit
+// is skipped gracefully.
+function applyTxnEdits(txns, edits) {
+  (edits || []).forEach(ed => {
+    const k = ed.key || {};
+    const i = txns.findIndex(t => (t.date || '') === (k.date || '') && (t.description || '') === (k.desc || '')
+      && Math.abs((parseFloat(t.amount) || 0) - (parseFloat(k.amount) || 0)) <= 0.005);
+    if (i < 0) return;
+    if (ed.op === 'amount') { txns[i] = { ...txns[i], amount: ed.value }; return; }
+    if (ed.op === 'split' && (ed.parts || []).length) {
+      txns.splice(i, 1, ...ed.parts.map(p => ({
+        date: k.date, description: p.desc, amount: p.amount,
+        splitGroup: ed.group, splitOriginalDesc: ed.origDesc || k.desc
+      })));
+    }
+  });
+}
+
+// One-tap yearly audit: a single ranged pull, bucketed by month, each month run
+// through the same matcher (with its saved edits), pass/fail stamped into the
+// audit grid. Ends on a summary of the months that need attention — tap to open.
+async function plaidCheckYear() {
+  if (!_plaidConnected) return;
+  const btn = document.getElementById('plaid-year-btn'); const orig = btn ? btn.innerHTML : '';
+  const out = document.getElementById('rec-result');
+  try {
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Checking 12 months…'; }
+    // The 12 full months ending LAST month — the current month is mostly pending.
+    const months = [];
+    const d = new Date(); d.setDate(1);
+    for (let k = 12; k >= 1; k--) { const x = new Date(d); x.setMonth(x.getMonth() - k); months.push(x.toISOString().slice(0, 7)); }
+    const last = months[months.length - 1];
+    const [ly, lm] = last.split('-').map(Number);
+    const data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({
+      start_date: months[0] + '-01', end_date: `${last}-${String(new Date(ly, lm, 0).getDate()).padStart(2, '0')}` }) });
+    const byMonth = {};
+    (data.transactions || []).forEach(t => { const m = (t.date || '').slice(0, 7); (byMonth[m] = byMonth[m] || []).push(t); });
+    let changed = false;
+    const results = months.map(m => {
+      _plaidCache[m] = { transactions: byMonth[m] || [], institution: data.institution };   // month taps are instant now
+      const comp = reconcileMatch(buildPlaidStmt(m, _plaidCache[m]), null);
+      changed = setAuditResult('_', m, comp.passed) || changed;
+      return { m, passed: comp.passed, label: comp.monthLabel || m, issues: comp.onBankOnly.length + comp.inRecordsOnly.length };
+    });
+    if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
+    _recState = null;   // the summary replaces any open month view
+    const bad = results.filter(r => !r.passed);
+    const chip = r => `<button class="btn btn-sm" onclick="plaidPullMonth('${r.m}')" style="font-size:11.5px">${escHtml(r.label)} · ${r.issues} to review</button>`;
+    out.innerHTML = `<div id="rec-audit"></div>
+      <div class="card" style="padding:1rem 1.05rem">
+        <div style="display:flex;align-items:center;gap:.55rem;margin-bottom:${bad.length ? '.7rem' : '0'}">
+          <i class="ti ti-${bad.length ? 'alert-triangle' : 'circle-check'}" style="font-size:18px;color:${bad.length ? '#d97706' : '#16a34a'};flex-shrink:0"></i>
+          <div style="font-size:13.5px"><strong>${results.length - bad.length} of ${results.length} months reconcile clean.</strong> ${bad.length ? 'Tap a month to sort out what’s left:' : 'Nothing needs your attention.'}</div>
+        </div>
+        ${bad.length ? `<div style="display:flex;flex-wrap:wrap;gap:.45rem">${bad.map(chip).join('')}</div>` : ''}
+      </div>`;
+    renderAuditBlock(null, '', '', null);
+  } catch (e) { console.error(e); showToast(e.message || 'Check failed', 'error'); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = orig; } }
 }
 
 // Persist the current month's reconcile edits after a user action. Plaid is the
@@ -3575,6 +3650,9 @@ async function savePlaidRecon(stmt) {
     unmatch_t: stmt.unmatch_t || [],
     unmatch_r: stmt.unmatch_r || [],
     owned_fps: stmt.owned_fps || [],
+    txn_edits: stmt.txn_edits || [],   // splits + amount fixes, re-applied on the next pull
+    skip_fps: stmt.skip_fps || [],     // records set aside for this month ("not on this statement")
+    keep_fps: stmt.keep_fps || [],     // cash records the user restored into this month's pool
     statement_month: stmt.statement_month || (month + '-01')
   };
   try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); }
@@ -3721,6 +3799,9 @@ async function recordPartialReturn(idx) {
     newTxns.push({ date:t.date, description:origDesc+' · kept', amount:keptPart, splitGroup:groupId, splitOriginalDesc:origDesc });
   }
   newTxns.push({ date:t.date, description:origDesc+(isFullCredit?'':' · gift card'), amount:creditPart, splitGroup: isFullCredit ? undefined : groupId, splitOriginalDesc:origDesc });
+  // Persist the split as a line edit so it survives the next pull (a full-credit
+  // "split" leaves the line byte-identical, so no edit is needed there).
+  if (!isFullCredit) s.stmt.txn_edits = (s.stmt.txn_edits||[]).concat([{ op:'split', key:{date:t.date, desc:t.description||'', amount:t.amount}, parts:newTxns.map(p=>({desc:p.description, amount:p.amount})), group:groupId, origDesc }]);
   s.stmt.transactions.splice(idx, 1, ...newTxns);
   const shift = newTxns.length - 1;
   s.stmt.manual_matches = (s.stmt.manual_matches||[]).map(m => ({
@@ -3780,6 +3861,39 @@ async function recordPriorPayment(idx) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// Record a deposit as income for work that was never invoiced: creates an
+// invoice dated the day the money landed, marked fully paid, and explicit-pairs
+// it — the current-year mirror of recordPriorPayment.
+async function recordIncomeFromTxn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  if (!(t.amount > 0)) { showToast('Use this on a deposit (positive amount).', 'error'); return; }
+  const cust = prompt(`Record ${fmt(t.amount)} on ${fmtDate(t.date)} ("${(t.description||'').slice(0,60)}") as income — a paid invoice will be created for that day.\n\nCustomer name?`, '');
+  if (cust == null || !cust.trim()) return;
+  const amount = t.amount;
+  const invDate = t.date || today();
+  const row = {
+    user_id: currentUser.id,
+    number: nextInvoiceNumber(),
+    customer_id: null,
+    customer_name: cust.trim(),
+    date: invDate, due: invDate, status: 'paid',
+    lines: [{desc:'Service', qty:1, rate:amount, amount:amount}],
+    subtotal: amount, tax: 0, total: amount,
+    notes: 'Recorded during reconciliation',
+    miles: 0, trips: 0, total_miles: 0,
+    amount_paid: amount, paid_date: invDate, payment_method: 'bank'
+  };
+  const r = await sb.from('invoices').insert(row).select().single();
+  if (r.error) { showToast(r.error.message, 'error'); return; }
+  cache.invoices.unshift(r.data);
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx], rFps:['p:'+r.data.id] }]);
+  await saveStmtSidecar(s.stmt, s.path);
+  showToast('Income recorded', 'success');
+  renderInvoices();
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // Record a transfer bank line as owner equity: a deposit (positive) = owner
 // contribution (money into the business), a withdrawal (negative) = owner draw.
 // Creates the owner_transactions row and explicit-pairs it to this bank line.
@@ -3836,6 +3950,9 @@ async function splitTxn(idx) {
     splitGroup: groupId,
     splitOriginalDesc: origDesc
   }));
+  // Persist as a line edit so the split (and any matches made against the parts)
+  // survives the next pull of this month.
+  s.stmt.txn_edits = (s.stmt.txn_edits||[]).concat([{ op:'split', key:{date:t.date, desc:t.description||'', amount:t.amount}, parts:newTxns.map(p=>({desc:p.description, amount:p.amount})), group:groupId, origDesc }]);
   s.stmt.transactions.splice(idx, 1, ...newTxns);
   const shift = newTxns.length - 1;
   s.stmt.manual_matches = (s.stmt.manual_matches||[]).map(m => ({
@@ -3870,6 +3987,9 @@ async function rejoinSplit(arg) {
   const firstIdx = indices[0];
   const removeCount = indices.length;
   const first = txns[firstIdx];
+  // Drop the persisted split edit so the next pull shows the original line again.
+  const group = (typeof arg === 'string') ? arg : (first.splitGroup || null);
+  if (group) s.stmt.txn_edits = (s.stmt.txn_edits || []).filter(e => !(e.op === 'split' && e.group === group));
   const totalAmount = indices.reduce((acc, i) => acc + (parseFloat(txns[i].amount)||0), 0);
   const combined = {
     date: first.date,
@@ -3888,8 +4008,9 @@ async function rejoinSplit(arg) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
-// Fix the AI's parsed amount for a bank line (PDF extraction errors).
-// Negative = debit. Persists in the sidecar so the next open uses the corrected number.
+// Fix a bank line's amount. Negative = debit. Recorded as a persisted line edit
+// (re-applied on the next pull) and replaces the txn object rather than mutating
+// it — the original is shared with the raw session cache.
 async function editTxnAmt(idx) {
   const s = _recState; if (!s) return;
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
@@ -3897,7 +4018,8 @@ async function editTxnAmt(idx) {
   if (v == null) return;
   const n = parseFloat(v);
   if (!isFinite(n)) { showToast('Not a number','error'); return; }
-  t.amount = n;
+  s.stmt.txn_edits = (s.stmt.txn_edits||[]).concat([{ op:'amount', key:{date:t.date, desc:t.description||'', amount:t.amount}, value:n }]);
+  s.stmt.transactions[idx] = { ...t, amount: n };
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
 }
@@ -3928,6 +4050,7 @@ function openTxnMenu(idx) {
   let html = `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem;word-break:break-word">${escHtml(cleanBankDesc(t.description))}</div>`;
   if (amt < 0) html += act(`addExpenseFromTxn(${idx})`, 'receipt', 'Add as expense', 'A business purchase you haven\'t recorded — opens the expense form pre-filled, then matches it.');
   if (amt > 0) html += act(`payInvoiceFromTxn(${idx})`, 'file-dollar', 'Payment on an invoice', 'A customer paid you — pick which invoice this deposit pays.');
+  if (amt > 0) html += act(`recordIncomeFromTxn(${idx})`, 'coin', 'Income without an invoice', 'You were paid for work you never invoiced — creates a paid invoice dated this day.');
   html += act(`recordOwnerFromTxn(${idx})`, 'wallet', amt < 0 ? 'Owner draw' : 'Owner contribution', amt < 0 ? 'You paid yourself / moved money to personal. Equity, not an expense.' : 'You covered the business from personal funds. Equity, not income.');
   if (amt < 0) html += act(`recordPartialReturn(${idx})`, 'gift', 'Partly returned to a gift card', 'Part of this charge came back as store credit instead of a bank refund.');
   if (amt > 0) html += act(`recordPriorPayment(${idx})`, 'calendar-plus', 'Prior-year invoice payment', 'Money for work billed last year — books the income in last year, not this one.');
@@ -4162,19 +4285,22 @@ function refreshReconcileIfOpen() {
   }
 }
 
-// Wipe this month's saved manual matches/unmatches and re-run the auto-matcher
-// from scratch — a clean-slate escape hatch if the saved edits are stale/wrong.
+// Wipe this month's saved manual matches/unmatches/skips/line edits and re-run
+// the auto-matcher from scratch — a clean-slate escape hatch.
 async function resetMonthMatches() {
   const s = _recState; if (!s) return;
-  if (!confirm('Clear your manual matches for this month and re-auto-match from scratch?')) return;
+  if (!confirm('Clear your manual matches, set-asides, and line edits for this month and re-auto-match from scratch?')) return;
   const month = (s.stmt.statement_month || '').slice(0, 7);
   s.stmt.manual_matches = []; s.stmt.unmatch_t = []; s.stmt.unmatch_r = []; s.stmt.owned_fps = [];
+  s.stmt.txn_edits = []; s.stmt.skip_fps = []; s.stmt.keep_fps = [];
   if (month && profile.plaid_recon && profile.plaid_recon[month]) {
     delete profile.plaid_recon[month];
     try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); }
   }
-  renderReconcile(s.stmt, s.acctId, s.path);
   showToast('Re-matched from scratch');
+  // Rebuild from the cached raw pull so splits and amount edits revert too.
+  if (s.stmt.source === 'plaid' && month && _plaidCache[month]) return plaidPull(month, false);
+  renderReconcile(s.stmt, s.acctId, s.path);
 }
 
 // Clear a previously-set manual month override and fall back to auto-detect.
@@ -4223,11 +4349,11 @@ function reconcileMatch(stmt, acctId) {
   const recs = [];
   (cache.expenses||[]).forEach(e=>{
     if (acctId && e.account_id && e.account_id!==acctId) return;   // honor account link when present
-    recs.push({ kind:'Expense', date:e.date, amount:-(parseFloat(e.amount)||0), label:e.vendor||'Expense', fp:'e:'+e.id });
+    recs.push({ kind:'Expense', date:e.date, amount:-(parseFloat(e.amount)||0), label:e.vendor||'Expense', fp:'e:'+e.id, cash:(e.method||'').toLowerCase()==='cash' });
   });
   (cache.invoices||[]).forEach(i=>{
     const paid = parseFloat(i.amount_paid)||0;
-    if (paid>0) recs.push({ kind:'Payment', date:i.paid_date||i.date, amount:paid, label:'Invoice '+(i.number||'')+' — '+(i.customer_name||''), fp:'p:'+i.id });
+    if (paid>0) recs.push({ kind:'Payment', date:i.paid_date||i.date, amount:paid, label:'Invoice '+(i.number||'')+' — '+(i.customer_name||''), fp:'p:'+i.id, cash:(i.payment_method||'').toLowerCase()==='cash' });
   });
   // Owner activity (contributions in, draws out) — equity moves, not P&L,
   // but they hit the bank so they belong in the reconciliation candidate pool.
@@ -4286,6 +4412,24 @@ function reconcileMatch(stmt, acctId) {
   const gOwned = new Set();   // tight-ownership retired in v226; kept for return-shape compat
   const tightFps = [];
 
+  // Set-aside pass: records that never hit the bank. Cash-method expenses and
+  // cash-paid invoices are set aside automatically (Restore/keep_fps overrides
+  // that per month); the user can also skip any record for the month via the
+  // eye-off button ("not on this statement"). Set-aside records don't auto-match
+  // and don't block the month from passing. Manual matches (Pass 0) already ran,
+  // so an explicit pairing always beats a skip.
+  const skipSet = new Set(stmt.skip_fps || []);
+  const keepSet = new Set(stmt.keep_fps || []);
+  const skippedRecs = [];
+  recs.forEach((r, i) => {
+    if (usedR[i]) return;
+    const userSkip = skipSet.has(r.fp);
+    const cashSkip = !userSkip && r.cash && !keepSet.has(r.fp);
+    if (!userSkip && !cashSkip) return;
+    usedR[i] = true;
+    if (inPeriod(r.date)) skippedRecs.push({ ...r, reason: userSkip ? 'skipped' : 'cash' });
+  });
+
   // Auto-match window: a record only auto-matches a bank line when its recorded date
   // is within ~18 days of the statement period, so an unrelated month can't grab it.
   const shiftDate = (d, days) => { const x = parseDate(d); x.setDate(x.getDate() + days); return x.toISOString().slice(0,10); };
@@ -4311,6 +4455,15 @@ function reconcileMatch(stmt, acctId) {
     }
   }
 
+  // Safety cap for the combo passes: subset search is exponential-ish, so keep
+  // only the 30 candidates nearest in date — a big ledger can't freeze the page.
+  const capPool = (pool, refDate) => {
+    if (pool.length <= 30) return pool;
+    const dist = p => (refDate && p.date) ? dayDiff(refDate, p.date) : 999;
+    pool.sort((a, b) => dist(a) - dist(b));
+    pool.length = 30;
+    return pool;
+  };
   // Find a subset (2..maxSize) of pool items summing to target (±$0.01).
   const findCombo = (pool, target, maxSize) => {
     let found = null;
@@ -4336,9 +4489,9 @@ function reconcileMatch(stmt, acctId) {
     const pool = [];
     for (let ri=0; ri<recs.length; ri++) {
       if (usedR[ri] || blockedR.has(recs[ri].fp) || !inWin(recs[ri].date) || Math.sign(recs[ri].amount)!==Math.sign(t.amount)) continue;
-      pool.push({ idx:ri, amount:recs[ri].amount });
+      pool.push({ idx:ri, amount:recs[ri].amount, date:recs[ri].date });
     }
-    const combo = findCombo(pool, t.amount, 4);
+    const combo = findCombo(capPool(pool, t.date), t.amount, 4);
     if (combo) { usedT[ti]=true; combo.forEach(ri=>usedR[ri]=true); matched.push({ tIdxs:[ti], rIdxs:combo }); }
   }
   // Pass 4: the reverse — one record = several bank lines.
@@ -4348,9 +4501,9 @@ function reconcileMatch(stmt, acctId) {
     const pool = [];
     for (let ti=0; ti<txns.length; ti++) {
       if (usedT[ti] || blockedT.has(ti) || Math.sign(txns[ti].amount)!==Math.sign(r.amount)) continue;
-      pool.push({ idx:ti, amount:txns[ti].amount });
+      pool.push({ idx:ti, amount:txns[ti].amount, date:txns[ti].date });
     }
-    const combo = findCombo(pool, r.amount, 4);
+    const combo = findCombo(capPool(pool, r.date), r.amount, 4);
     if (combo) { usedR[ri]=true; combo.forEach(ti=>usedT[ti]=true); matched.push({ tIdxs:combo, rIdxs:[ri] }); }
   }
 
@@ -4389,7 +4542,7 @@ function reconcileMatch(stmt, acctId) {
   // as _recState.matchedGroups and the rendered rows share indices (unmatchByIdx).
   const grpDate = g => (g.tIdxs.length && txns[g.tIdxs[0]] && txns[g.tIdxs[0]].date) || (g.rIdxs.length && recs[g.rIdxs[0]] && recs[g.rIdxs[0]].date) || '';
   matched.sort((a,b) => (grpDate(b)||'').localeCompare(grpDate(a)||''));
-  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, balanceOk, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned };
+  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceOk, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned };
 }
 
 // Reconcile VIEW: compute matches, stash view state, persist tight-match ownership,
@@ -4397,26 +4550,35 @@ function reconcileMatch(stmt, acctId) {
 function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const out = document.getElementById('rec-result');
   const comp = reconcileMatch(stmt, acctId);
-  if (!comp.txns.length) { out.innerHTML = '<div style="color:var(--text3);font-size:13px">No transactions found in that statement.</div>'; return; }
-  const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned } = comp;
+  const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned } = comp;
+  // A truly empty month (no bank lines, nothing recorded, nothing set aside)
+  // still records its audit result — an empty month reconciles clean by definition.
+  if (!txns.length && !inRecordsOnly.length && !skippedRecs.length && !matched.length) {
+    _recState = null;
+    out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No bank activity and nothing in your books for ${escHtml(monthLabel||'this month')} — nothing to reconcile. If this is an older month that should have transactions, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`;
+    recordAudit(acctId, monthKey, passed, monthLabel);
+    return;
+  }
   _recState = { stmt, acctId, path, monthKey, otherUnmatched, renderedOther: {}, matchedGroups: matched, recs };
 
-  // Month picker is now optional — only shown if the user manually overrode it
-  // before (rare). The median-transaction-date heuristic gets it right normally.
-  const monthPicker = stmt.statement_month ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
+  // Month override picker is a PDF-era vestige — a Plaid month IS the pull month.
+  const monthPicker = (stmt.statement_month && stmt.source!=='plaid') ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
+  const noBank = !txns.length ? `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">The bank shows no cleared lines for this month, but your books do (below). Fix each record's date, set it aside, or match it in the month it actually cleared.</div>` : '';
 
   const cleanDesc = cleanBankDesc;   // hoisted to top level so the ⋯ menu shares it
-  // Unmatched item row: checkbox + (bank-only) pencil/split + amount.
+  // Unmatched item row: checkbox + (bank-only) ⋯ menu or (record-only) skip + amount.
   // width:auto + flex:0 0 18px override the global "input{width:100%}" rule.
-  const item = (d,label,amt,sub,fp,editTxnIdx) => {
+  const item = (d,label,amt,sub,fp,editTxnIdx,skippable) => {
     const check = fp ? `<input type="checkbox" class="rec-check" data-fp="${fp}" data-amt="${amt}" onchange="updateMatchBar()" style="width:18px;flex:0 0 18px;margin:.5rem 0 0;cursor:pointer;padding:0">` : '';
     const bankBtns = (editTxnIdx!=null) ? `
       <button onclick="openTxnMenu(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record or fix this line"><i class="ti ti-dots"></i></button>` : '';
+    const skipBtn = skippable ? `
+      <button onclick="skipRec('${fp}')" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Not on this statement — set aside for this month"><i class="ti ti-eye-off"></i></button>` : '';
     return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
       ${check}
       <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div>
-      ${bankBtns}</div>`;
+      ${bankBtns}${skipBtn}</div>`;
   };
   const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.4rem 0">Nothing here</div>';
   // Section header: title + count. An empty bucket recedes (muted) so a clean
@@ -4445,10 +4607,17 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     _recState.renderedOther[r.fp] = item(r.date, r.label, r.amount, r.kind + (periodTag?' · '+periodTag:''), r.fp);
   });
 
+  // Set-aside rows (auto cash + user skips): muted, with a Restore button.
+  const skipRow = r => `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.75">
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(r.label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${r.date?fmtDate(r.date):'—'} · ${r.reason==='cash'?'cash — not expected on the bank':'set aside by you'}</div></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${r.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(r.amount)}</div>
+      <button onclick="unskipRec('${r.fp}')" class="btn btn-sm" style="font-size:11px;flex-shrink:0">Restore</button></div>`;
+
   out.innerHTML = `
     <div id="rec-audit"></div>
     ${monthPicker}
     ${balanceHtml}
+    ${noBank}
     <div id="rec-match-bar" style="display:none;position:sticky;top:0;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:.55rem .75rem;margin-bottom:.75rem;z-index:10;align-items:center;gap:.6rem;flex-wrap:wrap"></div>
     <div style="margin-bottom:1.1rem">
       ${secHead('On the bank, not in your books', onBankOnly.length)}
@@ -4457,9 +4626,12 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     </div>
     <div style="margin-bottom:1.1rem">
       ${secHead('In your books, not on this statement', inRecordsOnly.length)}
-      ${inRecordsOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line).</div>`:''}
-      ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp)))}
+      ${inRecordsOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line). Not on this statement at all? Tap the eye to set it aside.</div>`:''}
+      ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true)))}
     </div>
+    ${skippedRecs.length?`<details style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Set aside — not expected on the bank <span style="font-weight:600">${skippedRecs.length}</span></summary>
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Cash records are set aside automatically; these don't block the month from passing. Restore one if it really did hit the bank.</div>
+      ${skippedRecs.map(skipRow).join('')}</details>`:''}
     <div style="margin-bottom:1.1rem">
       <div style="font-weight:700;font-size:13.5px;color:var(--text3)">Search records in other months</div>
       <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">For prior-year payments, refunds, or anything that lives in a different month. Type text or an amount.</div>
@@ -4468,37 +4640,65 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     </div>
     <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">Matched <span style="color:var(--text3);font-weight:600">${matched.length}</span></summary><div style="margin-top:.3rem">${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
-      <div style="font-size:10.5px;color:var(--text3);line-height:1.5;flex:1;min-width:180px">Auto-matched by amount + date. Matches and ⋯ actions are saved per month.</div>
+      <div style="font-size:10.5px;color:var(--text3);line-height:1.5;flex:1;min-width:180px">Auto-matched by amount + date. Matches, splits, and ⋯ actions are saved per month.</div>
       <button class="btn btn-sm" onclick="resetMonthMatches()" style="font-size:11px"><i class="ti ti-refresh"></i> Reset this month</button>
     </div>`;
   recordAudit(acctId, monthKey, passed, monthLabel);
 }
 
+// "Not on this statement": set a record aside for this month — it stops blocking
+// the pass and won't auto-match here. Restore undoes it (and, for a cash record,
+// remembers the override in keep_fps so the auto set-aside doesn't re-hide it).
+async function skipRec(fp) {
+  const s = _recState; if (!s) return;
+  s.stmt.skip_fps = [...new Set([...(s.stmt.skip_fps || []), fp])];
+  s.stmt.keep_fps = (s.stmt.keep_fps || []).filter(f => f !== fp);
+  await saveStmtSidecar(s.stmt, s.path);
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+async function unskipRec(fp) {
+  const s = _recState; if (!s) return;
+  s.stmt.skip_fps = (s.stmt.skip_fps || []).filter(f => f !== fp);
+  s.stmt.keep_fps = [...new Set([...(s.stmt.keep_fps || []), fp])];
+  await saveStmtSidecar(s.stmt, s.path);
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
+// Stamp one month's pass/fail into profile.audited_months (in memory only).
+// Only re-stamps when the result actually flips — passive re-opens shouldn't
+// rewrite the row (or move the `at` timestamp) for no reason. Returns true when
+// something changed (the caller persists).
+function setAuditResult(key, monthKey, passed) {
+  if (!monthKey) return false;
+  if (!profile.audited_months || typeof profile.audited_months !== 'object') profile.audited_months = {};
+  const byAcct = profile.audited_months[key] || {};
+  const prev = byAcct[monthKey];
+  if (prev && prev.passed === !!passed) return false;
+  byAcct[monthKey] = { passed: !!passed, at: new Date().toISOString() };
+  profile.audited_months[key] = byAcct;
+  return true;
+}
 // Save (and display) the pass/fail result for a month, keyed by account.
 async function recordAudit(acctId, monthKey, passed, monthLabel) {
-  const key = acctId || '_';
-  let changed = false;
-  if (monthKey) {
-    if (!profile.audited_months || typeof profile.audited_months !== 'object') profile.audited_months = {};
-    const byAcct = profile.audited_months[key] || {};
-    const prev = byAcct[monthKey];
-    // Only re-stamp + persist when the result actually flips — passive re-opens
-    // shouldn't rewrite the row (or move the `at` timestamp) for no reason.
-    if (!prev || prev.passed !== !!passed) {
-      byAcct[monthKey] = { passed: !!passed, at: new Date().toISOString() };
-      profile.audited_months[key] = byAcct;
-      changed = true;
-    }
-  }
+  const changed = setAuditResult(acctId || '_', monthKey, passed);
   renderAuditBlock(acctId, monthKey, monthLabel, passed);
   if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
 }
 
 // Year grid of audit marks for the selected account (✅ pass · ⚠️ needs review · · not yet).
-function renderAuditBlock(acctId, monthKey, monthLabel, passed) {
+// _auditView remembers the last render so the ‹ › year arrows can re-render it.
+let _auditView = null;
+function auditYearNav(d) {
+  const v = _auditView || {};
+  const yr = String((parseInt(v.yr) || new Date().getFullYear()) + d);
+  if (yr > today().slice(0,4)) return;
+  renderAuditBlock(v.acctId, v.monthKey, v.monthLabel, v.passed, yr);
+}
+function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
   const el = document.getElementById('rec-audit'); if (!el) return;
   const byAcct = ((profile.audited_months||{})[acctId||'_']) || {};
-  const yr = (monthKey || today()).slice(0,4);
+  const yr = yrOverride || (monthKey || today()).slice(0,4);
+  _auditView = { acctId, monthKey, monthLabel, passed, yr };
   const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const curMonth = today().slice(0,7);   // don't offer to pull future months
   const chips = names.map((nm,idx)=>{
@@ -4520,7 +4720,11 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed) {
   const head = monthKey ? `<div style="font-size:13px;margin-bottom:.5rem;color:var(--text2)">${escHtml(monthLabel||monthKey)} · <span style="font-weight:600;color:${passed?'#16a34a':'#d97706'}">${passed?'Passed':'Needs review'}</span></div>` : '';
   el.innerHTML = `${head}<div class="card" style="padding:.85rem .9rem;margin-bottom:1rem">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem;margin-bottom:.6rem">
-      <span style="font-weight:700;font-size:10.5px;color:var(--text3);letter-spacing:.6px;font-family:'JetBrains Mono',monospace">AUDIT · ${yr}</span>
+      <span style="display:inline-flex;align-items:center;gap:.1rem">
+        <button onclick="auditYearNav(-1)" style="background:transparent;border:none;padding:.05rem .25rem;color:var(--text3);cursor:pointer;line-height:1"><i class="ti ti-chevron-left" style="font-size:13px"></i></button>
+        <span style="font-weight:700;font-size:10.5px;color:var(--text3);letter-spacing:.6px;font-family:'JetBrains Mono',monospace">AUDIT · ${yr}</span>
+        <button onclick="auditYearNav(1)" style="background:transparent;border:none;padding:.05rem .25rem;color:var(--text3);cursor:pointer;line-height:1;${yr>=today().slice(0,4)?'visibility:hidden':''}"><i class="ti ti-chevron-right" style="font-size:13px"></i></button>
+      </span>
       <span style="display:flex;align-items:center;gap:.6rem;font-size:10px;color:var(--text3)">
         <span style="display:inline-flex;align-items:center;gap:.25rem"><span style="width:7px;height:7px;border-radius:50%;background:#16a34a"></span>Passed</span>
         <span style="display:inline-flex;align-items:center;gap:.25rem"><span style="width:7px;height:7px;border-radius:50%;background:#d97706"></span>Review</span>

@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **213** (see `version.json` — that file is the source of truth).
+Current version: **229** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -72,19 +72,32 @@ expenses + invoice payments + owner activity + gift cards (amount ±$0.01, date
 window), and shows matched / in-records-only / on-statement-only buckets. It writes
 a per-month audit result: `profiles.audited_months` (jsonb, keyed
 `{accountId: {"YYYY-MM": {passed, at}}}`) — a month "passes" when nothing is
-unmatched. The page shows a 12-month grid of ✅/⚠️/· marks; **tap a month to pull &
-reconcile it.** Manual matches/unmatches persist per month in `profiles.plaid_recon`
-(there's no PDF sidecar). Cross-month double-claims are prevented inside
-`reconcileMatch`: records manually matched in another month (per `plaid_recon`)
-are marked used up front, dropping them from that month's lists, auto-match pool,
-and cross-month search. Each unmatched
-bank line has a labeled ⋯ menu (`openTxnMenu`) that records the line into the books
-and explicit-pairs it via `manual_matches`: Add as expense (pre-fills the expense
-modal; `_recPairTxn` makes `saveExpense` pair it), Payment on an invoice (picker
-over `balanceDue > 0`, exact-balance match first), owner draw/contribution,
-gift-card split, prior-year income/refund, plus split/rejoin/fix-amount. Matching
-itself never silently alters records — only the ⋯ actions the user picks write
-anything.
+unmatched. The page shows a 12-month grid of ✅/⚠️/· marks with ‹ › year arrows;
+**tap a month to pull & reconcile it**, or use **"Check the last 12 months"**
+(`plaidCheckYear`) — one ranged Plaid pull, bucketed by month, every month run
+through `reconcileMatch` and stamped into the audit grid, ending on a summary of
+the months that need attention (tap a chip to open one). All per-month state
+persists in `profiles.plaid_recon` (there's no PDF sidecar): `manual_matches`,
+`unmatch_t/r`, **`txn_edits`** (splits + amount fixes, re-applied deterministically
+on every pull by `applyTxnEdits` inside `buildPlaidStmt` so match indices stay
+valid), **`skip_fps`** (records the user set aside as "not on this statement" for
+that month), and **`keep_fps`** (cash records restored into the month's pool).
+Records that never hit the bank don't block a month: expenses with method `Cash`
+and invoices paid `Cash` are auto-set-aside into a collapsed "Set aside" section
+(restorable); any other record can be set aside per month via the eye-off button.
+Cross-month double-claims are prevented inside `reconcileMatch`: records manually
+matched in another month (per `plaid_recon`) are marked used up front, dropping
+them from that month's lists, auto-match pool, and cross-month search. Each
+unmatched bank line has a labeled ⋯ menu (`openTxnMenu`) that records the line
+into the books and explicit-pairs it via `manual_matches`: Add as expense
+(pre-fills the expense modal; `_recPairTxn` makes `saveExpense` pair it), Payment
+on an invoice (picker over `balanceDue > 0`, exact-balance match first), income
+without an invoice (creates a paid invoice dated the deposit day), owner
+draw/contribution, gift-card split, prior-year income/refund, plus
+split/rejoin/fix-amount. Matching itself never silently alters records — only the
+⋯ actions the user picks write anything. The combo passes (one line ↔ several
+records) cap their candidate pool at the 30 nearest-by-date so a big ledger can't
+freeze the page.
 
 **Plaid bank sync:** the reconcile card (`#rec-plaid`) sits directly on the
 page. "Connect a bank" lazy-loads Plaid Link
