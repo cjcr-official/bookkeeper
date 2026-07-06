@@ -3688,8 +3688,8 @@ function searchOtherRecs() {
   const q = (document.getElementById('rec-rec-search').value || '').trim().toLowerCase();
   if (!q) {
     const nearby = s.searchPool.filter(p => p.nearby).slice(0, 8);
-    el.innerHTML = (nearby.length ? `<div style="font-size:11.5px;color:var(--text3);padding:.3rem 0">Unmatched records dated near this month:</div>` + nearby.map(p => p.html).join('') : '')
-      + '<div style="color:var(--text3);font-size:11.5px;padding:.3rem 0">Type to search every record — matched, set aside, or in another month.</div>';
+    el.innerHTML = (nearby.length ? `<div style="font-size:11.5px;color:var(--text3);padding:.3rem 0">Dated near this month:</div>` + nearby.map(p => p.html).join('') : '')
+      + '<div style="color:var(--text3);font-size:11.5px;padding:.3rem 0">Type to search every record.</div>';
     return;
   }
   const num = parseFloat(q);
@@ -4595,8 +4595,8 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const monthPicker = (stmt.statement_month && stmt.source!=='plaid') ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
   const isCur = !!monthKey && monthKey === today().slice(0,7);
   const noBank = !txns.length ? `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">${isCur
-    ? 'Nothing has cleared at the bank for this month yet — purchases and deposits usually post a few days after they happen. Your records below aren\'t a problem; they\'ll match once the bank catches up.'
-    : 'The bank shows no cleared lines for this month, but your books do (below). Fix each record\'s date, set it aside, or match it in the month it actually cleared.'}</div>` : '';
+    ? 'Nothing has cleared at the bank for this month yet.'
+    : 'No cleared bank lines for this month.'}</div>` : '';
 
   const cleanDesc = cleanBankDesc;   // hoisted to top level so the ⋯ menu shares it
   // Unmatched item row: checkbox + (bank-only) ⋯ menu or (record-only) skip + amount.
@@ -4708,7 +4708,6 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   if ((stmt.pending||[]).length) {
     pendingHtml = `
     <details ${isCur?'open':''} style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Pending at the bank <span style="font-weight:600">${stmt.pending.length}</span></summary>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Live from the bank but not settled yet. These join the matching automatically once they clear — usually within a few days.</div>
       ${stmt.pending.map(t=>`<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.7">
         <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(cleanBankDesc(t.description))}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${t.date?fmtDate(t.date):'—'} · pending</div></div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${t.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(t.amount)}</div>
@@ -4717,8 +4716,8 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     pendingHtml = `<div style="margin-bottom:1.1rem">
       <div style="font-weight:700;font-size:13.5px;color:var(--text3)">Pending at the bank ${stmt.pending ? '0' : ''}</div>
       <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0">${stmt.pending
-        ? 'Your bank reported no pending activity to Plaid right now. If you know a charge is pending, this bank likely doesn\\u2019t share pending data — it\\u2019ll appear here (or in matching) once it posts.'
-        : 'This view is from an older pull — tap "Pull &amp; reconcile" to fetch live pending activity.'}</div>
+        ? 'Your institution doesn’t show pending transactions.'
+        : 'Older pull — tap "Pull &amp; reconcile" to refresh.'}</div>
     </div>`;
   }
 
@@ -4730,27 +4729,23 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     <div id="rec-match-bar" style="display:none;position:sticky;top:0;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:.55rem .75rem;margin-bottom:.75rem;z-index:10;align-items:center;gap:.6rem;flex-wrap:wrap"></div>
     <div style="margin-bottom:1.1rem">
       ${secHead('On the bank, not in your books', onBankOnly.length)}
-      ${onBankOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Tap ⋯ to record a line in your books (expense, invoice payment, owner move). Or tick a box on each side and Match.</div>`:''}
       ${list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t))))}
     </div>
     ${pendingHtml}
     <div style="margin-bottom:1.1rem">
       ${secHead('In your books, not on this statement', inRecordsOnly.length)}
-      ${inRecordsOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">${isCur?'This month is still in progress — records here have probably just not cleared the bank yet. ':''}Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line). Not on this statement at all? Tap the eye to set it aside.</div>`:''}
       ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true)))}
     </div>
     ${setAside.length?`<details style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Set aside — not expected on the bank <span style="font-weight:600">${setAside.length}</span></summary>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Cash records are set aside automatically; these don't block the month from passing. Restore one if it really did hit the bank.</div>
       ${setAside.map(skipRow).join('')}</details>`:''}
     <div style="margin-bottom:1.1rem">
       <div style="font-weight:700;font-size:13.5px;color:var(--text3)">Find any record</div>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Missing an expense or payment you know you entered? Search everything — it shows where each record went: matched, set aside, another month, or still open.</div>
       <input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin-bottom:.5rem">
       <div id="rec-search-results"></div>
     </div>
     <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">Matched <span style="color:var(--text3);font-weight:600">${matched.length}</span></summary><div style="margin-top:.3rem">${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
-      <div style="font-size:10.5px;color:var(--text3);line-height:1.5;flex:1;min-width:180px">Auto-matched by amount + date. Matches, splits, and ⋯ actions are saved per month.</div>
+      <div style="flex:1"></div>
       <button class="btn btn-sm" onclick="resetMonthMatches()" style="font-size:11px"><i class="ti ti-refresh"></i> Reset this month</button>
     </div>`;
   searchOtherRecs();   // pre-fill the finder with unmatched records dated near this month
@@ -4855,7 +4850,6 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
       </span>
     </div>
     <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:5px">${chips}</div>
-    <div style="font-size:10.5px;color:var(--text3);line-height:1.5;margin-top:.6rem">A month turns green when every bank line is matched to a record in your books.</div>
   </div>`;
 }
 
