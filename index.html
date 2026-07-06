@@ -845,16 +845,20 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div id="rec-plaid"></div>
         <!-- Reconcile output: audit grid + matched/unmatched buckets -->
         <div id="rec-result" style="margin-top:1.25rem"><div id="rec-audit"></div></div>
-        <h3 onclick="toggleOwnerActivity()" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none"><span>Owner Activity</span><i class="ti ti-chevron-down" id="owner-activity-chevron" style="transition:transform .2s;color:var(--text3);font-size:15px"></i></h3>
-        <div id="owner-activity-body">
-          <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Money you moved between the business and your personal funds. Contributions show as deposits in reconcile; draws show as withdrawals.</div>
-          <button class="btn btn-sm" onclick="openOwnerTxModal()" style="margin-bottom:.75rem"><i class="ti ti-wallet"></i> Log owner activity</button>
+        <div class="card" style="padding:.9rem 1rem;margin:1.1rem 0 .85rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding-bottom:.45rem;border-bottom:1px solid var(--border)">
+            <span style="font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3)">Owner activity</span>
+            <button class="btn btn-sm" onclick="openOwnerTxModal()" style="font-size:11px;padding:.28rem .65rem"><i class="ti ti-plus"></i><span> Log</span></button>
+          </div>
           <div id="owner-tx-stats"></div>
-          <div class="card list-card"><div id="owner-tx-table"></div></div>
+          <div id="owner-tx-table"></div>
         </div>
-        <h3 style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);margin:1.5rem 0 .5rem;font-family:'JetBrains Mono',monospace">Gift Cards / Store Credits</h3>
-        <div style="font-size:11.5px;color:var(--text3);margin-bottom:.5rem">Credits gained from partial returns where the merchant gave you a gift card instead of refunding the bank. They reconcile against the original bank charge so books aren't overstated as expenses.</div>
-        <div class="card list-card"><div id="store-credits-table"></div></div>
+        <div class="card" style="padding:.9rem 1rem;margin-bottom:.85rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding-bottom:.45rem;border-bottom:1px solid var(--border)">
+            <span style="font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3)">Gift cards / store credits</span>
+          </div>
+          <div id="store-credits-table"></div>
+        </div>
       </div>
 
       <!-- SETTINGS -->
@@ -1127,6 +1131,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Owner activity is equity, not income or expense — it won't show up in revenue or expense totals, but it will reconcile against the bank.</div>
     </div>
     <div class="modal-footer">
+      <button class="btn btn-danger" id="owner-tx-delete-btn" onclick="deleteOwnerTxFromModal()" style="margin-right:auto"><i class="ti ti-trash"></i></button>
       <button class="btn" onclick="closeModal('modal-owner-tx')">Cancel</button>
       <button class="btn btn-primary" onclick="saveOwnerTx()"><i class="ti ti-check"></i> Save</button>
     </div>
@@ -3286,14 +3291,6 @@ function toggleReports() {
   if (!open) renderReport(currentReport); // render fresh when opening
 }
 
-function toggleOwnerActivity() {
-  const body = document.getElementById('owner-activity-body');
-  const chev = document.getElementById('owner-activity-chevron');
-  const open = body.style.display !== 'none';
-  body.style.display = open ? 'none' : 'block';
-  if (chev) chev.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
-}
-
 function toggleCalendar() {
   const body = document.getElementById('calendar-body');
   const chev = document.getElementById('calendar-chevron');
@@ -4149,52 +4146,46 @@ async function applyPaymentFromTxn(idx, invId) {
 }
 
 // ====== OWNER ACTIVITY (equity transactions — contributions in, draws out) ======
-// Summary stats above the owner-activity list: total in, total out, net invested.
+// One-line summary strip: money in, money out, net taken out.
 function renderOwnerTxStats(rows) {
   const el = document.getElementById('owner-tx-stats'); if (!el) return;
   if (!rows.length) { el.innerHTML = ''; return; }
   const sum = k => rows.filter(r=>(r.kind==='contribution')===(k==='contribution')).reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
   const contrib = sum('contribution');
   const draws = sum('draw');
-  const pocketed = draws - contrib;   // how much you took out, net of what you put in
-  const cell = (label, val, color) => `<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.6rem .7rem">
-    <div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);font-family:'JetBrains Mono',monospace">${label}</div>
-    <div style="font-size:16px;font-weight:800;color:${color};font-variant-numeric:tabular-nums;letter-spacing:-.4px;margin-top:2px">${fmt(val)}</div>
-  </div>`;
-  el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-bottom:.6rem">
-    ${cell('Contributions', contrib, '#16a34a')}
-    ${cell('Draws', draws, '#dc2626')}
-    ${cell('Net Pocketed', pocketed, pocketed>=0?'#16a34a':'#dc2626')}
+  const net = draws - contrib;   // how much you took out, net of what you put in
+  const cell = (label, val, color) => `<span style="display:inline-flex;align-items:baseline;gap:.35rem;white-space:nowrap">
+    <span style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-family:'JetBrains Mono',monospace;color:var(--text3)">${label}</span>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:${color}">${fmt(val)}</span></span>`;
+  el.innerHTML = `<div style="display:flex;gap:1.1rem;flex-wrap:wrap;padding:.6rem 0 .1rem;border-bottom:1px solid var(--border)">
+    ${cell('In', contrib, '#16a34a')}${cell('Out', draws, '#dc2626')}${cell('Net to you', net, 'var(--text2)')}
   </div>`;
 }
 
+// Compact unified list (same rows on phone + desktop): kind chip, note, signed
+// amount. Tap a row to edit — Delete lives in the editor. Long histories cap at
+// 6 rows with a Show-all toggle so the section stays manageable.
+let _ownerTxShowAll = false;
 function renderOwnerTx() {
   const el = document.getElementById('owner-tx-table'); if (!el) return;
   const rows = (cache.owner_transactions||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   renderOwnerTxStats(rows);
-  if (!rows.length) { el.innerHTML = `<div class="empty"><i class="ti ti-wallet"></i><p>No owner activity yet</p><p style="font-size:12px;color:var(--text3)">Use this when you move money between the business and your personal funds.</p></div>`; return; }
-  const esc = escHtml;
-  const acctName = id => (cache.accounts.find(a=>a.id===id)||{}).name || '—';
-  const sign = r => r.kind==='contribution' ? 1 : -1;
-  const signed = r => sign(r) * (parseFloat(r.amount)||0);
-  const kindLabel = r => r.kind==='contribution' ? 'Contribution' : 'Draw';
-  if (window.innerWidth <= 768) {
-    el.innerHTML = rows.map(r=>`
-      <div class="m-card" onclick="editOwnerTx('${r.id}')">
-        <div class="m-card-main">
-          <div class="m-card-title">${esc(kindLabel(r))}${r.note?` <span style="color:var(--text3);font-weight:400">· ${esc(r.note)}</span>`:''}</div>
-          <div class="m-card-meta">${fmtDate(r.date)}${r.account_id?' · '+esc(acctName(r.account_id)):''}</div>
-        </div>
-        <div class="m-card-right">
-          <div class="m-card-amount" style="color:${sign(r)>0?'#16a34a':'#dc2626'}">${fmt(signed(r))}</div>
-          <div class="m-card-actions">
-            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteOwnerTx('${r.id}')"><i class="ti ti-trash"></i></button>
-          </div>
-        </div>
-      </div>`).join('');
-  } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Kind</th><th>Note</th><th>Account</th><th>Amount</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr style="cursor:pointer" onclick="editOwnerTx('${r.id}')"><td>${fmtDate(r.date)}</td><td>${esc(kindLabel(r))}</td><td style="color:var(--text2)">${esc(r.note||'—')}</td><td>${esc(acctName(r.account_id))}</td><td style="font-family:'JetBrains Mono',monospace;font-weight:600;color:${sign(r)>0?'#16a34a':'#dc2626'}">${fmt(signed(r))}</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-sm" onclick="editOwnerTx('${r.id}')" style="margin-right:4px"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteOwnerTx('${r.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
-  }
+  if (!rows.length) { el.innerHTML = `<div style="color:var(--text3);font-size:12px;padding:.6rem 0 .2rem;text-align:center">Nothing yet — tap Log when you move money between business and personal.</div>`; return; }
+  const acctName = id => (cache.accounts.find(a=>a.id===id)||{}).name || '';
+  const shown = _ownerTxShowAll ? rows : rows.slice(0, 6);
+  el.innerHTML = shown.map(r => {
+    const isC = r.kind==='contribution';
+    const amt = (isC?1:-1) * (parseFloat(r.amount)||0);
+    const acct = r.account_id ? acctName(r.account_id) : '';
+    return `<div onclick="editOwnerTx('${r.id}')" style="display:flex;align-items:center;gap:.6rem;padding:.6rem 0;border-bottom:1px solid var(--border);cursor:pointer">
+      <div style="width:26px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:${isC?'rgba(22,163,74,.13)':'rgba(220,38,38,.12)'}"><i class="ti ti-arrow-${isC?'down-left':'up-right'}" style="font-size:14px;color:${isC?'#16a34a':'#dc2626'}"></i></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${isC?'Contribution':'Draw'}${r.note?` <span style="color:var(--text3)">· ${escHtml(r.note)}</span>`:''}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.1rem">${fmtDate(r.date)}${acct?' · '+escHtml(acct):''}</div>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;color:${isC?'#16a34a':'#dc2626'}">${fmt(amt)}</div>
+    </div>`;
+  }).join('') + (rows.length > 6 ? `<div style="text-align:center;padding-top:.55rem"><button class="btn btn-sm" onclick="_ownerTxShowAll=!_ownerTxShowAll;renderOwnerTx()" style="font-size:11px;color:var(--text3)">${_ownerTxShowAll?'Show recent only':'Show all '+rows.length}</button></div>` : '');
 }
 
 function openOwnerTxModal(tx) {
@@ -4217,9 +4208,16 @@ function openOwnerTxModal(tx) {
     document.getElementById('owner-tx-account').value = '';
     document.getElementById('owner-tx-note').value = '';
   }
+  const del = document.getElementById('owner-tx-delete-btn');
+  if (del) del.style.display = tx ? '' : 'none';
   openModal('modal-owner-tx');
 }
 function editOwnerTx(id) { openOwnerTxModal((cache.owner_transactions||[]).find(t=>t.id===id)); }
+async function deleteOwnerTxFromModal() {
+  const id = document.getElementById('owner-tx-id').value; if (!id) return;
+  closeModal('modal-owner-tx');
+  await deleteOwnerTx(id);
+}
 
 async function saveOwnerTx() {
   const id = document.getElementById('owner-tx-id').value;
@@ -4254,25 +4252,16 @@ async function deleteOwnerTx(id) {
 function renderStoreCredits() {
   const el = document.getElementById('store-credits-table'); if (!el) return;
   const rows = (cache.store_credits||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  if (!rows.length) { el.innerHTML = `<div class="empty"><i class="ti ti-gift"></i><p>No gift card credits yet</p><p style="font-size:12px;color:var(--text3)">Created when you mark a portion of a bank charge as returned to gift card.</p></div>`; return; }
-  const esc = escHtml;
-  if (window.innerWidth <= 768) {
-    el.innerHTML = rows.map(r=>`
-      <div class="m-card" onclick="editStoreCredit('${r.id}')">
-        <div class="m-card-main">
-          <div class="m-card-title">${esc(r.merchant||'Merchant')}${r.note?` <span style="color:var(--text3);font-weight:400">· ${esc(r.note)}</span>`:''}</div>
-          <div class="m-card-meta">${fmtDate(r.date)}</div>
-        </div>
-        <div class="m-card-right">
-          <div class="m-card-amount" style="color:#16a34a">${fmt(parseFloat(r.amount||0))}</div>
-          <div class="m-card-actions">
-            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteStoreCredit('${r.id}')"><i class="ti ti-trash"></i></button>
-          </div>
-        </div>
-      </div>`).join('');
-  } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Merchant</th><th>Note</th><th>Amount</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr style="cursor:pointer" onclick="editStoreCredit('${r.id}')"><td>${fmtDate(r.date)}</td><td style="font-weight:500">${esc(r.merchant||'—')}</td><td style="color:var(--text2)">${esc(r.note||'—')}</td><td style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#16a34a">${fmt(parseFloat(r.amount||0))}</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-sm" onclick="editStoreCredit('${r.id}')" style="margin-right:4px"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteStoreCredit('${r.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
-  }
+  if (!rows.length) { el.innerHTML = `<div style="color:var(--text3);font-size:12px;padding:.6rem 0 .2rem;text-align:center">None yet — created when part of a bank charge comes back as store credit.</div>`; return; }
+  el.innerHTML = rows.map(r=>`<div onclick="editStoreCredit('${r.id}')" style="display:flex;align-items:center;gap:.6rem;padding:.6rem 0;border-bottom:1px solid var(--border);cursor:pointer">
+      <div style="width:26px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(22,163,74,.13)"><i class="ti ti-gift" style="font-size:14px;color:#16a34a"></i></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.merchant||'Merchant')}${r.note?` <span style="color:var(--text3)">· ${escHtml(r.note)}</span>`:''}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.1rem">${fmtDate(r.date)}</div>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;color:#16a34a">${fmt(parseFloat(r.amount)||0)}</div>
+      <button class="btn btn-sm" onclick="event.stopPropagation();deleteStoreCredit('${r.id}')" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;flex-shrink:0" title="Delete"><i class="ti ti-trash"></i></button>
+    </div>`).join('');
 }
 function editStoreCredit(id) {
   const c = (cache.store_credits||[]).find(x=>x.id===id); if (!c) return;
