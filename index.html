@@ -29,7 +29,7 @@
   --border2:rgba(255,255,255,.12);
   --text:#e8eaf0;
   --text2:#8b93a8;
-  --text3:#55607a;
+  --text3:#78829b;   /* ≥4.5:1 on --surface — micro-labels must stay readable in sunlight */
   --accent:#7b6cff;
   --accent2:#4f8cff;
   --accent-glow:rgba(123,108,255,.40);
@@ -479,6 +479,8 @@ body.modal-open .main{overflow:hidden}
   /* ── MISC ── */
   .card{border-radius:var(--radius-sm)}
   .card-header{padding:.75rem 1rem}
+  /* row action buttons (view/edit/delete) must be real touch targets — 44px min */
+  .page .btn-sm{min-height:44px;min-width:44px}
   .tabs{overflow-x:auto;scrollbar-width:none;width:100%}
   .tabs::-webkit-scrollbar{display:none}
   .toast{left:1rem;right:1rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 12px);text-align:center}
