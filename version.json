@@ -1,1 +1,1 @@
-{"version":232,"note":"v232: reconcile — new 'Pending at the bank' section shows live unsettled Plaid activity (display only; joins matching automatically once it clears), so the current month reflects reality instead of looking empty."}
+{"version":233,"note":"v233: reconcile — the current month always shows the Pending state: pending lines, an explicit \"bank reported none\", or a stale-pull hint."}
