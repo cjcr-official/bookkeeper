@@ -1,1 +1,1 @@
-{"version":239,"note":"v239: center content inside the 44px small buttons (bank card icons, + Log) — min-size inflation was leaving icons off-center."}
+{"version":240,"note":"v240: audit month grid — 6 per row with bigger tap targets and larger labels on phones (12-across stays on desktop)."}

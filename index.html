@@ -131,6 +131,9 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .btn-primary:hover{background:var(--accent);filter:brightness(1.08);border-color:var(--accent);box-shadow:0 0 16px var(--accent-glow)}
 .btn-danger{background:var(--red-bg);color:var(--red);border-color:rgba(239,68,68,.3)}
 .btn-sm{padding:.28rem .6rem;font-size:12px}
+.audit-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:5px}
+.audit-chip{text-align:center;padding:.45rem .1rem;border-radius:9px}
+.audit-chip .am{color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace;margin-bottom:5px;display:block}
 .btn-full{width:100%;justify-content:center;padding:.65rem}
 
 /* ── STAT CARDS ── */
@@ -481,6 +484,10 @@ body.modal-open .main{overflow:hidden}
   .card-header{padding:.75rem 1rem}
   /* row action buttons (view/edit/delete) must be real touch targets — 44px min */
   .page .btn-sm{min-height:44px;min-width:44px;justify-content:center}
+  /* audit month grid: two rows of 6 on phones so each month is a real tap target */
+  .audit-grid{grid-template-columns:repeat(6,1fr);gap:7px}
+  .audit-chip{padding:.7rem .1rem}
+  .audit-chip .am{font-size:10.5px}
   .tabs{overflow-x:auto;scrollbar-width:none;width:100%}
   .tabs::-webkit-scrollbar{display:none}
   .toast{left:1rem;right:1rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 12px);text-align:center}
@@ -4813,7 +4820,7 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
       ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${rec.passed?'#16a34a':'#d97706'}"></span>`
       : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;border:1.5px solid var(--border)"></span>`;
     const tip = bankPull ? `${nm} ${yr} — tap to reconcile` : `${nm} ${yr}`;
-    return `<div title="${tip}"${click} style="text-align:center;padding:.45rem .1rem;border-radius:9px;background:${cur?'var(--accent-bg)':'var(--bg2)'};${cur?'box-shadow:inset 0 0 0 1.5px var(--accent);':''}${clickable?'cursor:pointer;':''}${dim?'opacity:.4;':''}"><div style="color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace;margin-bottom:5px">${nm}</div><div style="display:flex;justify-content:center;align-items:center;height:9px">${dot}</div></div>`;
+    return `<div title="${tip}"${click} class="audit-chip" style="background:${cur?'var(--accent-bg)':'var(--bg2)'};${cur?'box-shadow:inset 0 0 0 1.5px var(--accent);':''}${clickable?'cursor:pointer;':''}${dim?'opacity:.4;':''}"><span class="am">${nm}</span><div style="display:flex;justify-content:center;align-items:center;height:9px">${dot}</div></div>`;
   }).join('');
   const curM = !!monthKey && monthKey === today().slice(0,7);
   const st = passed ? ['Passed','circle-check','#16a34a','rgba(22,163,74,.13)']
@@ -4833,7 +4840,7 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
         <span style="display:inline-flex;align-items:center;gap:.25rem"><span style="width:7px;height:7px;border-radius:50%;background:#d97706"></span>Review</span>
       </span>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:5px">${chips}</div>
+    <div class="audit-grid">${chips}</div>
   </div>`;
 }
 
