@@ -4702,7 +4702,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       html = chipRow(r, chip('Matched this month', 'check', GREEN[0], GREEN[1]));
     } else if (st === 'cash' || st === 'skipped') {
       rank = 2;
-      html = chipRow(r, chip(st==='cash' ? 'Set aside · cash' : 'Set aside by you', 'eye-off', MUTED[0], MUTED[1]),
+      html = chipRow(r, st==='cash' ? chip('Cash · never on bank statements', 'cash', MUTED[0], MUTED[1]) : chip('Set aside by you', 'eye-off', MUTED[0], MUTED[1]),
         skipInP.has(r.fp) ? `<button onclick="unskipRec('${r.fp}')" class="btn btn-sm" style="font-size:10.5px;padding:.16rem .55rem;min-height:0;min-width:0">Restore</button>` : '');
     } else if (st === 'claimed') {
       const m = gManual.get(r.fp);
@@ -4717,7 +4717,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
 
   // Set-aside rows (auto cash + user skips): muted, with a Restore button.
   const skipRow = r => `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.75">
-      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(r.label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${r.date?fmtDate(r.date):'—'} · ${r.reason==='cash'?'cash — not expected on the bank':'set aside by you'}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(r.label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${r.date?fmtDate(r.date):'—'} · ${r.reason==='cash'?'paid in cash — never on bank statements':'set aside by you'}</div></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${r.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(r.amount)}</div>
       <button onclick="unskipRec('${r.fp}')" class="btn btn-sm" style="font-size:11px;flex-shrink:0">Restore</button></div>`;
 
@@ -4747,7 +4747,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     ${card(secHead('On the bank · not in your books', onBankOnly.length) + list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t)))))}
     ${card(secHead('In your books · not on the bank', inRecordsOnly.length) + list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true))))}
     ${pendingHtml}
-    ${setAside.length?card(`<details><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Set aside · not expected on the bank')} &nbsp;${pillN(setAside.length,'mut')}</summary>${setAside.map(skipRow).join('')}</details>`):''}
+    ${setAside.length?card(`<details><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Cash & set aside · not on the bank')} &nbsp;${pillN(setAside.length,'mut')}</summary>${setAside.map(skipRow).join('')}</details>`):''}
     ${card(mono('Find any record') + `<input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin:.6rem 0 .45rem"><div id="rec-search-results"></div>`)}
     ${card(`<details open><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Matched')} &nbsp;${pillN(matched.length,'ok')}</summary><div>${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>`)}
     <div style="display:flex;justify-content:flex-end;margin:.2rem 0 .4rem">

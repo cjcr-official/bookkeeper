@@ -1,1 +1,1 @@
-{"version":241,"note":"v241: Find any record — clear result rows: title + amount, then date + a compact status chip (green Matched with tap-to-open month, amber Unmatched, gray Set aside); needs-attention results sort first."}
+{"version":242,"note":"v242: clearer wording — cash records show as Cash · never on bank statements (automatic), distinct from records you set aside yourself."}
