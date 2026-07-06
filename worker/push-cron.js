@@ -167,10 +167,13 @@ async function plaidTransactions(req, env) {
       offset += batch.length;
       if (!batch.length) break;
     }
-    const transactions = all
-      .filter(t => !t.pending)   // only cleared lines reconcile against the ledger
-      .map(t => ({ date: t.date, description: t.merchant_name || t.name || 'Transaction', amount: -(Number(t.amount) || 0), balance: null }));
-    return jsonResp({ ok: true, institution: item.institution || null, transactions, accounts: accounts.map(a => ({ name: a.name, mask: a.mask, subtype: a.subtype })) });
+    const mapT = t => ({ date: t.date, description: t.merchant_name || t.name || 'Transaction', amount: -(Number(t.amount) || 0), balance: null });
+    // Only cleared lines reconcile against the ledger; pending ones are returned
+    // separately so the client can show live-but-unsettled activity without
+    // matching against amounts/names that can still change.
+    const transactions = all.filter(t => !t.pending).map(mapT);
+    const pending = all.filter(t => t.pending).map(mapT);
+    return jsonResp({ ok: true, institution: item.institution || null, transactions, pending, accounts: accounts.map(a => ({ name: a.name, mask: a.mask, subtype: a.subtype })) });
   } catch (e) {
     console.error('plaid transactions', e.plaid || e);
     const code = e.plaid && e.plaid.error_code;

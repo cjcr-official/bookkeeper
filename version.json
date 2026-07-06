@@ -1,1 +1,1 @@
-{"version":231,"note":"v231: reconcile — the current month reads 'In progress' instead of a false 'Needs review' (pending bank lag isn't a failure), and records matched in their own month no longer show as unmatched strays in other months' views."}
+{"version":232,"note":"v232: reconcile — new 'Pending at the bank' section shows live unsettled Plaid activity (display only; joins matching automatically once it clears), so the current month reflects reality instead of looking empty."}

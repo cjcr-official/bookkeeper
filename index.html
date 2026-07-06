@@ -3559,6 +3559,7 @@ function buildPlaidStmt(month, data) {
     period_start: start, period_end: end, statement_month: start,
     opening_balance: null, closing_balance: null,   // Plaid doesn't give a per-month opening/closing balance
     transactions: txns, source: 'plaid',
+    pending: data.pending || [],   // live-but-unsettled bank lines (display only, never matched)
     manual_matches: saved.manual_matches || [],
     unmatch_t: saved.unmatch_t || [],
     unmatch_r: saved.unmatch_r || [],
@@ -4579,7 +4580,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const setAside = skippedRecs.filter(r => r.inP);   // this month's set-asides (cash + skips)
   // A truly empty month (no bank lines, nothing recorded, nothing set aside)
   // still records its audit result — an empty month reconciles clean by definition.
-  if (!txns.length && !inRecordsOnly.length && !setAside.length && !matched.length) {
+  if (!txns.length && !inRecordsOnly.length && !setAside.length && !matched.length && !(stmt.pending||[]).length) {
     _recState = null;
     out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No bank activity and nothing in your books for ${escHtml(monthLabel||'this month')} — nothing to reconcile. If this is an older month that should have transactions, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`;
     recordAudit(acctId, monthKey, passed, monthLabel);
@@ -4693,6 +4694,17 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${r.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(r.amount)}</div>
       <button onclick="unskipRec('${r.fp}')" class="btn btn-sm" style="font-size:11px;flex-shrink:0">Restore</button></div>`;
 
+  // Live-but-unsettled bank activity (Plaid "pending"): display only. Banks can
+  // still change a pending line's amount/description, so these never take part
+  // in matching or the pass — they graduate into the buckets once they clear.
+  const pendingHtml = (stmt.pending||[]).length ? `
+    <details ${isCur?'open':''} style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Pending at the bank <span style="font-weight:600">${stmt.pending.length}</span></summary>
+      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Live from the bank but not settled yet. These join the matching automatically once they clear — usually within a few days.</div>
+      ${stmt.pending.map(t=>`<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.7">
+        <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(cleanBankDesc(t.description))}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${t.date?fmtDate(t.date):'—'} · pending</div></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${t.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(t.amount)}</div>
+      </div>`).join('')}</details>` : '';
+
   out.innerHTML = `
     <div id="rec-audit"></div>
     ${monthPicker}
@@ -4704,6 +4716,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       ${onBankOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Tap ⋯ to record a line in your books (expense, invoice payment, owner move). Or tick a box on each side and Match.</div>`:''}
       ${list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t))))}
     </div>
+    ${pendingHtml}
     <div style="margin-bottom:1.1rem">
       ${secHead('In your books, not on this statement', inRecordsOnly.length)}
       ${inRecordsOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">${isCur?'This month is still in progress — records here have probably just not cleared the bank yet. ':''}Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line). Not on this statement at all? Tap the eye to set it aside.</div>`:''}
