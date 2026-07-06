@@ -82,9 +82,11 @@ persists in `profiles.plaid_recon` (there's no PDF sidecar): `manual_matches`,
 on every pull by `applyTxnEdits` inside `buildPlaidStmt` so match indices stay
 valid), **`skip_fps`** (records the user set aside as "not on this statement" for
 that month), and **`keep_fps`** (cash records restored into the month's pool).
-Records that never hit the bank don't block a month: expenses with method `Cash`
-and invoices paid `Cash` are auto-set-aside into a collapsed "Set aside" section
-(restorable); any other record can be set aside per month via the eye-off button.
+Cash records are NOT excluded from matching — this business deposits cash income,
+so a cash-paid invoice hits the bank as a deposit and reconciles like everything
+else (several cash payments deposited together match via the combo pass). A
+record that genuinely never hits the bank is set aside per month via the eye-off
+button (`skip_fps`; `keep_fps` is a vestige of the removed cash auto-set-aside).
 Cross-month double-claims are prevented inside `reconcileMatch`: records manually
 matched in another month (per `plaid_recon`) are marked used up front, dropping
 them from that month's lists and auto-match pool (`gManual` maps fp → claiming

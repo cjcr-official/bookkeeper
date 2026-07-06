@@ -1,1 +1,1 @@
-{"version":243,"note":"v243: cash chip is now Recorded as cash - tap to fix (opens the record); set-aside rows tap-to-edit; Cash moved out of the payment-method dropdown top slot."}
+{"version":244,"note":"v244: cash records reconcile like everything else — cash income is deposited, so cash payments match bank deposits (combo pass covers grouped deposits). Only records you set aside with the eye button are excluded."}

@@ -4380,11 +4380,11 @@ function reconcileMatch(stmt, acctId) {
   const recs = [];
   (cache.expenses||[]).forEach(e=>{
     if (acctId && e.account_id && e.account_id!==acctId) return;   // honor account link when present
-    recs.push({ kind:'Expense', date:e.date, amount:-(parseFloat(e.amount)||0), label:e.vendor||'Expense', fp:'e:'+e.id, cash:(e.method||'').toLowerCase()==='cash' });
+    recs.push({ kind:'Expense', date:e.date, amount:-(parseFloat(e.amount)||0), label:e.vendor||'Expense', fp:'e:'+e.id });
   });
   (cache.invoices||[]).forEach(i=>{
     const paid = parseFloat(i.amount_paid)||0;
-    if (paid>0) recs.push({ kind:'Payment', date:i.paid_date||i.date, amount:paid, label:'Invoice '+(i.number||'')+' — '+(i.customer_name||''), fp:'p:'+i.id, cash:(i.payment_method||'').toLowerCase()==='cash' });
+    if (paid>0) recs.push({ kind:'Payment', date:i.paid_date||i.date, amount:paid, label:'Invoice '+(i.number||'')+' — '+(i.customer_name||''), fp:'p:'+i.id });
   });
   // Owner activity (contributions in, draws out) — equity moves, not P&L,
   // but they hit the bank so they belong in the reconciliation candidate pool.
@@ -4444,24 +4444,20 @@ function reconcileMatch(stmt, acctId) {
   const gOwned = new Set();   // tight-ownership retired in v226; kept for return-shape compat
   const tightFps = [];
 
-  // Set-aside pass: records that never hit the bank. Cash-method expenses and
-  // cash-paid invoices are set aside automatically (Restore/keep_fps overrides
-  // that per month); the user can also skip any record for the month via the
-  // eye-off button ("not on this statement"). Set-aside records don't auto-match
-  // and don't block the month from passing. Manual matches (Pass 0) already ran,
-  // so an explicit pairing always beats a skip.
+  // Set-aside pass: ONLY records the user explicitly skipped for this month via
+  // the eye-off button ("not on this statement"). Cash records are NOT excluded
+  // automatically — this business deposits cash income, so cash payments hit the
+  // bank as deposits and reconcile like everything else. Set-aside records don't
+  // auto-match and don't block the month from passing. Manual matches (Pass 0)
+  // already ran, so an explicit pairing always beats a skip.
   const skipSet = new Set(stmt.skip_fps || []);
-  const keepSet = new Set(stmt.keep_fps || []);
   const skippedRecs = [];
   recs.forEach((r, i) => {
-    if (usedR[i]) return;
-    const userSkip = skipSet.has(r.fp);
-    const cashSkip = !userSkip && r.cash && !keepSet.has(r.fp);
-    if (!userSkip && !cashSkip) return;
+    if (usedR[i] || !skipSet.has(r.fp)) return;
     usedR[i] = true;
     // inP: only in-period set-asides show in the month's "Set aside" section;
     // out-of-period ones still get their status reported by the record search.
-    skippedRecs.push({ ...r, reason: userSkip ? 'skipped' : 'cash', inP: inPeriod(r.date) });
+    skippedRecs.push({ ...r, reason: 'skipped', inP: inPeriod(r.date) });
   });
 
   // Auto-match window: a record only auto-matches a bank line when its recorded date
@@ -4700,9 +4696,9 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       }
     } else if (st === 'manual' || st === 'auto') {
       html = chipRow(r, chip('Matched this month', 'check', GREEN[0], GREEN[1]));
-    } else if (st === 'cash' || st === 'skipped') {
+    } else if (st === 'skipped') {
       rank = 2;
-      html = chipRow(r, st==='cash' ? chip('Recorded as cash · tap to fix', 'cash', MUTED[0], MUTED[1], `editRecFromFp('${r.fp}')`) : chip('Set aside by you', 'eye-off', MUTED[0], MUTED[1]),
+      html = chipRow(r, chip('Set aside by you', 'eye-off', MUTED[0], MUTED[1]),
         skipInP.has(r.fp) ? `<button onclick="unskipRec('${r.fp}')" class="btn btn-sm" style="font-size:10.5px;padding:.16rem .55rem;min-height:0;min-width:0">Restore</button>` : '');
     } else if (st === 'claimed') {
       const m = gManual.get(r.fp);
@@ -4717,7 +4713,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
 
   // Set-aside rows (auto cash + user skips): muted, with a Restore button.
   const skipRow = r => `<div onclick="editRecFromFp('${r.fp}')" style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.75;cursor:pointer">
-      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(r.label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${r.date?fmtDate(r.date):'—'} · ${r.reason==='cash'?'paid in cash — never on bank statements':'set aside by you'}</div></div>
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(r.label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${r.date?fmtDate(r.date):'—'} · set aside by you</div></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${r.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(r.amount)}</div>
       <button onclick="event.stopPropagation();unskipRec('${r.fp}')" class="btn btn-sm" style="font-size:11px;flex-shrink:0">Restore</button></div>`;
 
@@ -4747,7 +4743,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     ${card(secHead('On the bank · not in your books', onBankOnly.length) + list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t)))))}
     ${card(secHead('In your books · not on the bank', inRecordsOnly.length) + list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true))))}
     ${pendingHtml}
-    ${setAside.length?card(`<details><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Cash & set aside · not on the bank')} &nbsp;${pillN(setAside.length,'mut')}</summary>${setAside.map(skipRow).join('')}</details>`):''}
+    ${setAside.length?card(`<details><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Set aside · not on the bank')} &nbsp;${pillN(setAside.length,'mut')}</summary>${setAside.map(skipRow).join('')}</details>`):''}
     ${card(mono('Find any record') + `<input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin:.6rem 0 .45rem"><div id="rec-search-results"></div>`)}
     ${card(`<details open><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Matched')} &nbsp;${pillN(matched.length,'ok')}</summary><div>${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>`)}
     <div style="display:flex;justify-content:flex-end;margin:.2rem 0 .4rem">
