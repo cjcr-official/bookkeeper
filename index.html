@@ -4688,7 +4688,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
         // Its own month accounts for it (matched or set aside there) — not a stray.
         html = chipRow(r, chip('Matched · ' + escHtml(monthName(rm)), 'check', GREEN[0], GREEN[1], _plaidConnected ? `plaidPullMonth('${rm}')` : ''));
       } else if (auditPassed(rm)) {
-        html = chipRow(r, chip(escHtml(monthName(rm)) + ' reconciled clean', 'check', GREEN[0], GREEN[1], _plaidConnected ? `plaidPullMonth('${rm}')` : ''));
+        html = chipRow(r, chip('Matched · ' + escHtml(monthName(rm)), 'check', GREEN[0], GREEN[1], _plaidConnected ? `plaidPullMonth('${rm}')` : ''));
       } else {
         html = item(r.date, r.label, r.amount, r.kind + (periodTag?' · '+periodTag:''), r.fp);
         nearby = nearDays(r.date) <= 18;
