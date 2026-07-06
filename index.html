@@ -4620,10 +4620,13 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div>
       ${bankBtns}${skipBtn}</div>`;
   };
-  const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.4rem 0">Nothing here</div>';
-  // Section header: title + count. An empty bucket recedes (muted) so a clean
-  // statement reads calm; a non-empty one stays at full strength.
-  const secHead = (title, n) => `<div style="font-weight:700;font-size:13.5px;color:${n?'var(--text)':'var(--text3)'}">${title} <span style="font-weight:600;color:var(--text3)">${n}</span></div>`;
+  const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.55rem 0 .15rem;text-align:center">Nothing here</div>';
+  // Design-system section chrome: mono uppercase micro-label + count pill,
+  // each section in its own card. tone: 'ok' green, 'mut' neutral, else amber.
+  const mono = t => `<span style="font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3)">${t}</span>`;
+  const pillN = (n, tone) => `<span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;padding:.12rem .55rem;border-radius:999px;background:${n ? (tone==='ok' ? 'rgba(22,163,74,.13)' : tone==='mut' ? 'var(--bg2)' : 'rgba(217,119,6,.14)') : 'var(--bg2)'};color:${n ? (tone==='ok' ? '#16a34a' : tone==='mut' ? 'var(--text3)' : '#b45309') : 'var(--text3)'}">${n}</span>`;
+  const secHead = (title, n, tone) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding-bottom:.45rem;border-bottom:1px solid var(--border)">${mono(title)}${pillN(n, tone)}</div>`;
+  const card = inner => `<div class="card" style="padding:.9rem 1rem;margin-bottom:.85rem">${inner}</div>`;
   // Matched group row. Every match (manual + auto) has an Unlink button so the
   // user can fix wrong AI pairings. Index used by unmatchByIdx is the position
   // in `matched` at render time (captured in _recState.matchedGroups).
@@ -4713,12 +4716,12 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   //   []    → the bank told Plaid there's nothing pending right now
   let pendingHtml = '';
   if ((stmt.pending||[]).length) {
-    pendingHtml = `
-    <details style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Pending at the bank <span style="font-weight:600">${stmt.pending.length}</span></summary>
+    pendingHtml = card(`
+    <details><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Pending at the bank')} &nbsp;${pillN(stmt.pending.length,'mut')}</summary>
       ${stmt.pending.map(t=>`<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.7">
         <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(cleanBankDesc(t.description))}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${t.date?fmtDate(t.date):'—'} · pending</div></div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${t.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(t.amount)}</div>
-      </div>`).join('')}</details>`;
+      </div>`).join('')}</details>`);
   }
 
   out.innerHTML = `
@@ -4727,26 +4730,14 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     ${balanceHtml}
     ${noBank}
     <div id="rec-match-bar" style="display:none;position:sticky;top:0;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:.55rem .75rem;margin-bottom:.75rem;z-index:10;align-items:center;gap:.6rem;flex-wrap:wrap"></div>
-    <div style="margin-bottom:1.1rem">
-      ${secHead('On the bank, not in your books', onBankOnly.length)}
-      ${list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t))))}
-    </div>
+    ${card(secHead('On the bank · not in your books', onBankOnly.length) + list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t)))))}
+    ${card(secHead('In your books · not on the bank', inRecordsOnly.length) + list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true))))}
     ${pendingHtml}
-    <div style="margin-bottom:1.1rem">
-      ${secHead('In your books, not on this statement', inRecordsOnly.length)}
-      ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true)))}
-    </div>
-    ${setAside.length?`<details style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Set aside — not expected on the bank <span style="font-weight:600">${setAside.length}</span></summary>
-      ${setAside.map(skipRow).join('')}</details>`:''}
-    <div style="margin-bottom:1.1rem">
-      <div style="font-weight:700;font-size:13.5px;color:var(--text3)">Find any record</div>
-      <input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin-bottom:.5rem">
-      <div id="rec-search-results"></div>
-    </div>
-    <details open><summary style="cursor:pointer;font-weight:700;font-size:13.5px;padding:.2rem 0">Matched <span style="color:var(--text3);font-weight:600">${matched.length}</span></summary><div style="margin-top:.3rem">${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
-      <div style="flex:1"></div>
-      <button class="btn btn-sm" onclick="resetMonthMatches()" style="font-size:11px"><i class="ti ti-refresh"></i> Reset this month</button>
+    ${setAside.length?card(`<details><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Set aside · not expected on the bank')} &nbsp;${pillN(setAside.length,'mut')}</summary>${setAside.map(skipRow).join('')}</details>`):''}
+    ${card(mono('Find any record') + `<input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin:.6rem 0 .45rem"><div id="rec-search-results"></div>`)}
+    ${card(`<details open><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Matched')} &nbsp;${pillN(matched.length,'ok')}</summary><div>${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>`)}
+    <div style="display:flex;justify-content:flex-end;margin:.2rem 0 .4rem">
+      <button class="btn btn-sm" onclick="resetMonthMatches()" style="font-size:11px;color:var(--text3)"><i class="ti ti-refresh"></i> Reset this month</button>
     </div>`;
   searchOtherRecs();   // pre-fill the finder with unmatched records dated near this month
   recordAudit(acctId, monthKey, passed, monthLabel);
@@ -4834,9 +4825,11 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
     return `<div title="${tip}"${click} style="text-align:center;padding:.45rem .1rem;border-radius:9px;background:${cur?'var(--accent-bg)':'var(--bg2)'};${cur?'box-shadow:inset 0 0 0 1.5px var(--accent);':''}${clickable?'cursor:pointer;':''}${dim?'opacity:.4;':''}"><div style="color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace;margin-bottom:5px">${nm}</div><div style="display:flex;justify-content:center;align-items:center;height:9px">${dot}</div></div>`;
   }).join('');
   const curM = !!monthKey && monthKey === today().slice(0,7);
-  const stTxt = passed ? 'Passed' : (curM ? 'In progress — recent activity hasn’t cleared the bank yet' : 'Needs review');
-  const stColor = passed ? '#16a34a' : (curM ? 'var(--text3)' : '#d97706');
-  const head = monthKey ? `<div style="font-size:13px;margin-bottom:.5rem;color:var(--text2)">${escHtml(monthLabel||monthKey)} · <span style="font-weight:600;color:${stColor}">${stTxt}</span></div>` : '';
+  const st = passed ? ['Passed','circle-check','#16a34a','rgba(22,163,74,.13)']
+    : curM ? ['In progress','clock','var(--text3)','var(--bg2)']
+    : ['Needs review','alert-triangle','#b45309','rgba(217,119,6,.14)'];
+  const stPill = `<span style="display:inline-flex;align-items:center;gap:.32rem;padding:.22rem .7rem;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.2px;background:${st[3]};color:${st[2]};white-space:nowrap"><i class="ti ti-${st[1]}" style="font-size:12.5px"></i>${st[0]}</span>`;
+  const head = monthKey ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-bottom:.65rem"><span style="font-weight:800;font-size:16.5px;letter-spacing:-.35px">${escHtml(monthLabel||monthKey)}</span>${stPill}</div>` : '';
   el.innerHTML = `${head}<div class="card" style="padding:.85rem .9rem;margin-bottom:1rem">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem;margin-bottom:.6rem">
       <span style="display:inline-flex;align-items:center;gap:.1rem">
