@@ -1,1 +1,1 @@
-{"version":230,"note":"v230: reconcile — 'Find any record' search shows where every record went (matched here, matched in another month with an open button, set aside cash/user with restore, unmatched); near-month strays surface automatically."}
+{"version":231,"note":"v231: reconcile — the current month reads 'In progress' instead of a false 'Needs review' (pending bank lag isn't a failure), and records matched in their own month no longer show as unmatched strays in other months' views."}
