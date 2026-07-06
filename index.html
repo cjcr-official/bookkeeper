@@ -4665,39 +4665,55 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const neighborFps = {};
   if (monthKey) [shiftMonth(monthKey,-1), shiftMonth(monthKey,1)].forEach(m => { neighborFps[m] = monthAccountedFps(m); });
   const auditPassed = m => { const a = ((profile.audited_months||{})[acctId||'_']||{})[m]; return !!(a && a.passed); };
-  const infoRow = (r, note, btn) => `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.8">
-      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(r.label)}</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:.12rem">${r.date?fmtDate(r.date):'—'} · ${escHtml(r.kind)} · ${note}</div></div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${r.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(r.amount)}</div>
-      ${btn||''}</div>`;
-  const smallBtn = (js, label) => `<button onclick="${js}" class="btn btn-sm" style="font-size:11px;flex-shrink:0">${label}</button>`;
+  // Search-result row: title + amount on the first line, date + a compact
+  // status chip on the second — no prose. A tappable chip opens the month
+  // that has the record; results sort unmatched-first (rank).
+  const chip = (txt, icon, color, bg, js) => js
+    ? `<button onclick="${js}" style="display:inline-flex;align-items:center;gap:.28rem;padding:.16rem .55rem;border-radius:999px;font-size:10.5px;font-weight:700;border:none;background:${bg};color:${color};cursor:pointer;white-space:nowrap"><i class="ti ti-${icon}" style="font-size:11.5px"></i>${txt} ›</button>`
+    : `<span style="display:inline-flex;align-items:center;gap:.28rem;padding:.16rem .55rem;border-radius:999px;font-size:10.5px;font-weight:700;background:${bg};color:${color};white-space:nowrap"><i class="ti ti-${icon}" style="font-size:11.5px"></i>${txt}</span>`;
+  const chipRow = (r, chipHtml, extra) => `<div style="padding:.6rem 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:baseline;gap:.6rem">
+        <div style="flex:1;min-width:0;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(r.label)}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${r.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(r.amount)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-top:.3rem;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text3)">${r.date?fmtDate(r.date):'—'} · ${escHtml(r.kind)}</span>
+        ${chipHtml}${extra||''}
+      </div>
+    </div>`;
+  const GREEN = ['#16a34a','rgba(22,163,74,.13)'], AMBER = ['#b45309','rgba(217,119,6,.14)'], MUTED = ['var(--text3)','var(--bg2)'];
   _recState.searchPool = recs.map(r => {
     const st = statusByFp[r.fp] || (gManual.has(r.fp) ? 'claimed' : (inListFps.has(r.fp) ? 'listed' : (otherFps.has(r.fp) ? 'other' : '')));
     const periodTag = r.date ? monthName((r.date+'').slice(0,7)) : '';
-    let html, nearby = false;
+    let html, nearby = false, rank = 3;
     if (st === 'other') {   // unmatched in THIS view, different month
       const rm = (r.date||'').slice(0,7);
       if (neighborFps[rm] && neighborFps[rm].has(r.fp)) {
         // Its own month accounts for it (matched or set aside there) — not a stray.
-        html = infoRow(r, `accounted for on the ${escHtml(monthName(rm))} statement`, _plaidConnected ? smallBtn(`plaidPullMonth('${rm}')`, 'Open') : '');
+        html = chipRow(r, chip('Matched · ' + escHtml(monthName(rm)), 'check', GREEN[0], GREEN[1], _plaidConnected ? `plaidPullMonth('${rm}')` : ''));
+      } else if (auditPassed(rm)) {
+        html = chipRow(r, chip(escHtml(monthName(rm)) + ' reconciled clean', 'check', GREEN[0], GREEN[1], _plaidConnected ? `plaidPullMonth('${rm}')` : ''));
       } else {
-        const cleanTag = !neighborFps[rm] && auditPassed(rm) ? ' · that month reconciled clean' : '';
-        html = item(r.date, r.label, r.amount, r.kind + (periodTag?' · '+periodTag:'') + cleanTag, r.fp);
-        nearby = nearDays(r.date) <= 18 && !cleanTag;
+        html = item(r.date, r.label, r.amount, r.kind + (periodTag?' · '+periodTag:''), r.fp);
+        nearby = nearDays(r.date) <= 18;
+        rank = 0;
       }
     } else if (st === 'manual' || st === 'auto') {
-      html = infoRow(r, `<span style="color:#16a34a">matched on this statement${st==='manual'?' (by you)':''}</span> — see the Matched list`);
+      html = chipRow(r, chip('Matched this month', 'check', GREEN[0], GREEN[1]));
     } else if (st === 'cash' || st === 'skipped') {
-      html = infoRow(r, st==='cash' ? 'set aside — cash, not expected on the bank' : 'set aside by you for this month',
-        skipInP.has(r.fp) ? smallBtn(`unskipRec('${r.fp}')`, 'Restore') : '');
+      rank = 2;
+      html = chipRow(r, chip(st==='cash' ? 'Set aside · cash' : 'Set aside by you', 'eye-off', MUTED[0], MUTED[1]),
+        skipInP.has(r.fp) ? `<button onclick="unskipRec('${r.fp}')" class="btn btn-sm" style="font-size:10.5px;padding:.16rem .55rem;min-height:0;min-width:0">Restore</button>` : '');
     } else if (st === 'claimed') {
       const m = gManual.get(r.fp);
-      html = infoRow(r, `matched on the ${escHtml(monthName(m))} statement`, _plaidConnected ? smallBtn(`plaidPullMonth('${m}')`, 'Open ' + escHtml(monthName(m))) : '');
+      html = chipRow(r, chip('Matched · ' + escHtml(monthName(m)), 'check', GREEN[0], GREEN[1], _plaidConnected ? `plaidPullMonth('${m}')` : ''));
     } else {   // 'listed' (or anything else in-period + unmatched)
-      html = infoRow(r, 'unmatched — in this month\'s list above');
+      rank = 1;
+      html = chipRow(r, chip('Unmatched · in the list above', 'alert-triangle', AMBER[0], AMBER[1]));
     }
-    return { fp: r.fp, amount: r.amount, text: (r.label + ' ' + r.kind).toLowerCase(), html, nearby };
+    return { fp: r.fp, amount: r.amount, text: (r.label + ' ' + r.kind).toLowerCase(), html, nearby, rank };
   });
+  _recState.searchPool.sort((a,b)=>a.rank-b.rank);   // needs-attention first
 
   // Set-aside rows (auto cash + user skips): muted, with a Restore button.
   const skipRow = r => `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.75">

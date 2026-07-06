@@ -1,1 +1,1 @@
-{"version":240,"note":"v240: audit month grid — 6 per row with bigger tap targets and larger labels on phones (12-across stays on desktop)."}
+{"version":241,"note":"v241: Find any record — clear result rows: title + amount, then date + a compact status chip (green Matched with tap-to-open month, amber Unmatched, gray Set aside); needs-attention results sort first."}
