@@ -93,7 +93,14 @@ month). The **"Find any record"** search (`searchOtherRecs` over
 matched in another month (button opens that month), set aside (cash/user, with
 Restore), in this month's list, or unmatched in another month (actionable
 checkbox row) — and, before typing, auto-surfaces unmatched records dated within
-±18 days of the month, so "an expense is missing" always has a visible answer. Each
+±18 days of the month, so "an expense is missing" always has a visible answer.
+Two anti-false-alarm rules: (1) the CURRENT month is never stamped failed —
+records that haven't cleared yet are lag, not errors — it shows "In progress"
+(and any stale fail stamp is cleared) until it either passes or the month ends;
+(2) an out-of-period record isn't called a stray if its own month accounts for
+it — `monthAccountedFps(m)` recomputes the adjacent months' reconciles from the
+session cache (fallback: their stamped audit) and such records render as
+"accounted for on the <Mon> statement" instead of unmatched. Each
 unmatched bank line has a labeled ⋯ menu (`openTxnMenu`) that records the line
 into the books and explicit-pairs it via `manual_matches`: Add as expense
 (pre-fills the expense modal; `_recPairTxn` makes `saveExpense` pair it), Payment

@@ -3589,6 +3589,20 @@ function applyTxnEdits(txns, edits) {
   });
 }
 
+// Which of month m's records are accounted for (matched or set aside) by that
+// month's OWN reconcile? Auto-matches are per-view, so a June record matched in
+// June looks "unmatched" from July's view — this recomputes June's truth. Uses
+// the session cache; returns null when the month hasn't been pulled (caller
+// falls back to the stamped audit).
+function monthAccountedFps(m) {
+  if (!_plaidCache[m]) return null;
+  const comp = reconcileMatch(buildPlaidStmt(m, _plaidCache[m]), null);
+  const fps = new Set();
+  comp.matched.forEach(g => (g.rIdxs||[]).forEach(ri => { const r = comp.recs[ri]; if (r) fps.add(r.fp); }));
+  comp.skippedRecs.forEach(r => fps.add(r.fp));
+  return fps;
+}
+
 // One-tap yearly audit: a single ranged pull, bucketed by month, each month run
 // through the same matcher (with its saved edits), pass/fail stamped into the
 // audit grid. Ends on a summary of the months that need attention — tap to open.
@@ -4575,7 +4589,10 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
 
   // Month override picker is a PDF-era vestige — a Plaid month IS the pull month.
   const monthPicker = (stmt.statement_month && stmt.source!=='plaid') ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
-  const noBank = !txns.length ? `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">The bank shows no cleared lines for this month, but your books do (below). Fix each record's date, set it aside, or match it in the month it actually cleared.</div>` : '';
+  const isCur = !!monthKey && monthKey === today().slice(0,7);
+  const noBank = !txns.length ? `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">${isCur
+    ? 'Nothing has cleared at the bank for this month yet — purchases and deposits usually post a few days after they happen. Your records below aren\'t a problem; they\'ll match once the bank catches up.'
+    : 'The bank shows no cleared lines for this month, but your books do (below). Fix each record\'s date, set it aside, or match it in the month it actually cleared.'}</div>` : '';
 
   const cleanDesc = cleanBankDesc;   // hoisted to top level so the ⋯ menu shares it
   // Unmatched item row: checkbox + (bank-only) ⋯ menu or (record-only) skip + amount.
@@ -4629,6 +4646,13 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     if (!d || !stmt.period_start || !stmt.period_end) return Infinity;
     return Math.min(Math.abs((parseDate(d) - parseDate(stmt.period_start)) / 864e5), Math.abs((parseDate(d) - parseDate(stmt.period_end)) / 864e5));
   };
+  // A record isn't a stray just because it isn't matched in THIS view — its own
+  // month may reconcile it. Recompute the adjacent months live when their pulls
+  // are cached; otherwise fall back to their stamped audit result.
+  const shiftMonth = (mk, d) => { const x = parseDate(mk + '-01'); x.setMonth(x.getMonth() + d); return x.toISOString().slice(0,7); };
+  const neighborFps = {};
+  if (monthKey) [shiftMonth(monthKey,-1), shiftMonth(monthKey,1)].forEach(m => { neighborFps[m] = monthAccountedFps(m); });
+  const auditPassed = m => { const a = ((profile.audited_months||{})[acctId||'_']||{})[m]; return !!(a && a.passed); };
   const infoRow = (r, note, btn) => `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.8">
       <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(r.label)}</div>
       <div style="font-size:11px;color:var(--text3);margin-top:.12rem">${r.date?fmtDate(r.date):'—'} · ${escHtml(r.kind)} · ${note}</div></div>
@@ -4639,9 +4663,16 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     const st = statusByFp[r.fp] || (gManual.has(r.fp) ? 'claimed' : (inListFps.has(r.fp) ? 'listed' : (otherFps.has(r.fp) ? 'other' : '')));
     const periodTag = r.date ? monthName((r.date+'').slice(0,7)) : '';
     let html, nearby = false;
-    if (st === 'other') {   // unmatched, different month → actionable (checkbox + Match works cross-month)
-      html = item(r.date, r.label, r.amount, r.kind + (periodTag?' · '+periodTag:''), r.fp);
-      nearby = nearDays(r.date) <= 18;
+    if (st === 'other') {   // unmatched in THIS view, different month
+      const rm = (r.date||'').slice(0,7);
+      if (neighborFps[rm] && neighborFps[rm].has(r.fp)) {
+        // Its own month accounts for it (matched or set aside there) — not a stray.
+        html = infoRow(r, `accounted for on the ${escHtml(monthName(rm))} statement`, _plaidConnected ? smallBtn(`plaidPullMonth('${rm}')`, 'Open') : '');
+      } else {
+        const cleanTag = !neighborFps[rm] && auditPassed(rm) ? ' · that month reconciled clean' : '';
+        html = item(r.date, r.label, r.amount, r.kind + (periodTag?' · '+periodTag:'') + cleanTag, r.fp);
+        nearby = nearDays(r.date) <= 18 && !cleanTag;
+      }
     } else if (st === 'manual' || st === 'auto') {
       html = infoRow(r, `<span style="color:#16a34a">matched on this statement${st==='manual'?' (by you)':''}</span> — see the Matched list`);
     } else if (st === 'cash' || st === 'skipped') {
@@ -4675,7 +4706,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     </div>
     <div style="margin-bottom:1.1rem">
       ${secHead('In your books, not on this statement', inRecordsOnly.length)}
-      ${inRecordsOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line). Not on this statement at all? Tap the eye to set it aside.</div>`:''}
+      ${inRecordsOnly.length?`<div style="font-size:11.5px;color:var(--text3);margin:.15rem 0 .35rem">${isCur?'This month is still in progress — records here have probably just not cleared the bank yet. ':''}Check boxes + Match to pair with the bank side (split: pick 2+ that sum to one bank line). Not on this statement at all? Tap the eye to set it aside.</div>`:''}
       ${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true)))}
     </div>
     ${setAside.length?`<details style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Set aside — not expected on the bank <span style="font-weight:600">${setAside.length}</span></summary>
@@ -4729,8 +4760,18 @@ function setAuditResult(key, monthKey, passed) {
   return true;
 }
 // Save (and display) the pass/fail result for a month, keyed by account.
+// The CURRENT month is special: it isn't over, and recent records often haven't
+// cleared the bank yet — that's lag, not a problem. So an in-progress month is
+// never stamped as failed (any stale fail stamp is cleared); it can stamp green.
 async function recordAudit(acctId, monthKey, passed, monthLabel) {
-  const changed = setAuditResult(acctId || '_', monthKey, passed);
+  const cur = !!monthKey && monthKey === today().slice(0,7);
+  let changed = false;
+  if (cur && !passed) {
+    const byAcct = (profile.audited_months || {})[acctId || '_'];
+    if (byAcct && byAcct[monthKey]) { delete byAcct[monthKey]; changed = true; }
+  } else {
+    changed = setAuditResult(acctId || '_', monthKey, passed);
+  }
   renderAuditBlock(acctId, monthKey, monthLabel, passed);
   if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
 }
@@ -4767,7 +4808,10 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
     const tip = bankPull ? `${nm} ${yr} — tap to reconcile` : `${nm} ${yr}`;
     return `<div title="${tip}"${click} style="text-align:center;padding:.45rem .1rem;border-radius:9px;background:${cur?'var(--accent-bg)':'var(--bg2)'};${cur?'box-shadow:inset 0 0 0 1.5px var(--accent);':''}${clickable?'cursor:pointer;':''}${dim?'opacity:.4;':''}"><div style="color:var(--text3);font-size:8.5px;font-family:'JetBrains Mono',monospace;margin-bottom:5px">${nm}</div><div style="display:flex;justify-content:center;align-items:center;height:9px">${dot}</div></div>`;
   }).join('');
-  const head = monthKey ? `<div style="font-size:13px;margin-bottom:.5rem;color:var(--text2)">${escHtml(monthLabel||monthKey)} · <span style="font-weight:600;color:${passed?'#16a34a':'#d97706'}">${passed?'Passed':'Needs review'}</span></div>` : '';
+  const curM = !!monthKey && monthKey === today().slice(0,7);
+  const stTxt = passed ? 'Passed' : (curM ? 'In progress — recent activity hasn’t cleared the bank yet' : 'Needs review');
+  const stColor = passed ? '#16a34a' : (curM ? 'var(--text3)' : '#d97706');
+  const head = monthKey ? `<div style="font-size:13px;margin-bottom:.5rem;color:var(--text2)">${escHtml(monthLabel||monthKey)} · <span style="font-weight:600;color:${stColor}">${stTxt}</span></div>` : '';
   el.innerHTML = `${head}<div class="card" style="padding:.85rem .9rem;margin-bottom:1rem">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem;margin-bottom:.6rem">
       <span style="display:inline-flex;align-items:center;gap:.1rem">
