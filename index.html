@@ -3445,33 +3445,28 @@ async function renderPlaidBlock() {
     if (!_recState) renderAuditBlock(null, '', '', null);
     return;
   }
-  // Default to LAST month — the current month is usually still mostly pending, so
-  // it comes back empty and looks broken. Users can bump it forward if they want.
-  const d = new Date(); d.setDate(1);
-  const thisMonth = d.toISOString().slice(0, 7);
-  d.setMonth(d.getMonth() - 1);
-  const defMonth = d.toISOString().slice(0, 7);
+  // Compact connected card: bank + status + pending note up top, one primary
+  // action ("Check all 12 months" — the audit grid handles single months), and
+  // icon-only Reconnect/Disconnect so nothing can overflow the right edge.
   el.innerHTML = `
-    <div class="card" style="padding:1rem 1.05rem;margin-bottom:1.1rem">
-      <div style="display:flex;align-items:center;gap:.7rem">
+    <div class="card" style="padding:1rem 1.05rem;margin-bottom:1.1rem;overflow:hidden;max-width:100%;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:.7rem;min-width:0">
         <div style="width:40px;height:40px;border-radius:12px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-building-bank" style="color:var(--accent);font-size:20px"></i></div>
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:14.5px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${status.institution ? escHtml(status.institution) : 'Your bank'}</div>
           <div style="font-size:11.5px;color:#16a34a;display:flex;align-items:center;gap:.28rem;margin-top:2px"><i class="ti ti-circle-check" style="font-size:13px"></i> Connected</div>
         </div>
+        <div style="display:flex;gap:.4rem;flex-shrink:0">
+          <button class="btn btn-sm" onclick="plaidConnect()" title="Reconnect" style="padding:.4rem .55rem"><i class="ti ti-refresh"></i></button>
+          <button class="btn btn-sm btn-danger" onclick="plaidDisconnect()" title="Disconnect" style="padding:.4rem .55rem"><i class="ti ti-unlink"></i></button>
+        </div>
       </div>
-      <div style="height:1px;background:var(--border);margin:.95rem 0"></div>
-      <label style="display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:.4rem;font-weight:700">Statement month</label>
-      <input type="month" id="plaid-month" value="${defMonth}" max="${thisMonth}" style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:.6rem .65rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:14px">
-      <button class="btn btn-primary" id="plaid-pull-btn" onclick="plaidPull(null,true)" style="width:100%;margin-top:.6rem"><i class="ti ti-download"></i> Pull &amp; reconcile</button>
-      <button class="btn" id="plaid-year-btn" onclick="plaidCheckYear()" style="width:100%;margin-top:.5rem"><i class="ti ti-calendar-stats"></i> Check the last 12 months</button>
-      <div style="font-size:11.5px;color:var(--text3);margin-top:.75rem;display:flex;align-items:center;gap:.35rem;justify-content:center"><i class="ti ti-hand-finger" style="font-size:13px"></i> Or tap a month in the audit grid below</div>
-      <div style="display:flex;gap:.5rem;margin-top:.9rem;padding-top:.85rem;border-top:1px solid var(--border)">
-        <button class="btn btn-sm" onclick="plaidConnect()" style="font-size:11.5px;padding:.34rem .65rem"><i class="ti ti-refresh"></i> Reconnect</button>
-        <button class="btn btn-sm btn-danger" onclick="plaidDisconnect()" style="font-size:11.5px;padding:.34rem .65rem"><i class="ti ti-unlink"></i> Disconnect</button>
-      </div>
+      <div id="plaid-pending-note" style="font-size:11.5px;color:var(--text3);margin-top:.55rem;display:flex;align-items:center;gap:.35rem"></div>
+      <button class="btn btn-primary" id="plaid-year-btn" onclick="plaidCheckYear()" style="width:100%;margin-top:.7rem"><i class="ti ti-calendar-stats"></i> Check all 12 months</button>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:.55rem;text-align:center">Or tap a month below to reconcile just that one</div>
     </div>`;
   _plaidConnected = true;
+  renderPlaidPendingNote();
   if (!_recState) renderAuditBlock(null, '', '', null);   // make the audit months tap-to-pull
 }
 // Open Plaid Link → exchange the public_token server-side → refresh the card.
@@ -3503,32 +3498,44 @@ async function plaidConnect() {
 // already pulled is instant (no re-fetch); the "Pull & reconcile" button forces a
 // fresh pull (force=true). Cleared on connect/disconnect.
 let _plaidCache = {};
-// Tap a month in the audit grid → pull & reconcile that month (cached if seen).
+// Pending support: null = unknown until the current month is pulled once;
+// otherwise the pending count from the latest current-month pull. Shown as the
+// bank-card note ("N pending" / "doesn't show pending transactions").
+let _plaidPending = null;
+function renderPlaidPendingNote() {
+  const el = document.getElementById('plaid-pending-note'); if (!el) return;
+  if (_plaidPending == null) { el.innerHTML = ''; el.style.display = 'none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = _plaidPending > 0
+    ? `<i class="ti ti-clock" style="font-size:13px;flex-shrink:0"></i> ${_plaidPending} pending at the bank — listed inside the current month`
+    : `<i class="ti ti-info-circle" style="font-size:13px;flex-shrink:0"></i> Your institution doesn’t show pending transactions.`;
+}
+// Tap a month in the audit grid → pull & reconcile it. Past months reuse the
+// session cache (instant); the current month always re-pulls so it stays live.
 async function plaidPullMonth(month) {
   if (!_plaidConnected) return;
-  const inp = document.getElementById('plaid-month'); if (inp) inp.value = month;   // reflect it in the picker
-  await plaidPull(month, false);
+  await plaidPull(month, month === today().slice(0, 7));
 }
 async function plaidPull(monthArg, force) {
-  const month = monthArg || (document.getElementById('plaid-month') || {}).value || '';
+  const month = monthArg || '';
   if (!/^\d{4}-\d{2}$/.test(month)) { showToast('Pick a month first.', 'error'); return; }
   const [y, m] = month.split('-').map(Number);
   const start = month + '-01';
   const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
-  const btn = document.getElementById('plaid-pull-btn'); const orig = btn ? btn.innerHTML : '';
   const out = document.getElementById('rec-result');
   try {
     let data = (!force && _plaidCache[month]) ? _plaidCache[month] : null;
     if (!data) {
-      if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Pulling…'; }
+      if (out) out.innerHTML = `<div id="rec-audit"></div><div style="display:flex;align-items:center;gap:.5rem;color:var(--text3);font-size:13px;padding:.35rem 0"><span class="spinner"></span> Pulling from the bank…</div>`;
       data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end }) });
       _plaidCache[month] = data;   // cache the raw response for this session
     }
+    if (month === today().slice(0, 7) && Array.isArray(data.pending)) { _plaidPending = data.pending.length; renderPlaidPendingNote(); }
     renderReconcile(buildPlaidStmt(month, data), null, null, {}, null);
   } catch (e) {
     console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="color:#b91c1c;font-size:13px">${escHtml(e.message || 'Pull failed.')}</div>`; renderAuditBlock(null, '', '', null);
     if (e.data && e.data.reconnect) renderPlaidBlock();
-  } finally { if (btn) { btn.disabled = false; btn.innerHTML = orig; } }
+  }
 }
 async function plaidDisconnect() {
   if (!confirm('Disconnect this bank? You can reconnect any time.')) return;
@@ -4707,18 +4714,11 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   let pendingHtml = '';
   if ((stmt.pending||[]).length) {
     pendingHtml = `
-    <details ${isCur?'open':''} style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Pending at the bank <span style="font-weight:600">${stmt.pending.length}</span></summary>
+    <details style="margin-bottom:1.1rem"><summary style="cursor:pointer;font-weight:700;font-size:13.5px;color:var(--text3);padding:.2rem 0">Pending at the bank <span style="font-weight:600">${stmt.pending.length}</span></summary>
       ${stmt.pending.map(t=>`<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.7">
         <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(cleanBankDesc(t.description))}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${t.date?fmtDate(t.date):'—'} · pending</div></div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${t.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(t.amount)}</div>
       </div>`).join('')}</details>`;
-  } else if (isCur) {
-    pendingHtml = `<div style="margin-bottom:1.1rem">
-      <div style="font-weight:700;font-size:13.5px;color:var(--text3)">Pending at the bank ${stmt.pending ? '0' : ''}</div>
-      <div style="font-size:11.5px;color:var(--text3);margin:.15rem 0">${stmt.pending
-        ? 'Your institution doesn’t show pending transactions.'
-        : 'Older pull — tap "Pull &amp; reconcile" to refresh.'}</div>
-    </div>`;
   }
 
   out.innerHTML = `

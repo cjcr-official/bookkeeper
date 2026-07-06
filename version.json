@@ -1,1 +1,1 @@
-{"version":234,"note":"v234: reconcile — trimmed the section captions; short notice when the institution does not show pending transactions."}
+{"version":235,"note":"v235: reconcile — cleaner bank card (institution + pending notice up top, no month picker or Pull button, icon Reconnect/Disconnect, no overflow), Check all 12 months as the one big action, month taps always live for the current month, pending list collapsed by default."}
