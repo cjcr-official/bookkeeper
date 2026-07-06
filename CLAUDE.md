@@ -122,7 +122,10 @@ browser never sees the token). "Pull & reconcile" for a chosen month calls
 `/plaid/transactions`, which fetches that month's **cleared** (non-pending)
 transactions and maps them into the exact same `stmt` shape the PDF flow produces —
 **with the sign flipped** (Plaid uses +money-out / −money-in; the app's ledger
-convention is −out / +in). That `stmt` flows through `renderReconcile` unchanged, so
+convention is −out / +in). Pending transactions are returned separately
+(`pending`, same mapped shape) and rendered as a display-only "Pending at the
+bank" section (`stmt.pending`) — never matched, never part of the pass, since
+banks can still change a pending line's amount/description before it settles. That `stmt` flows through `renderReconcile` unchanged, so
 matching, buckets, and the audit grid all just work. Plaid statements aren't saved
 as sidecars (Plaid is the live source, no PDF to archive) and carry `opening/closing
 balance = null` (Plaid gives no per-month opening/closing), so the balance check is
