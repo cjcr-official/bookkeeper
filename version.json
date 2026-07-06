@@ -1,1 +1,1 @@
-{"version":238,"note":"v238: owner activity redesigned (one card, In/Out/Net line, compact tap-to-edit rows, Delete in editor; gift cards match) + dark-theme micro-label contrast and 44px row-action touch targets."}
+{"version":239,"note":"v239: center content inside the 44px small buttons (bank card icons, + Log) — min-size inflation was leaving icons off-center."}
