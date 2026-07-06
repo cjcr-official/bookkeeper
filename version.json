@@ -1,1 +1,1 @@
-{"version":233,"note":"v233: reconcile — the current month always shows the Pending state: pending lines, an explicit \"bank reported none\", or a stale-pull hint."}
+{"version":234,"note":"v234: reconcile — trimmed the section captions; short notice when the institution does not show pending transactions."}
