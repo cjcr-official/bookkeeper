@@ -96,9 +96,12 @@ matched in another month (button opens that month), set aside (cash/user, with
 Restore), in this month's list, or unmatched in another month (actionable
 checkbox row) — and, before typing, auto-surfaces unmatched records dated within
 ±18 days of the month, so "an expense is missing" always has a visible answer.
-Two anti-false-alarm rules: (1) the CURRENT month is never stamped failed —
-records that haven't cleared yet are lag, not errors — it shows "In progress"
-(and any stale fail stamp is cleared) until it either passes or the month ends;
+Two anti-false-alarm rules: (1) the CURRENT month stamps pass/fail like any
+other month, so its grid dot shows discrepancies on load — `refreshLiveAudit`
+quietly re-checks it against the bank whenever the Statements page opens
+(session cache reused; failures silent) — but its on-screen status pill reads
+"In progress" rather than "Needs review", since mid-month unmatched records are
+usually just bank lag;
 (2) an out-of-period record isn't called a stray if its own month accounts for
 it — `monthAccountedFps(m)` recomputes the adjacent months' reconciles from the
 session cache (fallback: their stamped audit) and such records render as
