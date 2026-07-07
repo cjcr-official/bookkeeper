@@ -1,1 +1,1 @@
-{"version":251,"note":"v251: trip tracker sleep screen — moon button blacks out the display (OLED-friendly, keeps GPS + wake lock alive) with Start/Finish trip buttons right on it."}
+{"version":252,"note":"v252: trip tracker survives screen lock & app switching — silent-audio keep-alive replaces the wake lock, lock-screen media widget shows live miles, GPS pauses are bridged straight-line and flagged."}

@@ -2492,11 +2492,54 @@ function getTripsInRange() {
 // ====== GPS TRIP TRACKER ======
 // Start → watchPosition sums haversine distance between fixes while you drive →
 // Finish opens the normal Log Trip modal prefilled, so linking/saving is unchanged.
-// iOS PWA reality: geolocation only runs while the app is open with the screen on,
-// so tracking takes a screen wake lock; the running total persists in localStorage
-// and resumes if the app is reopened mid-trip. This is the phone's own GPS — NOT
-// the banned address-distance auto-calc (see CLAUDE.md).
-let _track = null, _trackWatch = null, _trackLock = null;
+// iOS PWA reality: JS (and GPS) is suspended the moment the screen sleeps — UNLESS
+// the page owns a playing audio session. So tracking loops a generated silent WAV
+// (see _startKeepAlive) instead of holding a wake lock: the screen locks normally
+// and fixes keep arriving. Cost: it takes the audio session, so Music/podcasts may
+// pause while a trip runs. If iOS suspends us anyway (keep-alive blocked, or the
+// user hits pause on the lock-screen media widget), the missed stretch is bridged
+// as a straight line between the last fix and the next and flagged on the card.
+// The running total persists in localStorage and resumes if the app is reopened
+// mid-trip. This is the phone's own GPS — NOT the banned address-distance
+// auto-calc (see CLAUDE.md).
+let _track = null, _trackWatch = null, _trackPoll = null;
+let _keepAlive = null, _lastMediaMi = -1;
+function _silentWav() {
+  const rate = 8000, n = rate * 10;   // 10 s of 8-bit silence, looped (~80 KB blob)
+  const buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVEfmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate, true);
+  v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+  w(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);   // 8-bit PCM silence = 128
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+function _startKeepAlive() {
+  try {
+    // 'playback' (iOS 17+ exposes navigator.audioSession) = keep playing when locked;
+    // element must NOT be muted — iOS suspends muted audio. The samples are silence.
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    if (!_keepAlive) { _keepAlive = new Audio(_silentWav()); _keepAlive.loop = true; }
+    const wasPaused = _keepAlive.paused;
+    _keepAlive.play().then(() => {
+      if (navigator.mediaSession) {
+        try {
+          navigator.mediaSession.setActionHandler('pause', () => { try { _keepAlive.pause(); renderTracker(); } catch(e){} });
+          navigator.mediaSession.setActionHandler('play',  () => { try { _keepAlive.play(); renderTracker(); } catch(e){} });
+        } catch(e){}
+      }
+      if (wasPaused) renderTracker();       // clears the tap-to-enable warning
+    }).catch(() => renderTracker());        // autoplay-blocked (app relaunched mid-trip, no gesture yet) — card shows the warning
+  } catch (e) {}
+}
+function _stopKeepAlive() {
+  if (_keepAlive) { try { _keepAlive.pause(); } catch (e) {} }
+  _lastMediaMi = -1;
+  try { if (navigator.mediaSession) navigator.mediaSession.metadata = null; } catch (e) {}
+  try { if (navigator.audioSession) navigator.audioSession.type = 'auto'; } catch (e) {}
+}
 function _havMi(a, b) {
   const R = 3958.8, r = x => x * Math.PI / 180;
   const h = Math.sin(r(b.lat - a.lat) / 2) ** 2
@@ -2507,12 +2550,17 @@ function _trackFix(lat, lng, acc) {
   if (!_track) return;
   if (acc > 50) return;                                   // ponytail: drop poor fixes; raise if rural GPS is worse
   const now = Date.now(), last = _track.last;
+  let newGap = false;
   if (last) {
     const mi = _havMi(last, {lat, lng});
     if (mi < ((acc + (last.acc || acc)) / 1609.34)) return;     // stationary jitter, below GPS uncertainty
     const dt = Math.max((now - (last.t || now)) / 1000, 1);     // clamp: dt≈0 must read as a glitch, not skip the check
     if ((mi * 1609.34) / dt > 55) {                             // >123 mph implied = GPS glitch, skip segment
       _track.last = {lat, lng, acc, t: now}; lsSet('bk-trip-track', JSON.stringify(_track)); return;
+    }
+    if (dt > 180 && mi > 0.2) {                                 // GPS was paused — this segment is a straight-line bridge
+      _track.gapMi = (_track.gapMi || 0) + mi;
+      newGap = true;
     }
     _track.mi += mi;
   }
@@ -2522,6 +2570,16 @@ function _trackFix(lat, lng, acc) {
   if (el) el.textContent = _track.mi.toFixed(2);
   const sl = document.getElementById('sleep-mi');
   if (sl) sl.textContent = _track.mi.toFixed(2);
+  if (newGap) renderTracker();                                  // surface the gap note
+  if (navigator.mediaSession && Math.abs(_track.mi - _lastMediaMi) > 0.1) {
+    _lastMediaMi = _track.mi;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: `Trip: ${_track.mi.toFixed(1)} mi`, artist: 'Bookkeeper GPS tracker',
+        artwork: [{ src: 'icon.png', sizes: '512x512', type: 'image/png' }]
+      });
+    } catch (e) {}
+  }
 }
 function _armTrack() {
   if (!navigator.geolocation) return;
@@ -2532,12 +2590,22 @@ function _armTrack() {
       if (err.code === 1) { showToast('Location access denied — allow it in iOS Settings → Privacy → Location Services → Bookkeeper.', 'error'); _stopTrack(); }
     },
     { enableHighAccuracy: true, maximumAge: 0 });
-  if (navigator.wakeLock) navigator.wakeLock.request('screen').then(l => _trackLock = l).catch(() => {});
+  // Belt and braces for the locked-screen case: watchPosition can stall while the
+  // page is only kept alive by audio, so also poll a fresh fix every 20 s.
+  if (_trackPoll) clearInterval(_trackPoll);
+  _trackPoll = setInterval(() => {
+    if (!_track) return;
+    navigator.geolocation.getCurrentPosition(
+      p => _trackFix(p.coords.latitude, p.coords.longitude, p.coords.accuracy),
+      () => {}, { enableHighAccuracy: true, maximumAge: 15000 });
+  }, 20000);
+  _startKeepAlive();
 }
 function _stopTrack() {
   if (_trackWatch != null && navigator.geolocation) { navigator.geolocation.clearWatch(_trackWatch); }
   _trackWatch = null;
-  if (_trackLock) { try { _trackLock.release(); } catch(e){} _trackLock = null; }
+  if (_trackPoll) { clearInterval(_trackPoll); _trackPoll = null; }
+  _stopKeepAlive();
   _track = null; lsSet('bk-trip-track', '');
   renderTracker();
 }
@@ -2550,11 +2618,13 @@ function startTrip() {
 }
 function finishTrip() {
   const mi = _track ? _track.mi : 0;
+  const gapMi = _track && _track.gapMi > 0.2 ? _track.gapMi : 0;
   _stopTrack();
   openTripModal();
   document.getElementById('trip-miles').value = mi.toFixed(2);
   calcTripMiles();
-  showToast(`Tracked ${mi.toFixed(2)} miles — pick a client and save`, 'success');
+  showToast(`Tracked ${mi.toFixed(2)} miles — pick a client and save` +
+    (gapMi ? `. ${gapMi.toFixed(1)} mi was bridged straight-line while GPS was paused, so adjust the miles if it reads short.` : ''), 'success');
 }
 function discardTrip() {
   if (!confirm('Discard this tracked trip? The measured miles will be lost.')) return;
@@ -2606,7 +2676,7 @@ function renderTracker() {
   if (!_track) {
     el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.85rem 1rem">
       <div style="min-width:0"><div style="font-weight:700;font-size:14.5px">Track a trip</div>
-        <div style="font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.45">GPS measures as you drive — keep the app open (it holds the screen awake). The <i class="ti ti-moon"></i> button blacks out the display while tracking keeps running.</div></div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.45">GPS measures as you drive. You can lock the screen or switch to another app — a silent audio session keeps tracking alive in the background (music or podcasts may pause). The <i class="ti ti-moon"></i> button is an all-black screen-on alternative.</div></div>
       <div style="display:flex;gap:.5rem;flex-shrink:0">
         <button class="btn btn-primary" onclick="startTrip()"><i class="ti ti-player-play"></i> <span>Start trip</span></button>
         <button class="btn" onclick="sleepOpen()" title="Sleep screen"><i class="ti ti-moon"></i></button>
@@ -2624,6 +2694,9 @@ function renderTracker() {
       <button class="btn" onclick="sleepOpen()" style="flex-shrink:0" title="Sleep screen"><i class="ti ti-moon"></i></button>
       <button class="btn" onclick="discardTrip()" style="flex-shrink:0" title="Discard"><i class="ti ti-x"></i></button>
     </div>
+    ${(!_keepAlive || _keepAlive.paused) ? `<div onclick="_startKeepAlive()" style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:#f59e0b;cursor:pointer"><i class="ti ti-alert-triangle"></i> Background tracking is off — locking the screen or leaving the app will pause GPS. Tap here to turn it on (starts a silent audio loop).</div>`
+      : `<div style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-lock"></i> You can lock the screen or switch apps — tracking keeps running.</div>`}
+    ${_track.gapMi > 0.2 ? `<div style="margin-top:.4rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-route-off"></i> ${_track.gapMi.toFixed(1)} mi of this was bridged straight-line while GPS was paused — check against the odometer if it reads short.</div>` : ''}
   </div>`;
 }
 // Re-arm the GPS watch + wake locks when the app comes back to the foreground
