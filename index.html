@@ -924,6 +924,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
       </div>
 
       <div id="page-mileage" class="page">
+        <!-- GPS trip tracker: Start → drive → Finish prefills the Log Trip modal -->
+        <div class="card" id="trip-tracker" style="margin-bottom:1rem"></div>
         <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
           <div class="stat-card"><div class="stat-label">Total Miles</div><div class="stat-value" id="mi-total-miles">0</div><div class="stat-sub">all time</div></div>
           <div class="stat-card"><div class="stat-label">This Month</div><div class="stat-value" id="mi-month-miles">0</div><div class="stat-sub">miles</div></div>
@@ -2481,7 +2483,106 @@ function getTripsInRange() {
   return list;
 }
 
+// ====== GPS TRIP TRACKER ======
+// Start → watchPosition sums haversine distance between fixes while you drive →
+// Finish opens the normal Log Trip modal prefilled, so linking/saving is unchanged.
+// iOS PWA reality: geolocation only runs while the app is open with the screen on,
+// so tracking takes a screen wake lock; the running total persists in localStorage
+// and resumes if the app is reopened mid-trip. This is the phone's own GPS — NOT
+// the banned address-distance auto-calc (see CLAUDE.md).
+let _track = null, _trackWatch = null, _trackLock = null;
+function _havMi(a, b) {
+  const R = 3958.8, r = x => x * Math.PI / 180;
+  const h = Math.sin(r(b.lat - a.lat) / 2) ** 2
+    + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function _trackFix(lat, lng, acc) {
+  if (!_track) return;
+  if (acc > 50) return;                                   // ponytail: drop poor fixes; raise if rural GPS is worse
+  const now = Date.now(), last = _track.last;
+  if (last) {
+    const mi = _havMi(last, {lat, lng});
+    if (mi < ((acc + (last.acc || acc)) / 1609.34)) return;     // stationary jitter, below GPS uncertainty
+    const dt = Math.max((now - (last.t || now)) / 1000, 1);     // clamp: dt≈0 must read as a glitch, not skip the check
+    if ((mi * 1609.34) / dt > 55) {                             // >123 mph implied = GPS glitch, skip segment
+      _track.last = {lat, lng, acc, t: now}; lsSet('bk-trip-track', JSON.stringify(_track)); return;
+    }
+    _track.mi += mi;
+  }
+  _track.last = {lat, lng, acc, t: now};
+  lsSet('bk-trip-track', JSON.stringify(_track));
+  const el = document.getElementById('track-mi');
+  if (el) el.textContent = _track.mi.toFixed(2);
+}
+function _armTrack() {
+  if (!navigator.geolocation) return;
+  if (_trackWatch != null) navigator.geolocation.clearWatch(_trackWatch);
+  _trackWatch = navigator.geolocation.watchPosition(
+    p => _trackFix(p.coords.latitude, p.coords.longitude, p.coords.accuracy),
+    err => {
+      if (err.code === 1) { showToast('Location access denied — allow it in iOS Settings → Privacy → Location Services → Bookkeeper.', 'error'); _stopTrack(); }
+    },
+    { enableHighAccuracy: true, maximumAge: 0 });
+  if (navigator.wakeLock) navigator.wakeLock.request('screen').then(l => _trackLock = l).catch(() => {});
+}
+function _stopTrack() {
+  if (_trackWatch != null && navigator.geolocation) { navigator.geolocation.clearWatch(_trackWatch); }
+  _trackWatch = null;
+  if (_trackLock) { try { _trackLock.release(); } catch(e){} _trackLock = null; }
+  _track = null; lsSet('bk-trip-track', '');
+  renderTracker();
+}
+function startTrip() {
+  if (!navigator.geolocation) { showToast('No GPS available on this device', 'error'); return; }
+  _track = { startedAt: Date.now(), mi: 0, last: null };
+  lsSet('bk-trip-track', JSON.stringify(_track));
+  _armTrack();
+  renderTracker();
+}
+function finishTrip() {
+  const mi = _track ? _track.mi : 0;
+  _stopTrack();
+  openTripModal();
+  document.getElementById('trip-miles').value = mi.toFixed(2);
+  calcTripMiles();
+  showToast(`Tracked ${mi.toFixed(2)} miles — pick a client and save`, 'success');
+}
+function discardTrip() {
+  if (!confirm('Discard this tracked trip? The measured miles will be lost.')) return;
+  _stopTrack();
+}
+function renderTracker() {
+  const el = document.getElementById('trip-tracker'); if (!el) return;
+  if (!_track) { try { _track = JSON.parse(lsGet('bk-trip-track') || 'null'); } catch(e) { _track = null; } }
+  if (_track && _trackWatch == null) _armTrack();   // app was reopened mid-trip — resume
+  if (!_track) {
+    el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.85rem 1rem">
+      <div style="min-width:0"><div style="font-weight:700;font-size:14.5px">Track a trip</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.45">GPS measures as you drive — keep the app open and the screen on (it holds the screen awake for you).</div></div>
+      <button class="btn btn-primary" onclick="startTrip()" style="flex-shrink:0"><i class="ti ti-player-play"></i> <span>Start trip</span></button>
+    </div>`;
+    return;
+  }
+  el.innerHTML = `<div style="padding:.85rem 1rem">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;flex-wrap:wrap">
+      <span style="font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--green)"><i class="ti ti-gps" style="font-size:12px"></i> Tracking · since ${new Date(_track.startedAt).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</span>
+      <span style="font-size:26px;font-weight:800;letter-spacing:-1px;font-variant-numeric:tabular-nums"><span id="track-mi">${_track.mi.toFixed(2)}</span> <span style="font-size:13px;color:var(--text3);font-weight:600">mi</span></span>
+    </div>
+    <div style="display:flex;gap:.5rem;margin-top:.7rem">
+      <button class="btn btn-primary" onclick="finishTrip()" style="flex:1;justify-content:center"><i class="ti ti-flag-check"></i> Finish trip</button>
+      <button class="btn" onclick="discardTrip()" style="flex-shrink:0"><i class="ti ti-x"></i> Discard</button>
+    </div>
+  </div>`;
+}
+// Re-arm the GPS watch + wake lock when the app comes back to the foreground
+// (iOS releases both while the screen is off or the app is backgrounded).
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && _track) _armTrack();
+});
+
 function renderMileage() {
+  renderTracker();
   const all = cache.trips;
   const now = new Date();
   const ym = now.toISOString().slice(0,7);
@@ -2566,7 +2667,8 @@ function editTrip(id) { openTripModal(cache.trips.find(t=>t.id===id)); }
 function onTripClientChange() {
   const cid = document.getElementById('trip-client').value;
   const c = cache.customers.find(x=>x.id===cid);
-  if (c && c.miles) document.getElementById('trip-miles').value = c.miles;
+  // only prefill an EMPTY miles field — never clobber GPS-tracked or hand-typed miles
+  if (c && c.miles && !document.getElementById('trip-miles').value) document.getElementById('trip-miles').value = c.miles;
   // build maps link from base -> client address
   const link = document.getElementById('trip-maps-link');
   if (c && c.address && profile.base_address) {
