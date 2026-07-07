@@ -4707,9 +4707,9 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       rank = 1;
       html = chipRow(r, chip('Unmatched · in the list above', 'alert-triangle', AMBER[0], AMBER[1]));
     }
-    return { fp: r.fp, amount: r.amount, text: (r.label + ' ' + r.kind).toLowerCase(), html, nearby, rank };
+    return { fp: r.fp, amount: r.amount, date: r.date || '', text: (r.label + ' ' + r.kind).toLowerCase(), html, nearby, rank };
   });
-  _recState.searchPool.sort((a,b)=>a.rank-b.rank);   // needs-attention first
+  _recState.searchPool.sort((a,b)=>(b.date||'').localeCompare(a.date||''));   // newest first
 
   // Set-aside rows (auto cash + user skips): muted, with a Restore button.
   const skipRow = r => `<div onclick="editRecFromFp('${r.fp}')" style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.75;cursor:pointer">
