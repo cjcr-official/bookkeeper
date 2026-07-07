@@ -2504,6 +2504,11 @@ function getTripsInRange() {
 // auto-calc (see CLAUDE.md).
 let _track = null, _trackWatch = null, _trackPoll = null;
 let _keepAlive = null, _lastMediaMi = -1;
+// _kaUserOff: the user explicitly paused the keep-alive (lock-screen widget) —
+// respect that. Any OTHER pause (call, Siri, nav prompt, another app's audio) is
+// an interruption, and the 20 s poll reclaims the session so tracking self-heals.
+let _kaUserOff = false;
+function kaOn() { _kaUserOff = false; _startKeepAlive(); }
 function _silentWav() {
   const rate = 8000, n = rate * 10;   // 10 s of 8-bit silence, looped (~80 KB blob)
   const buf = new ArrayBuffer(44 + n), v = new DataView(buf);
@@ -2534,8 +2539,8 @@ function _startKeepAlive() {
     _keepAlive.play().then(() => {
       if (navigator.mediaSession) {
         try {
-          navigator.mediaSession.setActionHandler('pause', () => { try { _keepAlive.pause(); } catch(e){} });
-          navigator.mediaSession.setActionHandler('play',  () => { try { _keepAlive.play(); } catch(e){} });
+          navigator.mediaSession.setActionHandler('pause', () => { try { _kaUserOff = true; _keepAlive.pause(); } catch(e){} });
+          navigator.mediaSession.setActionHandler('play',  () => { try { _kaUserOff = false; _keepAlive.play(); } catch(e){} });
         } catch(e){}
       }
       if (wasPaused) renderTracker();       // clears the tap-to-enable warning
@@ -2606,8 +2611,11 @@ function _armTrack() {
     navigator.geolocation.getCurrentPosition(
       p => _trackFix(p.coords.latitude, p.coords.longitude, p.coords.accuracy),
       () => {}, { enableHighAccuracy: true, maximumAge: 15000 });
+    // Self-heal: reclaim the audio session after an interruption (call, Siri, nav
+    // voice, another app's audio) so tracking doesn't silently die mid-trip.
+    if (!_kaUserOff && _keepAlive && _keepAlive.paused) _keepAlive.play().catch(() => {});
   }, 20000);
-  _startKeepAlive();
+  if (!_kaUserOff) _startKeepAlive();
 }
 function _stopTrack() {
   if (_trackWatch != null && navigator.geolocation) { navigator.geolocation.clearWatch(_trackWatch); }
@@ -2619,6 +2627,7 @@ function _stopTrack() {
 }
 function startTrip() {
   if (!navigator.geolocation) { showToast('No GPS available on this device', 'error'); return; }
+  _kaUserOff = false;                       // every trip starts with background tracking on
   _track = { startedAt: Date.now(), mi: 0, last: null };
   lsSet('bk-trip-track', JSON.stringify(_track));
   _armTrack();
@@ -2702,8 +2711,8 @@ function renderTracker() {
       <button class="btn" onclick="sleepOpen()" style="flex-shrink:0" title="Sleep screen"><i class="ti ti-moon"></i></button>
       <button class="btn" onclick="discardTrip()" style="flex-shrink:0" title="Discard"><i class="ti ti-x"></i></button>
     </div>
-    ${(!_keepAlive || _keepAlive.paused) ? `<div onclick="_startKeepAlive()" style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:#f59e0b;cursor:pointer"><i class="ti ti-alert-triangle"></i> Background tracking is off (music keeps playing, but locking the screen or leaving the app pauses GPS). Tap here to turn it on — pauses your music.</div>`
-      : `<div style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-lock"></i> You can lock the screen or switch apps — tracking keeps running. Playing music hands iOS's audio slot back to it and turns this off.</div>`}
+    ${(!_keepAlive || _keepAlive.paused) ? `<div onclick="kaOn()" style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:#f59e0b;cursor:pointer"><i class="ti ti-alert-triangle"></i> Background tracking is off — locking the screen or leaving the app pauses GPS. Tap here to turn it back on.</div>`
+      : `<div style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-lock"></i> You can lock the screen or switch apps — tracking keeps running, and reclaims the audio slot if a call or another app interrupts it. To silence it for real, hit pause on Bookkeeper's lock-screen widget.</div>`}
     ${_track.gapMi > 0.2 ? `<div style="margin-top:.4rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-route-off"></i> ${_track.gapMi.toFixed(1)} mi of this was bridged straight-line while GPS was paused — check against the odometer if it reads short.</div>` : ''}
   </div>`;
 }

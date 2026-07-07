@@ -1,1 +1,1 @@
-{"version":253,"note":"v253: music vs background tracking is now a live, visible choice — resuming music turns the keep-alive off gracefully and the tracker card updates in real time; copy states the trade-off plainly."}
+{"version":254,"note":"v254: background trip tracking self-heals — after a call/Siri/other-app audio interruption the tracker reclaims the audio session within 20s; lock-screen pause is the one deliberate off-switch."}
