@@ -3534,15 +3534,17 @@ async function plaidConnect() {
 let _plaidCache = {};
 // Pending support: null = unknown until the current month is pulled once;
 // otherwise the pending count from the latest current-month pull. Shown as the
-// bank-card note ("N pending" / "doesn't show pending transactions").
+// bank-card note ("N pending" / "nothing pending right now"). An empty array
+// only means nothing is pending at this moment (some banks clear the list
+// outside business hours) — it does NOT mean the institution lacks support.
 let _plaidPending = null;
 function renderPlaidPendingNote() {
   const el = document.getElementById('plaid-pending-note'); if (!el) return;
   if (_plaidPending == null) { el.innerHTML = ''; el.style.display = 'none'; return; }
   el.style.display = 'flex';
   el.innerHTML = _plaidPending > 0
-    ? `<i class="ti ti-clock" style="font-size:13px;flex-shrink:0"></i> ${_plaidPending} pending at the bank — listed inside the current month`
-    : `<i class="ti ti-info-circle" style="font-size:13px;flex-shrink:0"></i> Your institution doesn’t show pending transactions.`;
+    ? `<i class="ti ti-clock" style="font-size:13px;flex-shrink:0"></i> ${_plaidPending} pending at the bank — listed with the current month's bank lines`
+    : `<i class="ti ti-info-circle" style="font-size:13px;flex-shrink:0"></i> Nothing pending at the bank right now.`;
 }
 // Tap a month in the audit grid → pull & reconcile it. Past months reuse the
 // session cache (instant); the current month always re-pulls so it stays live.
@@ -4750,19 +4752,11 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   // Live-but-unsettled bank activity (Plaid "pending"): display only. Banks can
   // still change a pending line's amount/description, so these never take part
   // in matching or the pass — they graduate into the buckets once they clear.
-  // On the current month the empty/unknown states render too, so "no section"
-  // can't be confused with "the bank reported nothing":
-  //   null  → this pull came from an older session cache (no pending support)
-  //   []    → the bank told Plaid there's nothing pending right now
-  let pendingHtml = '';
-  if ((stmt.pending||[]).length) {
-    pendingHtml = card(`
-    <details><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Pending at the bank')} &nbsp;${pillN(stmt.pending.length,'mut')}</summary>
-      ${stmt.pending.map(t=>`<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border);opacity:.7">
-        <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(cleanBankDesc(t.description))}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${t.date?fmtDate(t.date):'—'} · pending</div></div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${t.amount<0?'color:#dc2626':'color:#16a34a'}">${fmt(t.amount)}</div>
-      </div>`).join('')}</details>`);
-  }
+  // They render inside the on-bank section (labeled "pending", no checkbox/menu);
+  // the section's count pill stays cleared-lines-only, since only those need action.
+  const pendingRows = (stmt.pending||[]).slice()
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''))
+    .map(t=>item(t.date, cleanDesc(t.description), t.amount, 'pending', null, null, false)).join('');
 
   out.innerHTML = `
     <div id="rec-audit"></div>
@@ -4770,9 +4764,8 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     ${balanceHtml}
     ${noBank}
     <div id="rec-match-bar" style="display:none;position:sticky;top:0;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:.55rem .75rem;margin-bottom:.75rem;z-index:10;align-items:center;gap:.6rem;flex-wrap:wrap"></div>
-    ${card(secHead('On the bank · not in your books', onBankOnly.length) + list(onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t)))))}
+    ${card(secHead('On the bank · not in your books', onBankOnly.length) + ((onBankOnly.length||pendingRows) ? onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t))).join('') + (pendingRows?`<div style="opacity:.7">${pendingRows}</div>`:'') : list([])))}
     ${card(secHead('In your books · not on the bank', inRecordsOnly.length) + list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true))))}
-    ${pendingHtml}
     ${setAside.length?card(`<details><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Set aside · not on the bank')} &nbsp;${pillN(setAside.length,'mut')}</summary>${setAside.map(skipRow).join('')}</details>`):''}
     ${card(mono('Find any record') + `<input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin:.6rem 0 .45rem"><div id="rec-search-results"></div>`)}
     ${card(`<details open><summary style="cursor:pointer;padding-bottom:.45rem">${mono('Matched')} &nbsp;${pillN(matched.length,'ok')}</summary><div>${list(matched.map((g,i)=>grpRow(g,i)))}</div></details>`)}
@@ -4868,8 +4861,11 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
     const clickable = bankPull;
     const dim = !clickable;   // future months → faded
     // Small status dot: filled green = passed, amber = needs review, hollow = not yet.
-    const dot = rec
-      ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${rec.passed?'#16a34a':'#d97706'}"></span>`
+    // The in-progress current month never persists a fail stamp, but when it's the
+    // month on screen and it has unmatched items, show the amber dot live anyway.
+    const liveFail = cur && k===curMonth && passed===false;
+    const dot = (rec || liveFail)
+      ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${(rec?rec.passed:false)?'#16a34a':'#d97706'}"></span>`
       : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;border:1.5px solid var(--border)"></span>`;
     const tip = bankPull ? `${nm} ${yr} — tap to reconcile` : `${nm} ${yr}`;
     return `<div title="${tip}"${click} class="audit-chip" style="background:${cur?'var(--accent-bg)':'var(--bg2)'};${cur?'box-shadow:inset 0 0 0 1.5px var(--accent);':''}${clickable?'cursor:pointer;':''}${dim?'opacity:.4;':''}"><span class="am">${nm}</span><div style="display:flex;justify-content:center;align-items:center;height:9px">${dot}</div></div>`;

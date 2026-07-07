@@ -1,1 +1,1 @@
-{"version":248,"note":"v248: invoice, expense, and mileage row cards get the same drop shadow as every other list."}
+{"version":249,"note":"v249: pending bank lines list inside the on-bank section (labeled pending); truthful nothing-pending note; the current month's audit chip shows its live review state."}
