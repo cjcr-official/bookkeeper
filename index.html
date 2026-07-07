@@ -229,6 +229,7 @@ textarea{resize:vertical;min-height:70px}
 /* ── LAYOUT HELPERS ── */
 .page{display:none}
 .page.active{display:block}
+#fab{display:none}   /* mobile-only; shown by the mobile media block below */
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .empty{text-align:center;padding:3rem 1rem;color:var(--text3)}
 .empty i{font-size:36px;margin-bottom:.75rem;display:block;opacity:.5}
@@ -484,6 +485,15 @@ body.modal-open .main{overflow:hidden}
   .card-header{padding:.75rem 1rem}
   /* row action buttons (view/edit/delete) must be real touch targets — 44px min */
   .page .btn-sm{min-height:44px;min-width:44px;justify-content:center}
+  /* floating create button: the topbar + is out of thumb reach one-handed */
+  #fab{position:fixed;right:1.05rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 14px);width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;border:none;display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 6px 20px var(--accent-glow);z-index:600;cursor:pointer;transition:transform .12s cubic-bezier(.2,.8,.2,1)}
+  #fab:active{transform:scale(.92)}
+  /* Settings: keep Save reachable — the form runs past one screen.
+     (cards clip overflow and .modal-body clips x on mobile — both disable sticky;
+      unclip them on this page only) */
+  #page-settings .card{overflow:visible}
+  #page-settings .modal-body{overflow-x:visible}
+  .settings-save-row{position:sticky;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 10px);z-index:5;background:var(--surface);padding:.55rem 0;box-shadow:0 -10px 14px -12px rgba(0,0,0,.4)}
   /* audit month grid: two rows of 6 on phones so each month is a real tap target */
   .audit-grid{grid-template-columns:repeat(6,1fr);gap:7px}
   .audit-chip{padding:.7rem .1rem}
@@ -838,12 +848,17 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- EXPENSES -->
       <div id="page-expenses" class="page">
-        <div style="margin-bottom:.75rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:end">
-          <div class="form-group" style="margin:0;flex:1;min-width:160px"><label>Search</label><input id="exp-search" type="text" placeholder="vendor, note, category…" oninput="renderExpenses()"></div>
-          <div class="form-group" style="margin:0;min-width:140px"><label>Category</label><select id="exp-cat-filter" onchange="renderExpenses()"><option value="">All</option></select></div>
-          <div class="form-group" style="margin:0;min-width:130px"><label>From</label><input id="exp-from" type="date" onchange="renderExpenses()"></div>
-          <div class="form-group" style="margin:0;min-width:130px"><label>To</label><input id="exp-to" type="date" onchange="renderExpenses()"></div>
-          <button class="btn btn-sm" onclick="clearExpFilters()" style="height:38px">Clear</button>
+        <div style="margin-bottom:.75rem">
+          <div class="form-group" style="margin:0"><label>Search</label><input id="exp-search" type="text" placeholder="vendor, note, category…" oninput="renderExpenses()"></div>
+          <details style="margin-top:.45rem">
+            <summary style="font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;user-select:none;padding:.2rem 0"><i class="ti ti-filter" style="font-size:13px;vertical-align:-2px"></i> Filters — category &amp; dates</summary>
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:end;margin-top:.5rem">
+              <div class="form-group" style="margin:0;flex:1;min-width:140px"><label>Category</label><select id="exp-cat-filter" onchange="renderExpenses()"><option value="">All</option></select></div>
+              <div class="form-group" style="margin:0;flex:1;min-width:130px"><label>From</label><input id="exp-from" type="date" onchange="renderExpenses()"></div>
+              <div class="form-group" style="margin:0;flex:1;min-width:130px"><label>To</label><input id="exp-to" type="date" onchange="renderExpenses()"></div>
+              <button class="btn btn-sm" onclick="clearExpFilters()" style="height:38px">Clear</button>
+            </div>
+          </details>
         </div>
         <div class="card list-card"><div id="expenses-table"></div></div>
       </div>
@@ -896,7 +911,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div id="push-debug" style="margin-top:.5rem"></div>
               <div style="font-size:11px;color:var(--text3);margin-top:.5rem;line-height:1.5">A morning ping (8am) when you have invoices, recurring items, or jobs due in the next 2 days. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
             </div>
-            <button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button>
+            <div class="settings-save-row"><button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button></div>
           </div>
         </div>
         <div class="card" style="max-width:500px;margin-top:1rem">
@@ -926,6 +941,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
     </div>
   </div>
+  <!-- Floating create button (mobile only, CSS-gated): current tab's New action -->
+  <button id="fab" aria-label="Add new" onclick="fabClick()"><i class="ti ti-plus"></i></button>
 </div>
 
 <!-- INVOICE MODAL -->
@@ -1367,7 +1384,9 @@ function effectiveStatus(inv) {
 const CURRENCY_SYMS = {USD:'$',EUR:'€',GBP:'£',CAD:'CA$',AUD:'A$'};
 function fmt(n) {
   const sym = CURRENCY_SYMS[profile.currency||'USD']||'$';
-  return sym + parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const v = parseFloat(n||0);
+  // sign before the symbol: -$120.00, never $-120.00
+  return (v<0?'-':'') + sym + Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
 function fmtDate(d) {
   if (!d) return '—';
@@ -1505,7 +1524,16 @@ function showPage(page, el) {
     mileage:`<button class="btn" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
+  const fab = document.getElementById('fab');
+  if (fab) fab.style.display = (page==='accounts'||page==='settings') ? 'none' : '';
   rerenderCurrentView();
+}
+
+// Floating + (mobile): runs the current tab's New action — the topbar + is out
+// of thumb reach on a phone. Dashboard creates a job; Statements/Settings hide it.
+function fabClick() {
+  const acts = {dashboard:openJobModal, invoices:openInvoiceModal, customers:openCustomerModal, expenses:openExpenseModal, mileage:openTripModal};
+  const a = acts[currentPage]; if (a) a();
 }
 
 // ====== DASHBOARD ======
@@ -4608,7 +4636,9 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <button onclick="openTxnMenu(${editTxnIdx})" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Record or fix this line"><i class="ti ti-dots"></i></button>` : '';
     const skipBtn = skippable ? `
       <button onclick="skipRec('${fp}')" class="btn btn-sm" style="background:transparent;border:none;color:var(--text3);padding:.1rem .35rem;cursor:pointer;flex-shrink:0;margin-top:.1rem" title="Not on this statement — set aside for this month"><i class="ti ti-eye-off"></i></button>` : '';
-    return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
+    // whole row toggles the checkbox — the 18px box alone is a precision tap on a phone
+    const rowTap = fp ? ` onclick="if(event.target.closest('button,input'))return;const c=this.querySelector('.rec-check');if(c){c.checked=!c.checked;updateMatchBar()}"` : '';
+    return `<div${rowTap} style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)${fp?';cursor:pointer':''}">
       ${check}
       <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:#dc2626':'color:#16a34a'}">${fmt(amt)}</div>
