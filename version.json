@@ -1,1 +1,1 @@
-{"version":257,"note":"v257: current month keeps its amber audit dot when you view other months; Mileage loses the redundant floating +; topbar + buttons are one fixed size on every tab."}
+{"version":258,"note":"v258: current month's audit dot is saved and auto-refreshed on load, so discrepancies show without tapping the month."}
