@@ -2613,7 +2613,7 @@ function finishTrip() {
   document.getElementById('trip-miles').value = mi.toFixed(2);
   calcTripMiles();
   showToast(`Tracked ${mi.toFixed(2)} miles — pick a client and save` +
-    (gapMi ? `. ${gapMi.toFixed(1)} mi was bridged straight-line while GPS was paused, so adjust the miles if it reads short.` : ''), 'success');
+    (gapMi ? ` (${gapMi.toFixed(1)} mi estimated)` : ''), 'success');
 }
 function discardTrip() {
   if (!confirm('Discard this tracked trip? The measured miles will be lost.')) return;
@@ -2665,7 +2665,7 @@ function renderTracker() {
   if (!_track) {
     el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.85rem 1rem">
       <div style="min-width:0"><div style="font-weight:700;font-size:14.5px">Track a trip</div>
-        <div style="font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.45">GPS measures as you drive — your music keeps playing, untouched. Most accurate with the app on screen (the <i class="ti ti-moon"></i> button blacks it out); locked stretches are estimated point-to-point.</div></div>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.45">GPS measures as you drive. <i class="ti ti-moon"></i> blacks out the screen.</div></div>
       <div style="display:flex;gap:.5rem;flex-shrink:0">
         <button class="btn btn-primary" onclick="startTrip()"><i class="ti ti-player-play"></i> <span>Start trip</span></button>
         <button class="btn" onclick="sleepOpen()" title="Sleep screen"><i class="ti ti-moon"></i></button>
@@ -2683,8 +2683,7 @@ function renderTracker() {
       <button class="btn" onclick="sleepOpen()" style="flex-shrink:0" title="Sleep screen"><i class="ti ti-moon"></i></button>
       <button class="btn" onclick="discardTrip()" style="flex-shrink:0" title="Discard"><i class="ti ti-x"></i></button>
     </div>
-    <div style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-music"></i> Your music is never interrupted. Miles are exact while the app is on screen (<i class="ti ti-moon"></i> = all-black screen); if the phone locks or you switch apps, iOS may pause GPS and the missed stretch is estimated point-to-point and flagged.</div>
-    ${_track.gapMi > 0.2 ? `<div style="margin-top:.4rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-route-off"></i> ${_track.gapMi.toFixed(1)} mi of this was bridged straight-line while GPS was paused — check against the odometer if it reads short.</div>` : ''}
+    ${_track.gapMi > 0.2 ? `<div style="margin-top:.5rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-route-off"></i> ${_track.gapMi.toFixed(1)} mi estimated while GPS was paused.</div>` : ''}
   </div>`;
 }
 // Re-arm the GPS watch + wake locks when the app comes back to the foreground

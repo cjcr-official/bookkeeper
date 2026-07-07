@@ -1,1 +1,1 @@
-{"version":255,"note":"v255: music is never interrupted — tracker no longer takes iOS's audio session (ambient mix only), wake lock keeps on-screen tracking exact, locked/backgrounded stretches are estimated point-to-point and flagged."}
+{"version":256,"note":"v256: trip tracker card copy cut down to one short line."}
