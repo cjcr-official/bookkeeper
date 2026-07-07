@@ -1311,6 +1311,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
 <div class="toast" id="toast"></div>
 
+<!-- TRIP SLEEP SCREEN: near-black overlay that keeps the wake lock so GPS tracking
+     survives (a truly sleeping screen kills geolocation in an iOS PWA). Rendered by
+     renderSleep(); tap anywhere outside the buttons to wake. Sits under the forced
+     update overlay (99999) but above everything else. -->
+<div id="trip-sleep" onclick="closeSleepScreen()" style="display:none;position:fixed;inset:0;z-index:99990;background:#000;flex-direction:column;align-items:center;justify-content:center;gap:1.1rem;padding:2rem;padding-top:calc(2rem + env(safe-area-inset-top,0px));padding-bottom:calc(2rem + env(safe-area-inset-bottom,0px));text-align:center"></div>
+
 <script>
 // ====== SUPABASE INIT ======
 const SUPABASE_URL = 'https://fnfikvnxhylpuecshtix.supabase.co';
@@ -2514,6 +2520,8 @@ function _trackFix(lat, lng, acc) {
   lsSet('bk-trip-track', JSON.stringify(_track));
   const el = document.getElementById('track-mi');
   if (el) el.textContent = _track.mi.toFixed(2);
+  const sl = document.getElementById('sleep-mi');
+  if (sl) sl.textContent = _track.mi.toFixed(2);
 }
 function _armTrack() {
   if (!navigator.geolocation) return;
@@ -2552,15 +2560,57 @@ function discardTrip() {
   if (!confirm('Discard this tracked trip? The measured miles will be lost.')) return;
   _stopTrack();
 }
+// ---- Sleep screen: iOS won't run GPS with the display truly off, so this is the
+// next best thing — an all-black overlay (OLED pixels off) that holds its own wake
+// lock, so it works even before a trip starts. Start/Finish live right on it.
+let _sleepLock = null, _sleepClock = null;
+function sleepOpen() {
+  const el = document.getElementById('trip-sleep');
+  el.style.display = 'flex';
+  if (navigator.wakeLock) navigator.wakeLock.request('screen').then(l => _sleepLock = l).catch(() => {});
+  renderSleep();
+  if (_sleepClock) clearInterval(_sleepClock);
+  _sleepClock = setInterval(() => {
+    const c = document.getElementById('sleep-clock');
+    if (c) c.textContent = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  }, 15000);
+}
+function closeSleepScreen() {
+  document.getElementById('trip-sleep').style.display = 'none';
+  if (_sleepLock) { try { _sleepLock.release(); } catch(e){} _sleepLock = null; }
+  if (_sleepClock) { clearInterval(_sleepClock); _sleepClock = null; }
+}
+function sleepStart(ev) { ev.stopPropagation(); startTrip(); }
+function sleepFinish(ev) { ev.stopPropagation(); closeSleepScreen(); finishTrip(); }
+function renderSleep() {
+  const el = document.getElementById('trip-sleep');
+  if (!el || el.style.display === 'none') return;
+  const dimBtn = `style="background:#101014;border:1px solid #2c2c34;color:#a8a8b2;border-radius:var(--radius-pill,999px);padding:.95rem 2.2rem;font-size:15px;font-weight:700;font-family:inherit;display:inline-flex;align-items:center;gap:.5rem;cursor:pointer;margin-top:.6rem"`;
+  el.innerHTML = `
+    <div style="position:absolute;top:calc(1.1rem + env(safe-area-inset-top,0px));left:0;right:0;color:#3a3a42;font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-family:'JetBrains Mono',monospace">Tap anywhere to wake</div>
+    <div id="sleep-clock" style="color:#4a4a54;font-size:15px;font-variant-numeric:tabular-nums">${new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</div>
+    ${_track ? `
+      <div style="color:#8a8a94;font-size:54px;font-weight:800;letter-spacing:-2px;line-height:1;font-variant-numeric:tabular-nums"><span id="sleep-mi">${_track.mi.toFixed(2)}</span><span style="font-size:18px;font-weight:600;color:#4a4a54"> mi</span></div>
+      <div style="color:#2f5c43;font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;font-family:'JetBrains Mono',monospace"><i class="ti ti-gps" style="font-size:12px"></i> Tracking · since ${new Date(_track.startedAt).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}</div>
+      <button onclick="sleepFinish(event)" ${dimBtn}><i class="ti ti-flag-check"></i> Finish trip</button>`
+    : `
+      <div style="color:#4a4a54;font-size:15px;font-weight:600">Not tracking</div>
+      <button onclick="sleepStart(event)" ${dimBtn}><i class="ti ti-player-play"></i> Start trip</button>`}
+  `;
+}
 function renderTracker() {
+  renderSleep();   // keep the sleep screen in step (start from it, GPS-denied stop, …)
   const el = document.getElementById('trip-tracker'); if (!el) return;
   if (!_track) { try { _track = JSON.parse(lsGet('bk-trip-track') || 'null'); } catch(e) { _track = null; } }
   if (_track && _trackWatch == null) _armTrack();   // app was reopened mid-trip — resume
   if (!_track) {
     el.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.85rem 1rem">
       <div style="min-width:0"><div style="font-weight:700;font-size:14.5px">Track a trip</div>
-        <div style="font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.45">GPS measures as you drive — keep the app open and the screen on (it holds the screen awake for you).</div></div>
-      <button class="btn btn-primary" onclick="startTrip()" style="flex-shrink:0"><i class="ti ti-player-play"></i> <span>Start trip</span></button>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.45">GPS measures as you drive — keep the app open (it holds the screen awake). The <i class="ti ti-moon"></i> button blacks out the display while tracking keeps running.</div></div>
+      <div style="display:flex;gap:.5rem;flex-shrink:0">
+        <button class="btn btn-primary" onclick="startTrip()"><i class="ti ti-player-play"></i> <span>Start trip</span></button>
+        <button class="btn" onclick="sleepOpen()" title="Sleep screen"><i class="ti ti-moon"></i></button>
+      </div>
     </div>`;
     return;
   }
@@ -2571,14 +2621,19 @@ function renderTracker() {
     </div>
     <div style="display:flex;gap:.5rem;margin-top:.7rem">
       <button class="btn btn-primary" onclick="finishTrip()" style="flex:1;justify-content:center"><i class="ti ti-flag-check"></i> Finish trip</button>
-      <button class="btn" onclick="discardTrip()" style="flex-shrink:0"><i class="ti ti-x"></i> Discard</button>
+      <button class="btn" onclick="sleepOpen()" style="flex-shrink:0" title="Sleep screen"><i class="ti ti-moon"></i></button>
+      <button class="btn" onclick="discardTrip()" style="flex-shrink:0" title="Discard"><i class="ti ti-x"></i></button>
     </div>
   </div>`;
 }
-// Re-arm the GPS watch + wake lock when the app comes back to the foreground
+// Re-arm the GPS watch + wake locks when the app comes back to the foreground
 // (iOS releases both while the screen is off or the app is backgrounded).
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && _track) _armTrack();
+  if (document.visibilityState !== 'visible') return;
+  if (_track) _armTrack();
+  const sleep = document.getElementById('trip-sleep');
+  if (sleep && sleep.style.display !== 'none' && navigator.wakeLock)
+    navigator.wakeLock.request('screen').then(l => _sleepLock = l).catch(() => {});
 });
 
 function renderMileage() {

@@ -1,1 +1,1 @@
-{"version":250,"note":"v250: GPS trip tracker on Mileage — Start trip, drive, Finish trip prefills the Log Trip form with measured miles."}
+{"version":251,"note":"v251: trip tracker sleep screen — moon button blacks out the display (OLED-friendly, keeps GPS + wake lock alive) with Start/Finish trip buttons right on it."}
