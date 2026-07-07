@@ -1,1 +1,1 @@
-{"version":254,"note":"v254: background trip tracking self-heals — after a call/Siri/other-app audio interruption the tracker reclaims the audio session within 20s; lock-screen pause is the one deliberate off-switch."}
+{"version":255,"note":"v255: music is never interrupted — tracker no longer takes iOS's audio session (ambient mix only), wake lock keeps on-screen tracking exact, locked/backgrounded stretches are estimated point-to-point and flagged."}
