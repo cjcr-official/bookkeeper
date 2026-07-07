@@ -1,1 +1,1 @@
-{"version":252,"note":"v252: trip tracker survives screen lock & app switching — silent-audio keep-alive replaces the wake lock, lock-screen media widget shows live miles, GPS pauses are bridged straight-line and flagged."}
+{"version":253,"note":"v253: music vs background tracking is now a live, visible choice — resuming music turns the keep-alive off gracefully and the tracker card updates in real time; copy states the trade-off plainly."}

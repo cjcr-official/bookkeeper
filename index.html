@@ -2520,14 +2520,22 @@ function _startKeepAlive() {
   try {
     // 'playback' (iOS 17+ exposes navigator.audioSession) = keep playing when locked;
     // element must NOT be muted — iOS suspends muted audio. The samples are silence.
+    // iOS gives ONE app the playback session: starting a trip pauses Music, and
+    // resuming Music kills this loop. Web has no mixWithOthers (native-only), so
+    // that's a hard either/or — the pause/play listeners keep the card truthful
+    // about which mode the user is in.
     if (navigator.audioSession) navigator.audioSession.type = 'playback';
-    if (!_keepAlive) { _keepAlive = new Audio(_silentWav()); _keepAlive.loop = true; }
+    if (!_keepAlive) {
+      _keepAlive = new Audio(_silentWav()); _keepAlive.loop = true;
+      _keepAlive.addEventListener('pause', () => renderTracker());
+      _keepAlive.addEventListener('play', () => renderTracker());
+    }
     const wasPaused = _keepAlive.paused;
     _keepAlive.play().then(() => {
       if (navigator.mediaSession) {
         try {
-          navigator.mediaSession.setActionHandler('pause', () => { try { _keepAlive.pause(); renderTracker(); } catch(e){} });
-          navigator.mediaSession.setActionHandler('play',  () => { try { _keepAlive.play(); renderTracker(); } catch(e){} });
+          navigator.mediaSession.setActionHandler('pause', () => { try { _keepAlive.pause(); } catch(e){} });
+          navigator.mediaSession.setActionHandler('play',  () => { try { _keepAlive.play(); } catch(e){} });
         } catch(e){}
       }
       if (wasPaused) renderTracker();       // clears the tap-to-enable warning
@@ -2694,8 +2702,8 @@ function renderTracker() {
       <button class="btn" onclick="sleepOpen()" style="flex-shrink:0" title="Sleep screen"><i class="ti ti-moon"></i></button>
       <button class="btn" onclick="discardTrip()" style="flex-shrink:0" title="Discard"><i class="ti ti-x"></i></button>
     </div>
-    ${(!_keepAlive || _keepAlive.paused) ? `<div onclick="_startKeepAlive()" style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:#f59e0b;cursor:pointer"><i class="ti ti-alert-triangle"></i> Background tracking is off — locking the screen or leaving the app will pause GPS. Tap here to turn it on (starts a silent audio loop).</div>`
-      : `<div style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-lock"></i> You can lock the screen or switch apps — tracking keeps running.</div>`}
+    ${(!_keepAlive || _keepAlive.paused) ? `<div onclick="_startKeepAlive()" style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:#f59e0b;cursor:pointer"><i class="ti ti-alert-triangle"></i> Background tracking is off (music keeps playing, but locking the screen or leaving the app pauses GPS). Tap here to turn it on — pauses your music.</div>`
+      : `<div style="margin-top:.6rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-lock"></i> You can lock the screen or switch apps — tracking keeps running. Playing music hands iOS's audio slot back to it and turns this off.</div>`}
     ${_track.gapMi > 0.2 ? `<div style="margin-top:.4rem;font-size:11.5px;line-height:1.45;color:var(--text3)"><i class="ti ti-route-off"></i> ${_track.gapMi.toFixed(1)} mi of this was bridged straight-line while GPS was paused — check against the odometer if it reads short.</div>` : ''}
   </div>`;
 }
