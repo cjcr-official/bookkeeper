@@ -378,7 +378,11 @@ body.modal-open .main{overflow:hidden}
   .topbar-breadcrumb{display:none}
   .topbar-title{font-size:16px}
   #topbar-actions .btn span{display:none}
-  #topbar-actions .btn{padding:.4rem .5rem;min-width:34px;justify-content:center}
+  /* Icon-only buttons must be the SAME fixed square on every tab — content-driven
+     sizing wobbles a couple px between pages (btn-primary drops its border, glyph
+     widths differ), which looks glitchy when tabbing. 34px matches .theme-toggle. */
+  #topbar-actions .btn{padding:0;width:34px;height:34px;min-width:34px;flex:0 0 auto;gap:0;justify-content:center;align-items:center}
+  #topbar-actions .btn i{font-size:16px;line-height:1}
 
   /* ── CONTENT ── */
   .content{padding:1rem .875rem}
@@ -1533,14 +1537,15 @@ function showPage(page, el) {
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   const fab = document.getElementById('fab');
-  if (fab) fab.style.display = (page==='accounts'||page==='settings') ? 'none' : '';
+  if (fab) fab.style.display = (page==='accounts'||page==='settings'||page==='mileage') ? 'none' : '';
   rerenderCurrentView();
 }
 
 // Floating + (mobile): runs the current tab's New action — the topbar + is out
-// of thumb reach on a phone. Dashboard creates a job; Statements/Settings hide it.
+// of thumb reach on a phone. Dashboard creates a job; Statements/Settings/Mileage
+// hide it (Mileage keeps only the topbar Log Trip button).
 function fabClick() {
-  const acts = {dashboard:openJobModal, invoices:openInvoiceModal, customers:openCustomerModal, expenses:openExpenseModal, mileage:openTripModal};
+  const acts = {dashboard:openJobModal, invoices:openInvoiceModal, customers:openCustomerModal, expenses:openExpenseModal};
   const a = acts[currentPage]; if (a) a();
 }
 
@@ -5039,8 +5044,12 @@ function setAuditResult(key, monthKey, passed) {
 // The CURRENT month is special: it isn't over, and recent records often haven't
 // cleared the bank yet — that's lag, not a problem. So an in-progress month is
 // never stamped as failed (any stale fail stamp is cleared); it can stamp green.
+// Because no fail stamp is written, the grid remembers the in-progress month's
+// live result here (session only) so its amber dot survives tapping other months.
+let _liveFailMonths = {};
 async function recordAudit(acctId, monthKey, passed, monthLabel) {
   const cur = !!monthKey && monthKey === today().slice(0,7);
+  if (cur) _liveFailMonths[monthKey] = !passed;
   let changed = false;
   if (cur && !passed) {
     const byAcct = (profile.audited_months || {})[acctId || '_'];
@@ -5078,9 +5087,10 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
     const clickable = bankPull;
     const dim = !clickable;   // future months → faded
     // Small status dot: filled green = passed, amber = needs review, hollow = not yet.
-    // The in-progress current month never persists a fail stamp, but when it's the
-    // month on screen and it has unmatched items, show the amber dot live anyway.
-    const liveFail = cur && k===curMonth && passed===false;
+    // The in-progress current month never persists a fail stamp, so its dot comes
+    // from the session's live result (_liveFailMonths) — this keeps the amber dot
+    // visible even after tapping a different month re-renders the grid.
+    const liveFail = k===curMonth && ((cur && passed===false) || _liveFailMonths[k]===true);
     const dot = (rec || liveFail)
       ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${(rec?rec.passed:false)?'#16a34a':'#d97706'}"></span>`
       : `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;border:1.5px solid var(--border)"></span>`;
