@@ -576,6 +576,7 @@ body.modal-open .main{overflow:hidden}
     background:var(--surface);border:1px solid var(--border);
     border-radius:var(--radius-sm);padding:.65rem .9rem;margin-bottom:.5rem;
     display:flex;align-items:center;gap:.75rem;cursor:pointer;
+    backface-visibility:hidden;   /* rolodex scroll: JS stamps perspective/rotateX per card */
   }
   .m-card:active{background:var(--surface2)}
   .m-card-main{flex:1;min-width:0}
@@ -1879,6 +1880,7 @@ function renderInvoices() {
           </div>
         </div>
       </div>`).join('');
+    rolodexTick();
   } else {
     el.innerHTML = `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="editInvoice('${i.id}')">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}${(balanceDue(i)>0&&parseFloat(i.amount_paid||0)>0)?`<div style="font-size:10.5px;color:var(--text3)">Owes ${fmt(balanceDue(i))}</div>`:''}</td><td>${statusBadge(effectiveStatus(i))}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
@@ -2829,6 +2831,7 @@ function renderMileage() {
         </div>
       </div>`;}).join('') +
       `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);display:flex;justify-content:space-between;font-weight:700"><span>Range Total</span><span>${rangeTotal.toLocaleString(undefined,{maximumFractionDigits:2})} mi</span></div>`;
+    rolodexTick();
   } else {
     el.innerHTML = `<table><thead><tr><th>Date</th><th>Client</th><th>Purpose</th><th>Linked</th><th>Trips</th><th>Miles</th><th></th></tr></thead><tbody>${list.map(t=>{
       const e=expFor(t);
@@ -3226,6 +3229,7 @@ function renderExpenses() {
           </div>
         </div>
       </div>`).join('') + `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);display:flex;justify-content:space-between;font-weight:700"><span>${list.length} expense${list.length===1?'':'s'}</span><span class="red">${fmt(totalAmt)}</span></div>`;
+    rolodexTick();
   } else {
     el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${list.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody><tfoot><tr><td colspan="5" style="font-weight:700;text-align:right;padding:.85rem 1rem;border-top:2px solid var(--border)">${list.length} expense${list.length===1?'':'s'}</td><td class="red" style="font-weight:700;font-family:'JetBrains Mono',monospace;padding:.85rem 1rem;border-top:2px solid var(--border)">${fmt(totalAmt)}</td><td style="border-top:2px solid var(--border)"></td></tr></tfoot></table>`;
   }
@@ -5548,19 +5552,19 @@ function toggleTheme() {
   }
 })();
 
-// ====== ROLODEX SCROLL (Customers, mobile cards) ======
-// Cards stay FLAT until they reach the exit zones at the very top (under the
-// sticky topbar) and bottom (above the tab bar); only the card actually
-// leaving the screen curls away in 3D — like the top card flipping over on a
-// rolodex. Driven by JS (CSS scroll timelines aren't reliable on iOS yet):
-// each scroll frame is coalesced into one rAF that stamps a transform per card.
+// ====== ROLODEX SCROLL (all mobile list cards) ======
+// Applies to every card list — Invoices/Expenses/Mileage (.m-card) and
+// Customers (.cust-card). Cards stay FLAT while fully visible; only the card
+// actually sliding under the topbar / behind the tab bar curls away in 3D —
+// like the top card flipping over on a rolodex. Driven by JS (CSS scroll
+// timelines aren't reliable on iOS yet): each scroll frame is coalesced into
+// one rAF that stamps a transform per card.
 let _rolodexRaf = 0;
 function rolodexTick() { if (!_rolodexRaf) _rolodexRaf = requestAnimationFrame(rolodexApply); }
 function rolodexApply() {
   _rolodexRaf = 0;
-  if (currentPage !== 'customers') return;
-  const cards = document.querySelectorAll('#page-customers .cust-card');
-  if (!cards.length) return;   // desktop table / empty state
+  const cards = document.querySelectorAll('.page.active .m-card, .page.active .cust-card');
+  if (!cards.length) return;   // desktop tables / empty state / non-list page
   const main = document.querySelector('.main');
   // Short list (nothing to scroll) or reduced motion → keep every card flat.
   const flat = (main.scrollHeight - main.clientHeight < 40) ||

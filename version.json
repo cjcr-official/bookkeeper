@@ -1,1 +1,1 @@
-{"version":271,"note":"v271: rolodex curl now driven by actual edge clipping — fully visible cards always rest flat; the curl happens only as a card slides under the topbar / behind the tab bar."}
+{"version":272,"note":"v272: rolodex edge-curl now on every mobile list — Invoices, Expenses, Mileage, and Customers cards all flip away as they slide off-screen."}
