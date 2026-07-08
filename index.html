@@ -1319,7 +1319,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Payment Method</label>
           <select id="exp-method"><option>Credit Card</option><option>Debit Card</option><option>Cash</option><option>Check</option><option>ACH/Wire</option></select>
         </div>
-        <div class="form-group"><label>Account</label><select id="exp-account"></select></div>
+        <div class="form-group"><label>Account <span onclick="addAccountForExpense()" style="float:right;font-weight:600;font-size:11px;color:var(--accent);cursor:pointer"><i class="ti ti-plus"></i> New</span></label><select id="exp-account"></select></div>
       </div>
       <div class="form-group"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
       <div class="form-group"><label>Description</label><textarea id="exp-desc" rows="2"></textarea></div>
@@ -3337,15 +3337,28 @@ function openExpenseModal(exp) {
   renderExpInvoiceOptions(e.invoice_id||'');
   document.getElementById('exp-category').value = e.category||(getCategories()[0]||'Other');
   document.getElementById('exp-amount').value = e.amount||'';
-  document.getElementById('exp-method').value = e.method||'Credit Card';
+  document.getElementById('exp-method').value = e.method||'Debit Card';
   document.getElementById('exp-desc').value = e.description||'';
   document.getElementById('exp-reimbursed').checked = !!e.reimbursed;
-  document.getElementById('exp-account').innerHTML = cache.accounts.map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('');
-  if (exp) document.getElementById('exp-account').value = exp.account_id||'';
+  renderExpAccountOptions(e.account_id||'');
   renderReceiptState(exp);
   openModal('modal-expense');
 }
 function editExpense(id) { openExpenseModal(cache.expenses.find(e=>e.id===id)); }
+
+// Fills the expense Account picker: a "— None —" default (linking is optional)
+// followed by every bank/credit account, keeping `sel` selected.
+function renderExpAccountOptions(sel) {
+  const el = document.getElementById('exp-account');
+  el.innerHTML = '<option value="">— None —</option>' +
+    (cache.accounts||[]).map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('');
+  el.value = sel||'';
+}
+// "＋ New" beside the Account label: add a bank account without leaving the
+// expense. Opens the account modal (stacked on top); saveAccount() returns the
+// new account to the expense dropdown via the _expAccountReturn flag.
+let _expAccountReturn = false;
+function addAccountForExpense() { openAccountModal({ type:'Bank' }); _expAccountReturn = true; }
 
 async function saveExpense() {
   const id = document.getElementById('exp-id').value;
@@ -3601,6 +3614,7 @@ function renderAccounts() {
 
 function openAccountModal(a) {
   a = a || {};
+  _expAccountReturn = false;   // cleared here so a cancelled inline add can't leak into a later save
   document.getElementById('acc-id').value = a.id||'';
   document.getElementById('acc-name').value = a.name||'';
   document.getElementById('acc-type').value = a.type||'Bank';
@@ -3614,11 +3628,14 @@ async function saveAccount() {
   const id=document.getElementById('acc-id').value;
   const row={user_id:currentUser.id,name:document.getElementById('acc-name').value,type:document.getElementById('acc-type').value,balance:parseFloat(document.getElementById('acc-balance').value)||0,description:document.getElementById('acc-desc').value};
   if (!row.name) { showToast('Account name is required','error'); return; }
-  let err;
+  let err, newAcc=null;
   if (id) { const r=await sb.from('accounts').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.accounts.findIndex(a=>a.id===id);cache.accounts[idx]={...cache.accounts[idx],...row};} }
-  else { const r=await sb.from('accounts').insert(row).select().single(); err=r.error; if(!err)cache.accounts.push(r.data); }
+  else { const r=await sb.from('accounts').insert(row).select().single(); err=r.error; if(!err){cache.accounts.push(r.data); newAcc=r.data;} }
   if (err) { showToast(err.message,'error'); return; }
-  showToast('Account saved','success'); closeModal('modal-account'); renderAccounts();
+  closeModal('modal-account');
+  // Added inline from the expense modal → drop the new account into that picker.
+  if (_expAccountReturn) { _expAccountReturn=false; if (newAcc) renderExpAccountOptions(newAcc.id); }
+  showToast('Account saved','success'); renderAccounts();
 }
 
 async function deleteAccount(id) {

@@ -1,1 +1,1 @@
-{"version":272,"note":"v272: rolodex edge-curl now on every mobile list — Invoices, Expenses, Mileage, and Customers cards all flip away as they slide off-screen."}
+{"version":273,"note":"v273: expenses default to Debit Card; Account picker gets a None option + inline “＋ New” to add/link a bank account without leaving the expense."}
