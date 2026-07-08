@@ -1319,7 +1319,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Payment Method</label>
           <select id="exp-method"><option>Credit Card</option><option>Debit Card</option><option>Cash</option><option>Check</option><option>ACH/Wire</option></select>
         </div>
-        <div class="form-group"><label>Account <span onclick="addAccountForExpense()" style="float:right;font-weight:600;font-size:11px;color:var(--accent);cursor:pointer"><i class="ti ti-plus"></i> New</span></label><select id="exp-account"></select></div>
+        <div class="form-group"><label>Account <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label>
+          <select id="exp-account"></select>
+          <button type="button" class="btn btn-sm" onclick="addAccountForExpense()" style="margin-top:.45rem;width:100%;justify-content:center"><i class="ti ti-plus"></i> <span>New account</span></button>
+        </div>
       </div>
       <div class="form-group"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
       <div class="form-group"><label>Description</label><textarea id="exp-desc" rows="2"></textarea></div>

@@ -1,1 +1,1 @@
-{"version":273,"note":"v273: expenses default to Debit Card; Account picker gets a None option + inline “＋ New” to add/link a bank account without leaving the expense."}
+{"version":274,"note":"v274: make adding/selecting an expense account obvious — a full-width “New account” button under the Account picker (the chart-of-accounts page is Plaid-only now, so this is the way to create one)."}
