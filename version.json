@@ -1,1 +1,1 @@
-{"version":259,"note":"v259: motion pass — bottom sheets slide up, desktop modals pop in, pages and the match bar fade; exits stay instant, reduced-motion still flattens everything."}
+{"version":260,"note":"v260: polish — light-theme green/amber pass contrast, reconcile colors use theme tokens, aria-labels on icon buttons, Escape closes modals, keyboard nav, 44px customer buttons and audit arrows."}
