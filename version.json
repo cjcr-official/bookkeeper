@@ -1,1 +1,1 @@
-{"version":269,"note":"v269: rolodex curl only fires in the exit zones — middle cards stay flat; just the top/bottom card curls away as it leaves the screen."}
+{"version":270,"note":"v270: rolodex curl hinges on the card edge nearest the list — the receding edge tapers with perspective instead of the card see-sawing around its middle."}
