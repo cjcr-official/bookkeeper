@@ -628,6 +628,15 @@ input,select,textarea{border-radius:var(--radius-sm)}
    there. Keyed on the pointer being coarse, NOT on screen width, so a mouse
    desktop keeps its compact controls and this also covers phones in landscape
    (>768px wide) and 2-in-1 touch laptops. ── */
+/* ── THEME CROSSFADE — toggling light/dark runs through the View Transitions
+   API (see toggleTheme), so the whole UI — cards, borders, icons, the gradient
+   canvas — crossfades in one compositor pass instead of the body fading while
+   everything else snaps. Reduced-motion users skip it (gated in JS too). ── */
+::view-transition-old(root),::view-transition-new(root){animation-duration:.35s;animation-timing-function:cubic-bezier(.22,1,.36,1)}
+@media (prefers-reduced-motion: reduce){
+  ::view-transition-old(root),::view-transition-new(root){animation:none}
+}
+
 @media (pointer: coarse){
   .btn,.btn-sm{min-height:44px}
   .btn-sm{min-width:44px;justify-content:center}
@@ -5455,12 +5464,19 @@ async function boot() {
 // ====== THEME ======
 function toggleTheme() {
   const html = document.documentElement;
-  const isDark = !html.hasAttribute('data-theme');
-  html.setAttribute('data-theme', isDark ? 'light' : '');
-  if (!isDark) html.removeAttribute('data-theme');
-  const icon = document.getElementById('theme-icon');
-  icon.className = isDark ? 'ti ti-moon' : 'ti ti-sun';
-  lsSet('bk-theme', isDark ? 'light' : 'dark');
+  const toLight = !html.hasAttribute('data-theme');   // no attr = currently dark
+  const apply = () => {
+    if (toLight) html.setAttribute('data-theme', 'light');
+    else html.removeAttribute('data-theme');
+    const icon = document.getElementById('theme-icon');
+    if (icon) icon.className = toLight ? 'ti ti-moon' : 'ti ti-sun';
+  };
+  lsSet('bk-theme', toLight ? 'light' : 'dark');
+  // One uniform crossfade of the whole UI. Feature-detected; reduced-motion and
+  // unsupported browsers get the instant swap.
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (document.startViewTransition && !reduce) document.startViewTransition(apply);
+  else apply();
 }
 // Apply saved theme on load
 (function(){
