@@ -1,1 +1,1 @@
-{"version":261,"note":"v261: security pass — XSS escapes on search echo and name-passing buttons, pinned + integrity-checked CDN scripts, CSP and security headers from the Worker."}
+{"version":262,"note":"v262: adapt — touch devices (iPads, phones in landscape, touch laptops) get 44px targets in the desktop layout, keyed on pointer:coarse not screen width; side nav scrolls on short viewports."}

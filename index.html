@@ -622,6 +622,22 @@ input,select,textarea{border-radius:var(--radius-sm)}
   /* bottom sheets slide up from the bottom edge; the overlay fade carries the backdrop */
   .modal-overlay.open .modal{animation:bkSheet .32s cubic-bezier(.22,1,.36,1)}
 }
+
+/* ── TOUCH DEVICES (any width) — iPads and touch laptops are served the desktop
+   table + sidebar layout, whose controls are mouse-sized. Guarantee 44px targets
+   there. Keyed on the pointer being coarse, NOT on screen width, so a mouse
+   desktop keeps its compact controls and this also covers phones in landscape
+   (>768px wide) and 2-in-1 touch laptops. ── */
+@media (pointer: coarse){
+  .btn,.btn-sm{min-height:44px}
+  .btn-sm{min-width:44px;justify-content:center}
+  .nav-item{min-height:44px}
+  /* min-* floors the size regardless of the base rule's explicit width:34px */
+  .theme-toggle{min-width:44px;min-height:44px}
+  /* short viewports (phone landscape) can't fit the full side nav — let it scroll
+     so Settings / Sign Out are never cut off */
+  .sidebar{overflow-y:auto}
+}
 </style>
 </head>
 <body>
