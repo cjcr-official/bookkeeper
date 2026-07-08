@@ -140,15 +140,25 @@ to `production` once Plaid approves the account. `/plaid/disconnect` removes the
 at Plaid and drops the stored token (one bank when passed `{item_id}`, else all).
 
 **Multi-bank (v275+):** a user can link several banks. `/plaid/status` returns a
-`banks: [{item_id, institution}]` array (the Statements card lists each with its own
-reconnect/disconnect + an "Add another bank" button); `/plaid/transactions` pulls the
-month from **every** linked bank and **merges** the lines (each tagged with `bank`),
-so a month's reconcile/pass spans all of them — one bank failing surfaces in
-`itemErrors` without sinking the rest, and only an all-banks failure returns an error
-status. `/plaid/link-token` takes an optional `{item_id}` to mint an **update-mode**
-token (re-auth a bank in place, no duplicate). The non-sensitive bank names are
-mirrored (comma-joined) to `profiles.plaid_institution` for legacy UI, but `banks` is
-the source of truth.
+`banks: [{item_id, institution}]` array. `/plaid/link-token` takes an optional
+`{item_id}` to mint an **update-mode** token (re-auth a bank in place, no duplicate).
+The non-sensitive bank names are mirrored (comma-joined) to
+`profiles.plaid_institution` for legacy UI, but `banks` is the source of truth.
+
+**Per-bank reconciliation (v276+):** the Statements card is a **clickable list of
+banks** — tapping one sets `_selBank` (the selected `item_id`), and the audit grid +
+"Check all 12 months" + month taps all act on THAT bank only. `/plaid/transactions`
+takes an optional `{item_id}` and pulls just that one bank (omit it → legacy
+merge-all). Everything downstream is namespaced per bank: the session pull cache
+(`_plaidCache[item_id][month]` via `bankCache()`), the audit grid (`audited_months`
+keyed by `item_id`, threaded as the reconcile `acctId`/`stmt.bankKey`), and the
+manual-match sidecar (`plaid_recon[item_id][month]` via `reconBucket()`). **Matching
+itself stays unfiltered** — `reconcileMatch(stmt, null)` — because a record can be
+paid from any bank; only the audit/persistence keys are per-bank. `migratePlaidKeys()`
+does a one-time move of legacy single-bank data (audit key `'_'`, bare-month
+`plaid_recon` keys) under the primary bank's `item_id` so history survives. Cross-bank
+double-claims are prevented: a record manually matched in any other bank+month is
+marked used (`gManual` walks every bank's months, skipping the current bank+month).
 
 ```sql
 alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;

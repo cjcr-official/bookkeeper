@@ -3757,6 +3757,18 @@ function printReportFallback() { return openPDFBlob(buildReportPDF); }
 
 // ====== BANK RECONCILIATION (Plaid only) ======
 let _plaidConnected = false;  // true once renderPlaidBlock sees a linked bank
+// Multi-bank: reconciliation is per-bank. _selBank is the item_id of the bank the
+// month buttons currently act on; _plaidBanks mirrors the status banks[] list.
+// Everything keyed per bank: the session pull cache, the audit grid (acctId =
+// item_id), and the manual-match sidecar (plaid_recon namespaced by item_id).
+let _plaidBanks = [];
+let _selBank = null;
+let _plaidKeysMigrated = false;
+// The selected bank's slice of the session pull cache ({month: rawData}).
+function bankCache() {
+  if (!_selBank) return {};
+  return (_plaidCache[_selBank] = _plaidCache[_selBank] || {});
+}
 
 // ─── Plaid bank sync ─────────────────────────────────────────────────────────
 // Link a bank once, then pull a month's cleared transactions on demand and
@@ -3812,36 +3824,74 @@ async function renderPlaidBlock() {
     if (!_recState) renderAuditBlock(null, '', '', null);
     return;
   }
-  // Connected card: one row per linked bank (name + status + per-bank
-  // reconnect/disconnect), an "Add another bank" button, then the shared pending
-  // note + "Check all 12 months". Reconciliation merges every bank's lines, so a
-  // month's pass/fail spans all of them.
+  _plaidBanks = banks;
+  // Keep a valid selected bank: default to the first, or clear if it vanished.
+  if (!_selBank || !banks.some(b => b.item_id === _selBank)) _selBank = banks[0].item_id;
+  // One-time move of legacy single-bank reconcile data under the primary bank's id.
+  migratePlaidKeys(banks[0].item_id);
+  // Connected card: a clickable list of banks (tap one to make the month buttons
+  // reconcile THAT bank), each with its own reconnect/disconnect, an "Add another
+  // bank" button, then the pending note + "Check all 12 months" for the selected
+  // bank. Reconciliation is per-bank — the audit grid below tracks the selected one.
   const multi = banks.length > 1;
-  const bankRows = banks.map(bk => `
-    <div style="display:flex;align-items:center;gap:.7rem;min-width:0;padding:.55rem 0;border-top:1px solid var(--border)">
-      <div style="width:38px;height:38px;border-radius:11px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-building-bank" style="color:var(--accent);font-size:19px"></i></div>
+  const bankRows = banks.map(bk => {
+    const active = bk.item_id === _selBank;
+    return `
+    <div onclick="plaidSelectBank('${escHtml(bk.item_id)}')" style="display:flex;align-items:center;gap:.7rem;min-width:0;padding:.6rem .55rem;margin-top:.5rem;border-radius:12px;cursor:pointer;border:1.5px solid ${active ? 'var(--accent)' : 'var(--border)'};background:${active ? 'var(--accent-bg)' : 'var(--surface2)'}">
+      <div style="width:38px;height:38px;border-radius:11px;background:${active ? 'var(--accent)' : 'var(--accent-bg)'};display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-building-bank" style="color:${active ? '#fff' : 'var(--accent)'};font-size:19px"></i></div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:14px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${bk.institution ? escHtml(bk.institution) : 'Your bank'}</div>
-        <div style="font-size:11px;color:var(--green);display:flex;align-items:center;gap:.28rem;margin-top:2px"><i class="ti ti-circle-check" style="font-size:12px"></i> Connected</div>
+        <div style="font-size:11px;display:flex;align-items:center;gap:.28rem;margin-top:2px;color:${active ? 'var(--accent)' : 'var(--green)'}"><i class="ti ti-${active ? 'checkbox' : 'circle-check'}" style="font-size:12px"></i> ${active ? 'Reconciling this bank' : 'Tap to reconcile'}</div>
       </div>
-      <div style="display:flex;gap:.4rem;flex-shrink:0">
+      <div style="display:flex;gap:.4rem;flex-shrink:0" onclick="event.stopPropagation()">
         <button class="btn btn-sm" onclick="plaidReconnect('${escHtml(bk.item_id)}')" title="Reconnect / fix sign-in" style="padding:.4rem .55rem"><i class="ti ti-refresh"></i></button>
         <button class="btn btn-sm btn-danger" onclick="plaidDisconnect('${escHtml(bk.item_id)}')" title="Disconnect this bank" style="padding:.4rem .55rem"><i class="ti ti-unlink"></i></button>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   el.innerHTML = `
     <div class="card" style="padding:1rem 1.05rem;margin-bottom:1.1rem;overflow:hidden;max-width:100%;box-sizing:border-box">
-      <div style="font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3)">Connected bank${multi ? 's' : ''}</div>
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3)">${multi ? 'Your banks — tap one to reconcile it' : 'Connected bank'}</div>
       ${bankRows}
       <button class="btn" onclick="plaidConnect()" style="width:100%;margin-top:.7rem"><i class="ti ti-plus"></i> Add another bank</button>
       <div id="plaid-pending-note" style="font-size:11.5px;color:var(--text3);margin-top:.6rem;display:flex;align-items:center;gap:.35rem"></div>
       <button class="btn btn-primary" id="plaid-year-btn" onclick="plaidCheckYear()" style="width:100%;margin-top:.7rem"><i class="ti ti-calendar-stats"></i> Check all 12 months</button>
-      <div style="font-size:11.5px;color:var(--text3);margin-top:.55rem;text-align:center">Or tap a month below to reconcile just that one${multi ? ' — across every bank' : ''}</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:.55rem;text-align:center">Or tap a month below to reconcile just that one</div>
     </div>`;
   _plaidConnected = true;
   renderPlaidPendingNote();
-  if (!_recState) renderAuditBlock(null, '', '', null);   // make the audit months tap-to-pull
-  refreshLiveAudit();   // background: stamp the current month's dot so discrepancies show on load
+  if (!_recState) renderAuditBlock(_selBank, '', '', null);   // per-bank audit grid, tap-to-pull
+  refreshLiveAudit();   // background: stamp the selected bank's current-month dot
+}
+// Switch which bank the month buttons reconcile. Clears the open month view and
+// re-renders the card + this bank's audit grid; the per-bank pull cache is kept.
+function plaidSelectBank(itemId) {
+  if (!itemId || itemId === _selBank) return;
+  _selBank = itemId;
+  _plaidPending = null;   // pending count is per bank
+  _recState = null;       // drop any open reconcile view from the previous bank
+  const out = document.getElementById('rec-result'); if (out) out.innerHTML = '<div id="rec-audit"></div>';
+  renderPlaidBlock();
+}
+// One-time: legacy single-bank data lived under the audit key '_' and bare-month
+// plaid_recon keys. Move it under the primary bank's item_id so history survives
+// the switch to per-bank keying.
+async function migratePlaidKeys(primaryId) {
+  if (_plaidKeysMigrated || !primaryId) return;
+  _plaidKeysMigrated = true;
+  let changed = false;
+  const am = profile.audited_months;
+  if (am && typeof am === 'object' && am['_'] && !am[primaryId]) { am[primaryId] = am['_']; delete am['_']; changed = true; }
+  const pr = profile.plaid_recon;
+  if (pr && typeof pr === 'object') {
+    const monthKeys = Object.keys(pr).filter(k => /^\d{4}-\d{2}$/.test(k));
+    if (monthKeys.length) {
+      pr[primaryId] = pr[primaryId] || {};
+      monthKeys.forEach(k => { if (pr[primaryId][k] == null) pr[primaryId][k] = pr[k]; delete pr[k]; });
+      changed = true;
+    }
+  }
+  if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
 }
 // Open Plaid Link → exchange the public_token server-side → refresh the card.
 async function plaidConnect() {
@@ -3899,17 +3949,18 @@ async function plaidPull(monthArg, force) {
   const start = month + '-01';
   const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
   const out = document.getElementById('rec-result');
+  const bc = bankCache();
   try {
-    let data = (!force && _plaidCache[month]) ? _plaidCache[month] : null;
+    let data = (!force && bc[month]) ? bc[month] : null;
     if (!data) {
       if (out) out.innerHTML = `<div id="rec-audit"></div><div style="display:flex;align-items:center;gap:.5rem;color:var(--text3);font-size:13px;padding:.35rem 0"><span class="spinner"></span> Pulling from the bank…</div>`;
-      data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ start_date: start, end_date: end }) });
-      _plaidCache[month] = data;   // cache the raw response for this session
+      data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ item_id: _selBank, start_date: start, end_date: end }) });
+      bc[month] = data;   // cache this bank's raw response for this session
     }
     if (month === today().slice(0, 7) && Array.isArray(data.pending)) { _plaidPending = data.pending.length; renderPlaidPendingNote(); }
     renderReconcile(buildPlaidStmt(month, data), null, null, {}, null);
   } catch (e) {
-    console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="color:#b91c1c;font-size:13px">${escHtml(e.message || 'Pull failed.')}</div>`; renderAuditBlock(null, '', '', null);
+    console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="color:#b91c1c;font-size:13px">${escHtml(e.message || 'Pull failed.')}</div>`; renderAuditBlock(_selBank, '', '', null);
     if (e.data && e.data.reconnect) renderPlaidBlock();
   }
 }
@@ -3923,20 +3974,21 @@ async function refreshLiveAudit() {
   if (!_plaidConnected || _liveAuditBusy) return;
   const m = today().slice(0, 7);
   _liveAuditBusy = true;
+  const bc = bankCache();
   try {
-    let data = _plaidCache[m];
+    let data = bc[m];
     if (!data) {
       const [y, mo] = m.split('-').map(Number);
       data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({
-        start_date: m + '-01', end_date: `${m}-${String(new Date(y, mo, 0).getDate()).padStart(2, '0')}` }) });
-      _plaidCache[m] = data;
+        item_id: _selBank, start_date: m + '-01', end_date: `${m}-${String(new Date(y, mo, 0).getDate()).padStart(2, '0')}` }) });
+      bc[m] = data;
     }
     if (Array.isArray(data.pending)) { _plaidPending = data.pending.length; renderPlaidPendingNote(); }
     const comp = reconcileMatch(buildPlaidStmt(m, data), null);
-    if (setAuditResult('_', m, comp.passed)) {
+    if (setAuditResult(_selBank, m, comp.passed)) {
       try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); }
     }
-    if (!_recState) renderAuditBlock(null, '', '', null);
+    if (!_recState) renderAuditBlock(_selBank, '', '', null);
   } catch (e) { console.error(e); }
   finally { _liveAuditBusy = false; }
 }
@@ -3981,10 +4033,11 @@ function buildPlaidStmt(month, data) {
   // indices stay valid across re-pulls — Plaid may return rows in a different order.
   const txns = (data.transactions || []).slice().sort((a, b) =>
     (a.date || '').localeCompare(b.date || '') || (a.description || '').localeCompare(b.description || '') || ((a.amount || 0) - (b.amount || 0)));
-  const saved = (profile.plaid_recon || {})[month] || {};
+  const saved = reconBucket(_selBank)[month] || {};
   applyTxnEdits(txns, saved.txn_edits);
   return {
     account_name: data.institution || 'Bank (Plaid)',
+    bankKey: _selBank,   // audit grid + saved matches are namespaced per bank
     period_start: start, period_end: end, statement_month: start,
     opening_balance: null, closing_balance: null,   // Plaid doesn't give a per-month opening/closing balance
     transactions: txns, source: 'plaid',
@@ -4028,8 +4081,9 @@ function applyTxnEdits(txns, edits) {
 // the session cache; returns null when the month hasn't been pulled (caller
 // falls back to the stamped audit).
 function monthAccountedFps(m) {
-  if (!_plaidCache[m]) return null;
-  const comp = reconcileMatch(buildPlaidStmt(m, _plaidCache[m]), null);
+  const bc = bankCache();
+  if (!bc[m]) return null;
+  const comp = reconcileMatch(buildPlaidStmt(m, bc[m]), null);
   const fps = new Set();
   comp.matched.forEach(g => (g.rIdxs||[]).forEach(ri => { const r = comp.recs[ri]; if (r) fps.add(r.fp); }));
   comp.skippedRecs.forEach(r => fps.add(r.fp));
@@ -4052,14 +4106,15 @@ async function plaidCheckYear() {
     const last = months[months.length - 1];
     const [ly, lm] = last.split('-').map(Number);
     const data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({
-      start_date: months[0] + '-01', end_date: `${last}-${String(new Date(ly, lm, 0).getDate()).padStart(2, '0')}` }) });
+      item_id: _selBank, start_date: months[0] + '-01', end_date: `${last}-${String(new Date(ly, lm, 0).getDate()).padStart(2, '0')}` }) });
     const byMonth = {};
     (data.transactions || []).forEach(t => { const m = (t.date || '').slice(0, 7); (byMonth[m] = byMonth[m] || []).push(t); });
+    const bc = bankCache();
     let changed = false;
     const results = months.map(m => {
-      _plaidCache[m] = { transactions: byMonth[m] || [], institution: data.institution };   // month taps are instant now
-      const comp = reconcileMatch(buildPlaidStmt(m, _plaidCache[m]), null);
-      changed = setAuditResult('_', m, comp.passed) || changed;
+      bc[m] = { transactions: byMonth[m] || [], institution: data.institution };   // month taps are instant now
+      const comp = reconcileMatch(buildPlaidStmt(m, bc[m]), null);
+      changed = setAuditResult(_selBank, m, comp.passed) || changed;
       return { m, passed: comp.passed, label: comp.monthLabel || m, issues: comp.onBankOnly.length + comp.inRecordsOnly.length };
     });
     if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
@@ -4074,7 +4129,7 @@ async function plaidCheckYear() {
         </div>
         ${bad.length ? `<div style="display:flex;flex-wrap:wrap;gap:.45rem">${bad.map(chip).join('')}</div>` : ''}
       </div>`;
-    renderAuditBlock(null, '', '', null);
+    renderAuditBlock(_selBank, '', '', null);
   } catch (e) { console.error(e); showToast(e.message || 'Check failed', 'error'); }
   finally { if (btn) { btn.disabled = false; btn.innerHTML = orig; } }
 }
@@ -4085,14 +4140,21 @@ async function saveStmtSidecar(stmt, path) {
   return savePlaidRecon(stmt);
 }
 
-// Persist a Plaid month's manual reconcile edits on profiles.plaid_recon (jsonb,
-// keyed 'YYYY-MM'). Merged back into the statement on the next pull so matches
+// The per-bank slice of profiles.plaid_recon: { [item_id]: { 'YYYY-MM': {...} } }.
+// Legacy single-bank data (bare-month keys) is migrated under the primary bank by
+// migratePlaidKeys, so everything reads/writes through this bucket.
+function reconBucket(bankKey) {
+  if (!profile.plaid_recon || typeof profile.plaid_recon !== 'object') profile.plaid_recon = {};
+  const k = bankKey || '_';
+  return (profile.plaid_recon[k] = profile.plaid_recon[k] || {});
+}
+// Persist a Plaid month's manual reconcile edits under its bank's namespace in
+// profiles.plaid_recon. Merged back into the statement on the next pull so matches
 // stick even though Plaid transactions are re-fetched live each time.
 async function savePlaidRecon(stmt) {
   const month = (stmt.statement_month || '').slice(0, 7);
   if (!month) return;
-  if (!profile.plaid_recon || typeof profile.plaid_recon !== 'object') profile.plaid_recon = {};
-  profile.plaid_recon[month] = {
+  reconBucket(stmt.bankKey || _selBank)[month] = {
     manual_matches: stmt.manual_matches || [],
     unmatch_t: stmt.unmatch_t || [],
     unmatch_r: stmt.unmatch_r || [],
@@ -4740,20 +4802,21 @@ async function resetMonthMatches() {
   const month = (s.stmt.statement_month || '').slice(0, 7);
   s.stmt.manual_matches = []; s.stmt.unmatch_t = []; s.stmt.unmatch_r = []; s.stmt.owned_fps = [];
   s.stmt.txn_edits = []; s.stmt.skip_fps = []; s.stmt.keep_fps = [];
-  if (month && profile.plaid_recon && profile.plaid_recon[month]) {
-    delete profile.plaid_recon[month];
+  const bucket = reconBucket(s.stmt.bankKey || _selBank);
+  if (month && bucket[month]) {
+    delete bucket[month];
     try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); }
   }
   showToast('Re-matched from scratch');
   // Rebuild from the cached raw pull so splits and amount edits revert too.
-  if (s.stmt.source === 'plaid' && month && _plaidCache[month]) return plaidPull(month, false);
+  if (s.stmt.source === 'plaid' && month && bankCache()[month]) return plaidPull(month, false);
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
 // Clear a previously-set manual month override and fall back to auto-detect.
 async function clearStmtMonthOverride() {
   const s = _recState; if (!s) return;
-  const key = s.acctId || '_';
+  const key = s.stmt.bankKey || s.acctId || '_';
   if (profile.audited_months && profile.audited_months[key]) {
     delete profile.audited_months[key][s.monthKey];
   }
@@ -4766,7 +4829,7 @@ async function clearStmtMonthOverride() {
 let _recState = null;
 async function changeStmtMonth(newM) {
   const s = _recState; if (!s) return;
-  const key = s.acctId || '_';
+  const key = s.stmt.bankKey || s.acctId || '_';
   if (newM === s.monthKey) return;
   if (profile.audited_months && profile.audited_months[key]) {
     delete profile.audited_months[key][s.monthKey];
@@ -4850,11 +4913,19 @@ function reconcileMatch(stmt, acctId) {
   // can't auto-match here, and it leaves "In your books". The all-record search
   // still shows it, labeled with the claiming month (gManual maps fp → month).
   // (This month's own claims were consumed by Pass 0 above, so they always win.)
+  // plaid_recon is namespaced per bank ({item_id: {month: {...}}}), so walk every
+  // bank's months. A record claimed in ANY other bank+month is spoken for (records
+  // aren't bank-specific), skipping only THIS view's own bank+month (Pass 0 above).
   const thisMonth = (stmt.statement_month || '').slice(0,7);
+  const thisBank = stmt.bankKey || '_';
   const gManual = new Map();
-  Object.entries(profile.plaid_recon || {}).forEach(([m, saved]) => {
-    if (m === thisMonth) return;
-    (saved.manual_matches||[]).forEach(mm => (mm.rFps||[]).forEach(fp => { if (!gManual.has(fp)) gManual.set(fp, m); }));
+  Object.entries(profile.plaid_recon || {}).forEach(([bankKey, byMonth]) => {
+    if (!byMonth || typeof byMonth !== 'object') return;
+    Object.entries(byMonth).forEach(([m, saved]) => {
+      if (bankKey === thisBank && m === thisMonth) return;
+      if (!saved || !Array.isArray(saved.manual_matches)) return;
+      saved.manual_matches.forEach(mm => (mm.rFps||[]).forEach(fp => { if (!gManual.has(fp)) gManual.set(fp, m); }));
+    });
   });
   recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
   const gOwned = new Set();   // tight-ownership retired in v226; kept for return-shape compat
@@ -4995,6 +5066,9 @@ function reconcileMatch(stmt, acctId) {
 // then render the buckets + the audit grid for this statement's month.
 function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const out = document.getElementById('rec-result');
+  // Matching stays UNFILTERED (acctId null for Plaid) — a record can be paid from
+  // any bank — but the audit grid + saved matches key off the statement's bank.
+  const aKey = stmt.bankKey || acctId || '_';
   const comp = reconcileMatch(stmt, acctId);
   const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned } = comp;
   const setAside = skippedRecs.filter(r => r.inP);   // this month's set-asides (cash + skips)
@@ -5003,7 +5077,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   if (!txns.length && !inRecordsOnly.length && !setAside.length && !matched.length && !(stmt.pending||[]).length) {
     _recState = null;
     out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No bank activity and nothing in your books for ${escHtml(monthLabel||'this month')} — nothing to reconcile. If this is an older month that should have transactions, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`;
-    recordAudit(acctId, monthKey, passed, monthLabel);
+    recordAudit(aKey, monthKey, passed, monthLabel);
     return;
   }
   _recState = { stmt, acctId, path, monthKey, searchPool: [], matchedGroups: matched, recs };
@@ -5078,7 +5152,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const shiftMonth = (mk, d) => { const x = parseDate(mk + '-01'); x.setMonth(x.getMonth() + d); return x.toISOString().slice(0,7); };
   const neighborFps = {};
   if (monthKey) [shiftMonth(monthKey,-1), shiftMonth(monthKey,1)].forEach(m => { neighborFps[m] = monthAccountedFps(m); });
-  const auditPassed = m => { const a = ((profile.audited_months||{})[acctId||'_']||{})[m]; return !!(a && a.passed); };
+  const auditPassed = m => { const a = ((profile.audited_months||{})[aKey]||{})[m]; return !!(a && a.passed); };
   // Search-result row: title + amount on the first line, date + a compact
   // status chip on the second — no prose. A tappable chip opens the month
   // that has the record; results sort unmatched-first (rank).
@@ -5159,7 +5233,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <button class="btn btn-sm" onclick="resetMonthMatches()" style="font-size:11px;color:var(--text3)"><i class="ti ti-refresh"></i> Reset this month</button>
     </div>`;
   searchOtherRecs();   // pre-fill the finder with unmatched records dated near this month
-  recordAudit(acctId, monthKey, passed, monthLabel);
+  recordAudit(aKey, monthKey, passed, monthLabel);
 }
 
 // Open a record's editor from its reconcile fingerprint — one tap to fix a

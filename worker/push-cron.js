@@ -225,9 +225,13 @@ async function plaidTransactions(req, env) {
   if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured.' }, 500);
   const user = await authUser(req, env);
   if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
-  const items = (await plaidLoadAll(env, user.id).catch(() => [])).filter(i => i.access_token);
-  if (!items.length) return jsonResp({ error: 'No bank connected yet.' }, 400);
+  const allItems = (await plaidLoadAll(env, user.id).catch(() => [])).filter(i => i.access_token);
+  if (!allItems.length) return jsonResp({ error: 'No bank connected yet.' }, 400);
   let b; try { b = await req.json(); } catch { b = {}; }
+  // With an item_id, pull just that ONE bank (per-bank reconciliation); without,
+  // pull and merge every linked bank (legacy behavior).
+  const items = (b && b.item_id) ? allItems.filter(i => i.item_id === b.item_id) : allItems;
+  if (!items.length) return jsonResp({ error: 'That bank isn’t connected.' }, 400);
   const start = (b.start_date || '').slice(0, 10), end = (b.end_date || '').slice(0, 10);
   const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
   if (!isDate(start) || !isDate(end)) return jsonResp({ error: 'Bad date range.' }, 400);

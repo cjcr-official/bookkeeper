@@ -1,1 +1,1 @@
-{"version":275,"note":"v275: connect multiple banks in Plaid — Statements lists each bank with its own reconnect/disconnect + “Add another bank”; reconciliation merges transactions across all banks. Requires the plaid_items PK migration."}
+{"version":276,"note":"v276: per-bank reconciliation — the Statements card is a clickable list of banks; the audit grid, Check-12-months, and month taps act on the selected bank only. Pulls, audit grid, and saved matches are namespaced per bank; legacy single-bank data migrates automatically."}
