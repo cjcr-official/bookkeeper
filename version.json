@@ -1,1 +1,1 @@
-{"version":263,"note":"v263: light/dark toggle crossfades the whole UI via the View Transitions API; reduced-motion and unsupported browsers keep the instant swap."}
+{"version":264,"note":"v264: split Settings (dark mode + notifications + account) from Business Profile (company, logo, contact, currency); tap the logo to open the profile."}

@@ -122,7 +122,20 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .topbar-breadcrumb{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace}
 .topbar-right{display:flex;align-items:center;gap:.5rem}
 .content{padding:1.5rem;flex:1;width:100%;max-width:1200px;margin-inline:auto}
-@media(min-width:769px){#topbar-logo{display:none!important}}
+/* Mobile brand mark in the topbar — taps through to the Business Profile page.
+   Desktop hides it (the sidebar logo carries the brand there). */
+#topbar-brand{background:none;border:none;padding:0;margin-right:.2rem;cursor:pointer;align-items:center;justify-content:center;flex-shrink:0;min-width:44px;min-height:44px}
+#topbar-brand-img{width:32px;height:32px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px}
+@media(min-width:769px){#topbar-brand{display:none!important}}
+@media(max-width:768px){#topbar-brand{display:flex!important}}
+/* Settings toggle row + switch (Dark mode). Whole row is the tap target. */
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;width:100%;background:none;border:none;padding:.5rem 0;cursor:pointer;text-align:left;color:inherit;font-family:inherit}
+.setting-row-title{display:block;font-weight:600;font-size:14px;color:var(--text)}
+.setting-row-sub{display:block;font-size:12px;color:var(--text3);margin-top:2px}
+.theme-switch{position:relative;width:46px;height:28px;border-radius:var(--radius-pill);border:1px solid var(--border2);background:var(--surface2);flex-shrink:0;transition:background .2s,border-color .2s}
+.theme-switch.on{background:var(--accent);border-color:var(--accent)}
+.theme-switch-knob{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.22,1,.36,1)}
+.theme-switch.on .theme-switch-knob{transform:translateX(18px)}
 
 /* ── BUTTONS ── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:.45rem .9rem;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all .15s;white-space:nowrap}
@@ -724,7 +737,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 <!-- APP -->
 <div class="app" id="app">
   <nav class="sidebar">
-    <div class="sidebar-logo">
+    <div class="sidebar-logo" onclick="showPage('profile',null)" role="button" tabindex="0" title="Business profile" style="cursor:pointer">
       <div style="display:flex;align-items:center;gap:10px;padding:0">
         <svg id="sidebar-logo-svg" width="32" height="32" viewBox="0 0 92 94"><use href="#bk-logo"/></svg>
         <img id="sidebar-logo-img" alt="logo" style="display:none;width:32px;height:32px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px">
@@ -755,7 +768,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="main">
     <div class="topbar">
       <div class="topbar-left">
-        <img id="topbar-logo" alt="logo" onclick="showPage('dashboard',document.querySelector('.nav-item'))" title="Home" style="display:none;height:34px;max-width:120px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px 5px;cursor:pointer">
+        <button id="topbar-brand" onclick="showPage('profile',null)" title="Business profile" aria-label="Business profile" style="display:none"><svg id="topbar-brand-svg" width="30" height="30" viewBox="0 0 92 94"><use href="#bk-logo"/></svg><img id="topbar-brand-img" alt="" style="display:none"></button>
         <div>
           <div class="topbar-breadcrumb">Dashboard → <span id="topbar-breadcrumb-page">Overview</span></div>
           <div class="topbar-title" id="page-title">Dashboard</div>
@@ -930,9 +943,39 @@ input,select,textarea{border-radius:var(--radius-sm)}
       </div>
 
       <!-- SETTINGS -->
+      <!-- SETTINGS (app: appearance, notifications, account) -->
       <div id="page-settings" class="page">
         <div class="card" style="max-width:500px">
-          <div class="card-header"><h3>Company Settings</h3></div>
+          <div class="card-header"><h3>Appearance</h3></div>
+          <div class="modal-body">
+            <button class="setting-row" id="theme-switch-row" role="switch" aria-label="Dark mode" onclick="toggleTheme()">
+              <span><span class="setting-row-title">Dark mode</span><span class="setting-row-sub">Switch the app between the light and dark theme.</span></span>
+              <span class="theme-switch" id="theme-switch"><span class="theme-switch-knob"></span></span>
+            </button>
+          </div>
+        </div>
+        <div class="card" style="max-width:500px;margin-top:1rem">
+          <div class="card-header"><h3>Notifications</h3></div>
+          <div class="modal-body">
+            <div id="push-status" style="font-size:13px;color:var(--text2);margin-bottom:.5rem">Loading…</div>
+            <button class="btn" id="push-enable-btn" onclick="enablePush()" style="display:none"><i class="ti ti-bell"></i> Enable on this device</button>
+            <div id="push-debug" style="margin-top:.5rem"></div>
+            <div style="font-size:11px;color:var(--text3);margin-top:.5rem;line-height:1.5">A morning ping (8am) when you have invoices, recurring items, or jobs due in the next 2 days. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
+          </div>
+        </div>
+        <div class="card" style="max-width:500px;margin-top:1rem">
+          <div class="card-header"><h3>Account</h3></div>
+          <div class="modal-body">
+            <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Signed in as <strong id="user-email-display"></strong></p>
+            <button class="btn btn-danger" onclick="doLogout()"><i class="ti ti-logout"></i> Sign Out</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROFILE (business identity: company, logo, contact) — reached via the logo -->
+      <div id="page-profile" class="page">
+        <div class="card" style="max-width:500px">
+          <div class="card-header"><h3>Business Profile</h3></div>
           <div class="modal-body">
             <div class="form-group"><label>Company Name</label><input id="s-company" type="text" placeholder="Acme Inc."></div>
             <div class="form-group"><label>Business Logo <span style="color:var(--text3);font-weight:400;font-size:11px">(shown on invoices, reports & home)</span></label>
@@ -948,21 +991,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <select id="s-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD ($)</option><option value="AUD">AUD ($)</option></select>
             </div>
             <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
-            <div class="form-group" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)">
-              <label>Notifications</label>
-              <div id="push-status" style="font-size:13px;color:var(--text2);margin-bottom:.5rem">Loading…</div>
-              <button class="btn" id="push-enable-btn" onclick="enablePush()" style="display:none"><i class="ti ti-bell"></i> Enable on this device</button>
-              <div id="push-debug" style="margin-top:.5rem"></div>
-              <div style="font-size:11px;color:var(--text3);margin-top:.5rem;line-height:1.5">A morning ping (8am) when you have invoices, recurring items, or jobs due in the next 2 days. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
-            </div>
-            <div class="settings-save-row"><button class="btn btn-primary" onclick="saveSettings()"><i class="ti ti-check"></i> Save Settings</button></div>
-          </div>
-        </div>
-        <div class="card" style="max-width:500px;margin-top:1rem">
-          <div class="card-header"><h3>Account</h3></div>
-          <div class="modal-body">
-            <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Signed in as <strong id="user-email-display"></strong></p>
-            <button class="btn btn-danger" onclick="doLogout()"><i class="ti ti-logout"></i> Sign Out</button>
+            <div class="settings-save-row"><button class="btn btn-primary" onclick="saveProfile()"><i class="ti ti-check"></i> Save Profile</button></div>
           </div>
         </div>
       </div>
@@ -1378,7 +1407,7 @@ let currentPage = 'dashboard';
 
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
-const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, settings: loadSettingsForm };
+const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, settings: loadSettingsForm, profile: loadProfileForm };
 function renderAccountsPage() {
   renderOwnerTx(); renderStoreCredits();
   // Reconciliation is inline (Plaid only): keep the audit grid visible and refresh
@@ -1564,7 +1593,7 @@ function showPage(page, el) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   if (el) { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
-  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',settings:'Settings'};
+  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',settings:'Settings',profile:'Business Profile'};
   document.getElementById('page-title').textContent = titles[page]||page;
   updateTopbarLogo();
   const bc = document.getElementById('topbar-breadcrumb-page');
@@ -1579,7 +1608,7 @@ function showPage(page, el) {
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   const fab = document.getElementById('fab');
-  if (fab) fab.style.display = (page==='accounts'||page==='settings'||page==='mileage') ? 'none' : '';
+  if (fab) fab.style.display = (page==='accounts'||page==='settings'||page==='profile'||page==='mileage') ? 'none' : '';
   rerenderCurrentView();
 }
 
@@ -1593,18 +1622,14 @@ function fabClick() {
 
 // ====== DASHBOARD ======
 function updateTopbarLogo() {
-  const tb = document.getElementById('topbar-logo');
-  const sbSvg = document.getElementById('sidebar-logo-svg');
-  const sbImg = document.getElementById('sidebar-logo-img');
-  if (profile.logo) {
-    if (tb) { tb.src = profile.logo; tb.style.display = ''; }
-    if (sbImg) { sbImg.src = profile.logo; sbImg.style.display = ''; }
-    if (sbSvg) sbSvg.style.display = 'none';
-  } else {
-    if (tb) tb.style.display = 'none';
-    if (sbImg) sbImg.style.display = 'none';
-    if (sbSvg) sbSvg.style.display = '';
-  }
+  const has = !!profile.logo;
+  // Both brand marks (desktop sidebar + mobile topbar) show the custom logo when
+  // set, else the default bk-logo SVG.
+  [['sidebar-logo-svg','sidebar-logo-img'], ['topbar-brand-svg','topbar-brand-img']].forEach(([svgId,imgId]) => {
+    const svg = document.getElementById(svgId), img = document.getElementById(imgId);
+    if (img) { if (has) img.src = profile.logo; img.style.display = has ? '' : 'none'; }
+    if (svg) svg.style.display = has ? 'none' : '';
+  });
   // Browser tab favicon + Add-to-Home-Screen icon: use the uploaded logo when set.
   // iOS caches the home-screen icon at install time — existing installs need a remove + re-add.
   const src = profile.logo || 'icon.png';
@@ -5180,7 +5205,14 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
 }
 
 // ====== SETTINGS ======
+// Settings page = app-level (appearance + notifications + account).
 function loadSettingsForm() {
+  syncThemeUI();
+  renderPushStatus();
+  document.getElementById('user-email-display').textContent=currentUser.email;
+}
+// Profile page = business identity (company, logo, contact, currency, base address).
+function loadProfileForm() {
   document.getElementById('s-company').value=profile.company||'';
   document.getElementById('s-address').value=profile.address||'';
   document.getElementById('s-email').value=profile.email||'';
@@ -5188,8 +5220,6 @@ function loadSettingsForm() {
   document.getElementById('s-currency').value=profile.currency||'USD';
   document.getElementById('s-base-address').value=profile.base_address||'';
   renderLogoState();
-  renderPushStatus();
-  document.getElementById('user-email-display').textContent=currentUser.email;
 }
 
 function renderLogoState() {
@@ -5249,7 +5279,7 @@ async function removeLogo() {
   showToast('Logo removed');
 }
 
-async function saveSettings() {
+async function saveProfile() {
   const row = {
     company: document.getElementById('s-company').value,
     address: document.getElementById('s-address').value,
@@ -5263,7 +5293,7 @@ async function saveSettings() {
   if (error) { showToast(error.message, 'error'); return; }
   profile = { ...profile, ...row };
   document.getElementById('user-company-name').textContent = row.company || 'My Business';
-  showToast('Settings saved', 'success');
+  showToast('Profile saved', 'success');
 }
 
 // ====== PUSH NOTIFICATIONS (daily reminder via the Cloudflare Worker cron) ======
@@ -5462,14 +5492,24 @@ async function boot() {
 }
 
 // ====== THEME ======
+// Reflect the active theme on both controls: the topbar sun/moon icon and the
+// Dark-mode switch on the Settings page (either may be absent).
+function syncThemeUI() {
+  const light = document.documentElement.hasAttribute('data-theme');
+  const icon = document.getElementById('theme-icon');
+  if (icon) icon.className = light ? 'ti ti-moon' : 'ti ti-sun';
+  const sw = document.getElementById('theme-switch');
+  if (sw) sw.classList.toggle('on', !light);
+  const row = document.getElementById('theme-switch-row');
+  if (row) row.setAttribute('aria-checked', String(!light));
+}
 function toggleTheme() {
   const html = document.documentElement;
   const toLight = !html.hasAttribute('data-theme');   // no attr = currently dark
   const apply = () => {
     if (toLight) html.setAttribute('data-theme', 'light');
     else html.removeAttribute('data-theme');
-    const icon = document.getElementById('theme-icon');
-    if (icon) icon.className = toLight ? 'ti ti-moon' : 'ti ti-sun';
+    syncThemeUI();
   };
   lsSet('bk-theme', toLight ? 'light' : 'dark');
   // One uniform crossfade of the whole UI. Feature-detected; reduced-motion and
@@ -5483,10 +5523,7 @@ function toggleTheme() {
   const saved = lsGet('bk-theme');
   if (saved === 'light') {
     document.documentElement.setAttribute('data-theme','light');
-    document.addEventListener('DOMContentLoaded', ()=>{
-      const icon = document.getElementById('theme-icon');
-      if (icon) icon.className = 'ti ti-moon';
-    });
+    document.addEventListener('DOMContentLoaded', syncThemeUI);
   }
 })();
 
