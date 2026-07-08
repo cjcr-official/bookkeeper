@@ -137,8 +137,18 @@ balance = null` (Plaid gives no per-month opening/closing), so the balance check
 "unknown" — a month still passes when nothing is unmatched. `PLAID_ENV=sandbox` uses
 Plaid's fake test banks (free, works immediately with the client credentials); switch
 to `production` once Plaid approves the account. `/plaid/disconnect` removes the item
-at Plaid and drops the stored token. The non-sensitive bank name is mirrored to
-`profiles.plaid_institution` for the UI.
+at Plaid and drops the stored token (one bank when passed `{item_id}`, else all).
+
+**Multi-bank (v275+):** a user can link several banks. `/plaid/status` returns a
+`banks: [{item_id, institution}]` array (the Statements card lists each with its own
+reconnect/disconnect + an "Add another bank" button); `/plaid/transactions` pulls the
+month from **every** linked bank and **merges** the lines (each tagged with `bank`),
+so a month's reconcile/pass spans all of them — one bank failing surfaces in
+`itemErrors` without sinking the rest, and only an all-banks failure returns an error
+status. `/plaid/link-token` takes an optional `{item_id}` to mint an **update-mode**
+token (re-auth a bank in place, no duplicate). The non-sensitive bank names are
+mirrored (comma-joined) to `profiles.plaid_institution` for legacy UI, but `banks` is
+the source of truth.
 
 ```sql
 alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;
@@ -151,17 +161,28 @@ alter table profiles add column if not exists plaid_institution text;
 alter table profiles add column if not exists plaid_recon jsonb default '{}'::jsonb;
 -- Plaid access tokens live here, NOT on profiles: RLS is enabled with NO policy for
 -- authenticated users, so PostgREST returns nothing to the browser — only the Worker
--- (service key) can read/write it. user_id is the PK so upsert-on-conflict replaces
--- the row on reconnect.
+-- (service key) can read/write it. MULTI-BANK (v275+): the PK is item_id (unique per
+-- Plaid item), so one user can have MANY rows — one per linked bank. Upsert-on-conflict
+-- is keyed on item_id, so exchanging a public_token ADDS a bank (or refreshes the same
+-- one on re-link); disconnect removes a single item_id (or all when none is given).
 create table if not exists plaid_items (
-  user_id uuid primary key,
+  item_id text primary key,
+  user_id uuid not null,
   access_token text not null,
-  item_id text,
   institution text,
   updated_at timestamptz default now()
 );
+create index if not exists plaid_items_user_id_idx on plaid_items (user_id);
 alter table plaid_items enable row level security;
 -- (intentionally no policy — service-key-only access)
+
+-- MIGRATION for accounts created before v275 (single-bank plaid_items keyed on
+-- user_id) → multi-bank keyed on item_id. Existing rows already carry item_id
+-- (every exchange stored it), so switching the PK is safe:
+--   alter table plaid_items drop constraint if exists plaid_items_pkey;
+--   alter table plaid_items alter column item_id set not null;
+--   alter table plaid_items add constraint plaid_items_pkey primary key (item_id);
+--   create index if not exists plaid_items_user_id_idx on plaid_items (user_id);
 ```
 
 Cron schedule (in `wrangler.toml`): `* * * * *` (every minute) — keeps reminder

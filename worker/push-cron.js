@@ -101,52 +101,74 @@ async function plaidApi(env, path, body) {
   return data;
 }
 
-// Persist / read the per-user Plaid item (access_token, item_id, institution).
+// Persist / read the user's Plaid items (access_token, item_id, institution).
 // plaid_items has RLS enabled with NO authenticated policy, so only the Worker's
-// service key can touch it — the browser can never read the access_token.
+// service key can touch it — the browser can never read the access_token. A user
+// can link several banks, so there may be MANY rows per user; the primary key is
+// item_id (unique per Plaid item), so upserting on item_id adds a new bank and a
+// re-link of the same bank just refreshes its row.
 async function plaidStore(env, userId, row) {
-  await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?on_conflict=user_id`, {
+  await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?on_conflict=item_id`, {
     method: 'POST',
     headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify({ user_id: userId, ...row, updated_at: new Date().toISOString() })
   });
 }
-async function plaidLoad(env, userId) {
-  const rows = await supaGet(env, `plaid_items?user_id=eq.${userId}&select=access_token,item_id,institution`);
-  return rows && rows[0];
+async function plaidLoadAll(env, userId) {
+  const rows = await supaGet(env, `plaid_items?user_id=eq.${userId}&select=access_token,item_id,institution&order=updated_at.asc`);
+  return Array.isArray(rows) ? rows : [];
+}
+// Keep the legacy (non-sensitive) profiles.plaid_institution mirror roughly
+// accurate for the UI: a comma-joined list of the linked bank names (or null).
+async function plaidRefreshMirror(env, userId) {
+  const items = await plaidLoadAll(env, userId).catch(() => []);
+  const names = items.map(i => i.institution).filter(Boolean);
+  await supaPatch(env, `profiles?id=eq.${userId}`, { plaid_institution: names.length ? names.join(', ') : null });
+  return items;
 }
 
-// Is Plaid set up, and has this user linked a bank yet? (Non-sensitive — drives UI.)
+// Is Plaid set up, and which banks has this user linked? (Non-sensitive — drives UI.)
 async function plaidStatus(req, env) {
   const user = await authUser(req, env);
   if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
-  let item = null;
-  if (plaidConfigured(env)) { try { item = await plaidLoad(env, user.id); } catch (e) { console.error('plaid status load', e); } }
-  return jsonResp({ ok: true, configured: plaidConfigured(env), connected: !!(item && item.access_token), institution: (item && item.institution) || null });
+  let items = [];
+  if (plaidConfigured(env)) { try { items = await plaidLoadAll(env, user.id); } catch (e) { console.error('plaid status load', e); } }
+  const banks = items.filter(i => i.access_token).map(i => ({ item_id: i.item_id, institution: i.institution || null }));
+  // `connected`/`institution` kept for backward-compat; `banks` is the source of truth.
+  return jsonResp({ ok: true, configured: plaidConfigured(env), connected: banks.length > 0, banks, institution: banks[0] ? banks[0].institution : null });
 }
 
-// Mint a short-lived Link token so the browser can open Plaid Link.
+// Mint a short-lived Link token so the browser can open Plaid Link. With an
+// `item_id`, mint an UPDATE-mode token (re-auth an existing bank in place)
+// instead of adding a new one.
 async function plaidLinkToken(req, env) {
   if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured (missing PLAID_CLIENT_ID / PLAID_SECRET).' }, 500);
   const user = await authUser(req, env);
   if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  let b; try { b = await req.json(); } catch { b = {}; }
   try {
-    const data = await plaidApi(env, '/link/token/create', {
-      user: { client_user_id: user.id },
-      client_name: 'Bookkeeper',
-      products: ['transactions'],
-      country_codes: ['US'],
-      language: 'en',
+    const cfg = { user: { client_user_id: user.id }, client_name: 'Bookkeeper', country_codes: ['US'], language: 'en' };
+    if (b && b.item_id) {
+      // Update mode: pass the existing item's access_token, no products.
+      const items = await plaidLoadAll(env, user.id);
+      const it = items.find(i => i.item_id === b.item_id);
+      if (!it || !it.access_token) return jsonResp({ error: 'That bank isn’t connected.' }, 400);
+      cfg.access_token = it.access_token;
+    } else {
+      cfg.products = ['transactions'];
       // Ask for the maximum history (24 months) instead of Plaid's 90-day default,
-      // so older months can be reconciled. This is fixed at link time — an already
-      // linked bank must be reconnected for the longer window to take effect.
-      transactions: { days_requested: 730 }
-    });
+      // so older months can be reconciled. Fixed at link time — an already-linked
+      // bank must be reconnected for the longer window to take effect.
+      cfg.transactions = { days_requested: 730 };
+    }
+    const data = await plaidApi(env, '/link/token/create', cfg);
     return jsonResp({ ok: true, link_token: data.link_token });
   } catch (e) { console.error('plaid link-token', e.plaid || e); return jsonResp({ error: e.message || 'Plaid error' }, 502); }
 }
 
 // Swap the browser's public_token for a stored access_token; record the bank name.
+// Upserts on item_id, so this ADDS a bank (or refreshes one relinked with the same
+// login) without disturbing the user's other connected banks.
 async function plaidExchange(req, env) {
   if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured.' }, 500);
   const user = await authUser(req, env);
@@ -165,69 +187,92 @@ async function plaidExchange(req, env) {
       }
     } catch (e) { /* institution name is best-effort */ }
     await plaidStore(env, user.id, { access_token: ex.access_token, item_id: ex.item_id, institution });
-    // Mirror the (non-sensitive) bank name onto profiles for the UI. Best-effort:
-    // silently no-ops if the plaid_institution column hasn't been added yet.
-    await supaPatch(env, `profiles?id=eq.${user.id}`, { plaid_institution: institution || 'bank' });
+    await plaidRefreshMirror(env, user.id);
     return jsonResp({ ok: true, institution });
   } catch (e) { console.error('plaid exchange', e.plaid || e); return jsonResp({ error: e.message || 'Plaid error' }, 502); }
 }
 
-// Pull one date range of cleared transactions, mapped into the statement shape the
-// reconcile view consumes. Sign is flipped: Plaid uses +money-out / −money-in, but
-// the app's convention (matching the bank ledger) is −out / +in.
+// Pull one bank's date range of cleared + pending transactions, mapped into the
+// statement shape the reconcile view consumes. Sign is flipped: Plaid uses
+// +money-out / −money-in, but the app's convention (matching the ledger) is −out/+in.
+async function plaidPullItemRange(env, item, start, end) {
+  let all = [], offset = 0, total = Infinity, accounts = [];
+  while (offset < total) {
+    const data = await plaidApi(env, '/transactions/get', {
+      access_token: item.access_token, start_date: start, end_date: end, options: { count: 500, offset }
+    });
+    total = data.total_transactions || 0;
+    if (data.accounts) accounts = data.accounts;
+    const batch = data.transactions || [];
+    all = all.concat(batch);
+    offset += batch.length;
+    if (!batch.length) break;
+  }
+  const bank = item.institution || null;
+  const mapT = t => ({ date: t.date, description: t.merchant_name || t.name || 'Transaction', amount: -(Number(t.amount) || 0), balance: null, bank });
+  return {
+    transactions: all.filter(t => !t.pending).map(mapT),
+    pending: all.filter(t => t.pending).map(mapT),
+    accounts: accounts.map(a => ({ name: a.name, mask: a.mask, subtype: a.subtype, bank }))
+  };
+}
+
+// Pull a month across ALL of the user's linked banks and merge the results into a
+// single statement. One bank failing (e.g. needs re-auth) doesn't sink the rest —
+// its error is reported in `itemErrors`; only when EVERY bank fails do we return an
+// error status so the client can react (re-auth, retry).
 async function plaidTransactions(req, env) {
   if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured.' }, 500);
   const user = await authUser(req, env);
   if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
-  const item = await plaidLoad(env, user.id).catch(() => null);
-  if (!item || !item.access_token) return jsonResp({ error: 'No bank connected yet.' }, 400);
+  const items = (await plaidLoadAll(env, user.id).catch(() => [])).filter(i => i.access_token);
+  if (!items.length) return jsonResp({ error: 'No bank connected yet.' }, 400);
   let b; try { b = await req.json(); } catch { b = {}; }
   const start = (b.start_date || '').slice(0, 10), end = (b.end_date || '').slice(0, 10);
   const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s);
   if (!isDate(start) || !isDate(end)) return jsonResp({ error: 'Bad date range.' }, 400);
-  try {
-    let all = [], offset = 0, total = Infinity, accounts = [];
-    while (offset < total) {
-      const data = await plaidApi(env, '/transactions/get', {
-        access_token: item.access_token, start_date: start, end_date: end, options: { count: 500, offset }
-      });
-      total = data.total_transactions || 0;
-      if (data.accounts) accounts = data.accounts;
-      const batch = data.transactions || [];
-      all = all.concat(batch);
-      offset += batch.length;
-      if (!batch.length) break;
+  let transactions = [], pending = [], accounts = [];
+  const itemErrors = [];
+  for (const item of items) {
+    try {
+      const r = await plaidPullItemRange(env, item, start, end);
+      transactions = transactions.concat(r.transactions);
+      pending = pending.concat(r.pending);
+      accounts = accounts.concat(r.accounts);
+    } catch (e) {
+      console.error('plaid transactions', item.item_id, e.plaid || e);
+      const code = e.plaid && e.plaid.error_code;
+      itemErrors.push({ item_id: item.item_id, institution: item.institution || null, code: code || null, message: e.message || 'Plaid error', reconnect: code === 'ITEM_LOGIN_REQUIRED' });
     }
-    const mapT = t => ({ date: t.date, description: t.merchant_name || t.name || 'Transaction', amount: -(Number(t.amount) || 0), balance: null });
-    // Only cleared lines reconcile against the ledger; pending ones are returned
-    // separately so the client can show live-but-unsettled activity without
-    // matching against amounts/names that can still change.
-    const transactions = all.filter(t => !t.pending).map(mapT);
-    const pending = all.filter(t => t.pending).map(mapT);
-    return jsonResp({ ok: true, institution: item.institution || null, transactions, pending, accounts: accounts.map(a => ({ name: a.name, mask: a.mask, subtype: a.subtype })) });
-  } catch (e) {
-    console.error('plaid transactions', e.plaid || e);
-    const code = e.plaid && e.plaid.error_code;
-    if (code === 'PRODUCT_NOT_READY') return jsonResp({ error: 'Plaid is still preparing your transactions — try again in a minute.' }, 503);
-    if (code === 'ITEM_LOGIN_REQUIRED') return jsonResp({ error: 'Your bank needs re-authentication — reconnect the account.', reconnect: true }, 409);
-    return jsonResp({ error: e.message || 'Plaid error' }, 502);
   }
+  if (itemErrors.length === items.length) {
+    const first = itemErrors[0];
+    if (first.code === 'PRODUCT_NOT_READY') return jsonResp({ error: 'Plaid is still preparing your transactions — try again in a minute.', itemErrors }, 503);
+    if (first.reconnect) return jsonResp({ error: 'Your bank needs re-authentication — reconnect the account.', reconnect: true, itemErrors }, 409);
+    return jsonResp({ error: first.message, itemErrors }, 502);
+  }
+  return jsonResp({ ok: true, institution: items[0].institution || null, transactions, pending, accounts, itemErrors });
 }
 
-// Unlink: invalidate the item at Plaid, then drop our stored token + bank name.
+// Unlink: invalidate the item(s) at Plaid, then drop the stored token(s). With an
+// `item_id`, disconnect just that one bank; without, disconnect them all (legacy).
 async function plaidDisconnect(req, env) {
   const user = await authUser(req, env);
   if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
-  const item = await plaidLoad(env, user.id).catch(() => null);
-  if (item && item.access_token && plaidConfigured(env)) {
-    try { await plaidApi(env, '/item/remove', { access_token: item.access_token }); } catch (e) { console.error('plaid item/remove', e.plaid || e); }
+  let b; try { b = await req.json(); } catch { b = {}; }
+  const items = await plaidLoadAll(env, user.id).catch(() => []);
+  const targets = (b && b.item_id) ? items.filter(i => i.item_id === b.item_id) : items;
+  for (const item of targets) {
+    if (item.access_token && plaidConfigured(env)) {
+      try { await plaidApi(env, '/item/remove', { access_token: item.access_token }); } catch (e) { console.error('plaid item/remove', e.plaid || e); }
+    }
+    try {
+      await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?item_id=eq.${encodeURIComponent(item.item_id)}`, {
+        method: 'DELETE', headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' }
+      });
+    } catch (e) { console.error('plaid_items delete', e); }
   }
-  try {
-    await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?user_id=eq.${user.id}`, {
-      method: 'DELETE', headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' }
-    });
-  } catch (e) { console.error('plaid_items delete', e); }
-  await supaPatch(env, `profiles?id=eq.${user.id}`, { plaid_institution: null });
+  await plaidRefreshMirror(env, user.id);
   return jsonResp({ ok: true });
 }
 

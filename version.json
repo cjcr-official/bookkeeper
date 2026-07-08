@@ -1,1 +1,1 @@
-{"version":274,"note":"v274: make adding/selecting an expense account obvious — a full-width “New account” button under the Account picker (the chart-of-accounts page is Plaid-only now, so this is the way to create one)."}
+{"version":275,"note":"v275: connect multiple banks in Plaid — Statements lists each bank with its own reconnect/disconnect + “Add another bank”; reconciliation merges transactions across all banks. Requires the plaid_items PK migration."}

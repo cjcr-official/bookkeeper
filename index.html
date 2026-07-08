@@ -3798,7 +3798,9 @@ async function renderPlaidBlock() {
     if (!_recState) renderAuditBlock(null, '', '', null);
     return;
   }
-  if (!status.connected) {
+  const banks = Array.isArray(status.banks) ? status.banks
+              : (status.connected ? [{ item_id: '', institution: status.institution }] : []);
+  if (!banks.length) {
     _plaidConnected = false;
     el.innerHTML = `
       <div class="card" style="padding:1.3rem 1.15rem;margin-bottom:1.1rem;text-align:center">
@@ -3810,25 +3812,31 @@ async function renderPlaidBlock() {
     if (!_recState) renderAuditBlock(null, '', '', null);
     return;
   }
-  // Compact connected card: bank + status + pending note up top, one primary
-  // action ("Check all 12 months" — the audit grid handles single months), and
-  // icon-only Reconnect/Disconnect so nothing can overflow the right edge.
+  // Connected card: one row per linked bank (name + status + per-bank
+  // reconnect/disconnect), an "Add another bank" button, then the shared pending
+  // note + "Check all 12 months". Reconciliation merges every bank's lines, so a
+  // month's pass/fail spans all of them.
+  const multi = banks.length > 1;
+  const bankRows = banks.map(bk => `
+    <div style="display:flex;align-items:center;gap:.7rem;min-width:0;padding:.55rem 0;border-top:1px solid var(--border)">
+      <div style="width:38px;height:38px;border-radius:11px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-building-bank" style="color:var(--accent);font-size:19px"></i></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${bk.institution ? escHtml(bk.institution) : 'Your bank'}</div>
+        <div style="font-size:11px;color:var(--green);display:flex;align-items:center;gap:.28rem;margin-top:2px"><i class="ti ti-circle-check" style="font-size:12px"></i> Connected</div>
+      </div>
+      <div style="display:flex;gap:.4rem;flex-shrink:0">
+        <button class="btn btn-sm" onclick="plaidReconnect('${escHtml(bk.item_id)}')" title="Reconnect / fix sign-in" style="padding:.4rem .55rem"><i class="ti ti-refresh"></i></button>
+        <button class="btn btn-sm btn-danger" onclick="plaidDisconnect('${escHtml(bk.item_id)}')" title="Disconnect this bank" style="padding:.4rem .55rem"><i class="ti ti-unlink"></i></button>
+      </div>
+    </div>`).join('');
   el.innerHTML = `
     <div class="card" style="padding:1rem 1.05rem;margin-bottom:1.1rem;overflow:hidden;max-width:100%;box-sizing:border-box">
-      <div style="display:flex;align-items:center;gap:.7rem;min-width:0">
-        <div style="width:40px;height:40px;border-radius:12px;background:var(--accent-bg);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-building-bank" style="color:var(--accent);font-size:20px"></i></div>
-        <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:14.5px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${status.institution ? escHtml(status.institution) : 'Your bank'}</div>
-          <div style="font-size:11.5px;color:var(--green);display:flex;align-items:center;gap:.28rem;margin-top:2px"><i class="ti ti-circle-check" style="font-size:13px"></i> Connected</div>
-        </div>
-        <div style="display:flex;gap:.4rem;flex-shrink:0">
-          <button class="btn btn-sm" onclick="plaidConnect()" title="Reconnect" style="padding:.4rem .55rem"><i class="ti ti-refresh"></i></button>
-          <button class="btn btn-sm btn-danger" onclick="plaidDisconnect()" title="Disconnect" style="padding:.4rem .55rem"><i class="ti ti-unlink"></i></button>
-        </div>
-      </div>
-      <div id="plaid-pending-note" style="font-size:11.5px;color:var(--text3);margin-top:.55rem;display:flex;align-items:center;gap:.35rem"></div>
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3)">Connected bank${multi ? 's' : ''}</div>
+      ${bankRows}
+      <button class="btn" onclick="plaidConnect()" style="width:100%;margin-top:.7rem"><i class="ti ti-plus"></i> Add another bank</button>
+      <div id="plaid-pending-note" style="font-size:11.5px;color:var(--text3);margin-top:.6rem;display:flex;align-items:center;gap:.35rem"></div>
       <button class="btn btn-primary" id="plaid-year-btn" onclick="plaidCheckYear()" style="width:100%;margin-top:.7rem"><i class="ti ti-calendar-stats"></i> Check all 12 months</button>
-      <div style="font-size:11.5px;color:var(--text3);margin-top:.55rem;text-align:center">Or tap a month below to reconcile just that one</div>
+      <div style="font-size:11.5px;color:var(--text3);margin-top:.55rem;text-align:center">Or tap a month below to reconcile just that one${multi ? ' — across every bank' : ''}</div>
     </div>`;
   _plaidConnected = true;
   renderPlaidPendingNote();
@@ -3932,15 +3940,34 @@ async function refreshLiveAudit() {
   } catch (e) { console.error(e); }
   finally { _liveAuditBusy = false; }
 }
-async function plaidDisconnect() {
+// Disconnect one bank (by item_id) — or, with no id, every bank (legacy).
+async function plaidDisconnect(itemId) {
   if (!confirm('Disconnect this bank? You can reconnect any time.')) return;
   try {
-    await plaidFetch('/plaid/disconnect', { method: 'POST', body: '{}' });
-    _plaidCache = {};
-    profile.plaid_institution = null;
+    await plaidFetch('/plaid/disconnect', { method: 'POST', body: JSON.stringify(itemId ? { item_id: itemId } : {}) });
+    _plaidCache = {};   // history window changed — drop any cached months
     showToast('Bank disconnected');
     renderPlaidBlock();
   } catch (e) { showToast(e.message || 'Failed to disconnect', 'error'); }
+}
+// Re-authenticate an existing bank in place (Plaid update mode) — used when a bank
+// asks for a fresh sign-in. Keeps the same item, so no new duplicate is created.
+async function plaidReconnect(itemId) {
+  if (!itemId) return plaidConnect();   // fallback: treat as a fresh add
+  try {
+    await loadPlaidLink();
+    const { link_token } = await plaidFetch('/plaid/link-token', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
+    const handler = window.Plaid.create({
+      token: link_token,
+      onSuccess: async () => {
+        _plaidCache = {};
+        showToast('Bank reconnected', 'success');
+        renderPlaidBlock();
+      },
+      onExit: (err) => { if (err) showToast('Plaid: ' + (err.display_message || err.error_message || 'closed'), 'error'); }
+    });
+    handler.open();
+  } catch (e) { showToast(e.message || 'Plaid error', 'error'); }
 }
 
 // Rebuild a Plaid month's statement object from raw pulled data: stable sort,
