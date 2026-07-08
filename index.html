@@ -5549,10 +5549,11 @@ function toggleTheme() {
 })();
 
 // ====== ROLODEX SCROLL (Customers, mobile cards) ======
-// Cards lie flat at mid-screen and tilt away in 3D as they roll toward the
-// top/bottom edges — like thumbing through a rolodex wheel. Driven by JS
-// (CSS scroll timelines aren't reliable on iOS yet): each scroll frame is
-// coalesced into one rAF that stamps a transform per visible card.
+// Cards stay FLAT until they reach the exit zones at the very top (under the
+// sticky topbar) and bottom (above the tab bar); only the card actually
+// leaving the screen curls away in 3D — like the top card flipping over on a
+// rolodex. Driven by JS (CSS scroll timelines aren't reliable on iOS yet):
+// each scroll frame is coalesced into one rAF that stamps a transform per card.
 let _rolodexRaf = 0;
 function rolodexTick() { if (!_rolodexRaf) _rolodexRaf = requestAnimationFrame(rolodexApply); }
 function rolodexApply() {
@@ -5564,15 +5565,24 @@ function rolodexApply() {
   // Short list (nothing to scroll) or reduced motion → keep every card flat.
   const flat = (main.scrollHeight - main.clientHeight < 40) ||
                matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const vh = window.innerHeight, mid = vh / 2;
+  const vh = window.innerHeight;
+  const topEdge = (document.querySelector('.topbar')?.getBoundingClientRect().bottom || 0);
+  const botEdge = vh - 62;     // top of the bottom tab bar
+  const ZONE = 170;            // ≈ one card height: the curl happens within this band
   cards.forEach(card => {
     if (flat) { card.style.transform = ''; card.style.opacity = ''; return; }
     const r = card.getBoundingClientRect();
     if (r.bottom < -60 || r.top > vh + 60) { card.style.transform = ''; card.style.opacity = ''; return; }
-    // t: 0 at screen center → ±1 at the edges. Above center tips back, below tips forward.
-    const t = Math.max(-1, Math.min(1, (r.top + r.height / 2 - mid) / mid));
-    card.style.transform = `perspective(1100px) rotateX(${(-t * 24).toFixed(2)}deg) scale(${(1 - Math.abs(t) * .1).toFixed(3)})`;
-    card.style.opacity = (1 - Math.abs(t) * .35).toFixed(3);
+    // t: 0 everywhere in the middle → ±1 once the card's center reaches the
+    // edge of the visible band. Top card tips back, bottom card tips forward.
+    const y = r.top + r.height / 2;
+    let t = 0;
+    if (y < topEdge + ZONE) t = (y - (topEdge + ZONE)) / ZONE;
+    else if (y > botEdge - ZONE) t = (y - (botEdge - ZONE)) / ZONE;
+    t = Math.max(-1, Math.min(1, t));
+    if (!t) { card.style.transform = ''; card.style.opacity = ''; return; }
+    card.style.transform = `perspective(1100px) rotateX(${(-t * 28).toFixed(2)}deg) scale(${(1 - Math.abs(t) * .1).toFixed(3)})`;
+    card.style.opacity = (1 - Math.abs(t) * .4).toFixed(3);
   });
 }
 document.querySelector('.main').addEventListener('scroll', rolodexTick, { passive: true });

@@ -1,1 +1,1 @@
-{"version":268,"note":"v268: rolodex scrolling on the Customers list — cards lie flat mid-screen and tilt away in 3D toward the edges as you scroll (mobile cards only; respects reduced motion)."}
+{"version":269,"note":"v269: rolodex curl only fires in the exit zones — middle cards stay flat; just the top/bottom card curls away as it leaves the screen."}
