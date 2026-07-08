@@ -607,6 +607,20 @@ input,select,textarea{border-radius:var(--radius-sm)}
 .rec-tab{flex:1;border:none;background:transparent;color:var(--text3);font-weight:700;font-size:13px;padding:.52rem .75rem;border-radius:var(--radius-pill);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.4rem;font-family:inherit;transition:background .15s,color .15s}
 .rec-tab.active{background:var(--accent);color:#fff;box-shadow:0 2px 8px var(--accent-glow)}
 .rec-tab:active{transform:scale(.97)}
+
+/* ── MOTION — state transitions only; entrances animate, exits stay instant.
+   The global prefers-reduced-motion rule above flattens all of these. ── */
+@keyframes bkFade{from{opacity:0}}
+@keyframes bkPop{from{opacity:0;transform:translateY(8px) scale(.98)}}
+@keyframes bkSheet{from{transform:translateY(100%)}}
+.page.active{animation:bkFade .15s ease-out}
+.modal-overlay.open{animation:bkFade .2s ease-out}
+.modal-overlay.open .modal{animation:bkPop .25s cubic-bezier(.22,1,.36,1)}
+#rec-match-bar{animation:bkFade .2s ease-out}
+@media(max-width:768px){
+  /* bottom sheets slide up from the bottom edge; the overlay fade carries the backdrop */
+  .modal-overlay.open .modal{animation:bkSheet .32s cubic-bezier(.22,1,.36,1)}
+}
 </style>
 </head>
 <body>

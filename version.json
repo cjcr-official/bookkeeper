@@ -1,1 +1,1 @@
-{"version":258,"note":"v258: current month's audit dot is saved and auto-refreshed on load, so discrepancies show without tapping the month."}
+{"version":259,"note":"v259: motion pass — bottom sheets slide up, desktop modals pop in, pages and the match bar fade; exits stay instant, reduced-motion still flattens everything."}
