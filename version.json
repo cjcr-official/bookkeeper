@@ -1,1 +1,1 @@
-{"version":264,"note":"v264: split Settings (dark mode + notifications + account) from Business Profile (company, logo, contact, currency); tap the logo to open the profile."}
+{"version":265,"note":"v265: fix Business Profile save-bar overlap after the v264 split, remove the redundant topbar dark-mode button (lives in Settings), nicer logo upload slot."}

@@ -136,6 +136,20 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .theme-switch.on{background:var(--accent);border-color:var(--accent)}
 .theme-switch-knob{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.22,1,.36,1)}
 .theme-switch.on .theme-switch-knob{transform:translateX(18px)}
+/* Business-logo slot (profile page): white preview tile + pill actions when a
+   logo is set; a dashed tap-to-upload zone when there isn't one. */
+.logo-slot{display:flex;align-items:center;gap:.9rem;padding:.7rem .8rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2)}
+.logo-slot-img{width:72px;height:72px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:8px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.logo-slot-img img{max-width:100%;max-height:100%;object-fit:contain}
+.logo-slot-meta{min-width:0;flex:1}
+.logo-slot-name{display:block;font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3);margin-bottom:.5rem}
+.logo-slot-actions{display:flex;gap:.45rem;flex-wrap:wrap}
+.logo-drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.2rem;width:100%;padding:1.15rem .75rem;border:1.5px dashed var(--border2);border-radius:var(--radius-sm);background:var(--surface2);color:var(--text2);cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s,transform .12s}
+.logo-drop:hover{border-color:var(--accent)}
+.logo-drop:active{transform:scale(.99)}
+.logo-drop i{font-size:24px;color:var(--accent)}
+.logo-drop-title{font-weight:600;font-size:13.5px;color:var(--text)}
+.logo-drop-sub{font-size:11px;color:var(--text3)}
 
 /* ── BUTTONS ── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:.45rem .9rem;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;transition:all .15s;white-space:nowrap}
@@ -506,11 +520,11 @@ body.modal-open .main{overflow:hidden}
   /* floating create button: the topbar + is out of thumb reach one-handed */
   #fab{position:fixed;right:1.05rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 14px);width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;border:none;display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 6px 20px var(--accent-glow);z-index:600;cursor:pointer;transition:transform .12s cubic-bezier(.2,.8,.2,1)}
   #fab:active{transform:scale(.92)}
-  /* Settings: keep Save reachable — the form runs past one screen.
+  /* Business Profile: keep Save reachable — the form runs past one screen.
      (cards clip overflow and .modal-body clips x on mobile — both disable sticky;
       unclip them on this page only) */
-  #page-settings .card{overflow:visible}
-  #page-settings .modal-body{overflow-x:visible}
+  #page-profile .card{overflow:visible}
+  #page-profile .modal-body{overflow-x:visible}
   .settings-save-row{position:sticky;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 10px);z-index:5;background:var(--surface);padding:.55rem 0;box-shadow:0 -10px 14px -12px rgba(0,0,0,.4)}
   /* audit month grid: two rows of 6 on phones so each month is a real tap target */
   .audit-grid{grid-template-columns:repeat(6,1fr);gap:7px}
@@ -777,7 +791,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <div class="topbar-right">
         <div style="display:flex;gap:.5rem" id="topbar-actions"></div>
         <button class="theme-toggle" onclick="showPage('settings',null)" title="Settings" aria-label="Settings"><i class="ti ti-settings"></i></button>
-        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark mode" aria-label="Toggle light/dark mode" id="theme-btn"><i class="ti ti-sun" id="theme-icon"></i></button>
       </div>
     </div>
     <div class="content">
@@ -5226,17 +5239,22 @@ function renderLogoState() {
   const el = document.getElementById('s-logo-state');
   if (!el) return;
   if (profile.logo) {
-    el.innerHTML = `<div style="display:flex;align-items:center;gap:.75rem">
-        <div style="width:84px;height:84px;border:1px solid var(--border);border-radius:12px;background:#fff;display:flex;align-items:center;justify-content:center;padding:8px;flex-shrink:0">
-          <img src="${profile.logo}" alt="logo" style="max-width:100%;max-height:100%;object-fit:contain">
-        </div>
-        <div style="display:flex;flex-direction:column;gap:.4rem">
-          <button class="btn btn-sm" type="button" onclick="document.getElementById('s-logo-file').click()"><i class="ti ti-upload"></i> Change</button>
-          <button class="btn btn-sm btn-danger" type="button" onclick="removeLogo()"><i class="ti ti-trash"></i> Remove</button>
+    el.innerHTML = `<div class="logo-slot">
+        <div class="logo-slot-img"><img src="${profile.logo}" alt="Business logo"></div>
+        <div class="logo-slot-meta">
+          <span class="logo-slot-name">Current logo</span>
+          <div class="logo-slot-actions">
+            <button class="btn btn-sm" type="button" onclick="document.getElementById('s-logo-file').click()"><i class="ti ti-refresh"></i> Change</button>
+            <button class="btn btn-sm btn-danger" type="button" onclick="removeLogo()"><i class="ti ti-trash"></i> Remove</button>
+          </div>
         </div>
       </div>`;
   } else {
-    el.innerHTML = `<button class="btn" type="button" onclick="document.getElementById('s-logo-file').click()"><i class="ti ti-upload"></i> Upload logo</button>`;
+    el.innerHTML = `<button class="logo-drop" type="button" onclick="document.getElementById('s-logo-file').click()">
+        <i class="ti ti-photo-plus"></i>
+        <span class="logo-drop-title">Add your logo</span>
+        <span class="logo-drop-sub">PNG or JPG — resized automatically</span>
+      </button>`;
   }
 }
 // Decode (incl. iPhone HEIC via createImageBitmap), downscale to 320px, return a PNG data URL.
@@ -5492,12 +5510,10 @@ async function boot() {
 }
 
 // ====== THEME ======
-// Reflect the active theme on both controls: the topbar sun/moon icon and the
-// Dark-mode switch on the Settings page (either may be absent).
+// Reflect the active theme on the Dark-mode switch (Settings page — the only
+// theme control; the old topbar sun/moon button was removed in v265).
 function syncThemeUI() {
   const light = document.documentElement.hasAttribute('data-theme');
-  const icon = document.getElementById('theme-icon');
-  if (icon) icon.className = light ? 'ti ti-moon' : 'ti ti-sun';
   const sw = document.getElementById('theme-switch');
   if (sw) sw.classList.toggle('on', !light);
   const row = document.getElementById('theme-switch-row');
