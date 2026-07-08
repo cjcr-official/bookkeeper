@@ -549,6 +549,7 @@ body.modal-open .main{overflow:hidden}
     background:var(--surface);border:1px solid var(--border);
     border-radius:var(--radius-sm);padding:.85rem .9rem;margin-bottom:.6rem;
     cursor:pointer;transition:background .12s;
+    backface-visibility:hidden;   /* rolodex scroll: JS stamps perspective/rotateX per card */
   }
   .cust-card:active{background:var(--surface2)}
   .cust-card-head{display:flex;align-items:flex-start;gap:.75rem;margin-bottom:.7rem}
@@ -2448,6 +2449,7 @@ function renderCustomers() {
         '</div>' +
       '</div>';
     }).join('');
+    rolodexTick();   // stamp initial card tilts (list just re-rendered)
   } else {
     el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${esc(c.name)}</td><td>${esc(c.contact||'—')}</td><td style="color:var(--accent)">${esc(c.email||'—')}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?esc(fmtPhone(c.phone)):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${esc((c.phone||'').replace(/[^\d+]/g,''))}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${esc(c.email)}" title="Email"><i class="ti ti-mail"></i></a>`:''}${c.address?`<a class="btn btn-sm" style="margin-right:4px" href="https://maps.apple.com/?q=${encodeURIComponent(cleanAddr(c.address))}" target="_blank" rel="noopener" title="Open in Maps"><i class="ti ti-map-pin"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" data-q="${esc(c.name||'')}" onclick="gotoInvoicesSearch(this.dataset.q)" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
@@ -5545,6 +5547,35 @@ function toggleTheme() {
     document.addEventListener('DOMContentLoaded', syncThemeUI);
   }
 })();
+
+// ====== ROLODEX SCROLL (Customers, mobile cards) ======
+// Cards lie flat at mid-screen and tilt away in 3D as they roll toward the
+// top/bottom edges — like thumbing through a rolodex wheel. Driven by JS
+// (CSS scroll timelines aren't reliable on iOS yet): each scroll frame is
+// coalesced into one rAF that stamps a transform per visible card.
+let _rolodexRaf = 0;
+function rolodexTick() { if (!_rolodexRaf) _rolodexRaf = requestAnimationFrame(rolodexApply); }
+function rolodexApply() {
+  _rolodexRaf = 0;
+  if (currentPage !== 'customers') return;
+  const cards = document.querySelectorAll('#page-customers .cust-card');
+  if (!cards.length) return;   // desktop table / empty state
+  const main = document.querySelector('.main');
+  // Short list (nothing to scroll) or reduced motion → keep every card flat.
+  const flat = (main.scrollHeight - main.clientHeight < 40) ||
+               matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const vh = window.innerHeight, mid = vh / 2;
+  cards.forEach(card => {
+    if (flat) { card.style.transform = ''; card.style.opacity = ''; return; }
+    const r = card.getBoundingClientRect();
+    if (r.bottom < -60 || r.top > vh + 60) { card.style.transform = ''; card.style.opacity = ''; return; }
+    // t: 0 at screen center → ±1 at the edges. Above center tips back, below tips forward.
+    const t = Math.max(-1, Math.min(1, (r.top + r.height / 2 - mid) / mid));
+    card.style.transform = `perspective(1100px) rotateX(${(-t * 24).toFixed(2)}deg) scale(${(1 - Math.abs(t) * .1).toFixed(3)})`;
+    card.style.opacity = (1 - Math.abs(t) * .35).toFixed(3);
+  });
+}
+document.querySelector('.main').addEventListener('scroll', rolodexTick, { passive: true });
 
 // ====== LOCK ZOOM (iOS Safari) ======
 ['gesturestart','gesturechange','gestureend'].forEach(t=>document.addEventListener(t, e=>e.preventDefault()));

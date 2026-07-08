@@ -1,1 +1,1 @@
-{"version":267,"note":"v267: seat the Save Profile bar 8px above the tab bar (drop the safe-area term \u2014 the tab bar sits flush at bottom:0, so the inset floated the bar too high)."}
+{"version":268,"note":"v268: rolodex scrolling on the Customers list — cards lie flat mid-screen and tilt away in 3D toward the edges as you scroll (mobile cards only; respects reduced motion)."}
