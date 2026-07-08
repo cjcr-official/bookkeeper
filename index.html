@@ -5568,25 +5568,24 @@ function rolodexApply() {
   const vh = window.innerHeight;
   const topEdge = (document.querySelector('.topbar')?.getBoundingClientRect().bottom || 0);
   const botEdge = vh - 62;     // top of the bottom tab bar
-  const ZONE = 170;            // ≈ one card height: the curl happens within this band
   cards.forEach(card => {
     if (flat) { card.style.transform = ''; card.style.opacity = ''; card.style.transformOrigin = ''; return; }
     const r = card.getBoundingClientRect();
     if (r.bottom < -60 || r.top > vh + 60) { card.style.transform = ''; card.style.opacity = ''; card.style.transformOrigin = ''; return; }
-    // t: 0 everywhere in the middle → ±1 once the card's center reaches the
-    // edge of the visible band. Top card tips back, bottom card tips forward.
-    const y = r.top + r.height / 2;
+    // t: 0 while the card is fully visible (rest state is always flat) → ±1
+    // once it has fully slid past the topbar / tab bar. The curl is driven by
+    // how much of the card is actually clipped, so it only ever happens right
+    // at the screen edge, on the one card leaving.
     let t = 0;
-    if (y < topEdge + ZONE) t = (y - (topEdge + ZONE)) / ZONE;
-    else if (y > botEdge - ZONE) t = (y - (botEdge - ZONE)) / ZONE;
-    t = Math.max(-1, Math.min(1, t));
+    if (r.top < topEdge) t = -Math.min(1, (topEdge - r.top) / r.height);
+    else if (r.bottom > botEdge) t = Math.min(1, (r.bottom - botEdge) / r.height);
     if (!t) { card.style.transform = ''; card.style.opacity = ''; card.style.transformOrigin = ''; return; }
     // Hinge on the edge nearest the rest of the list (top card pivots on its
     // bottom edge, bottom card on its top edge) so the receding edge tapers
     // hard with perspective instead of the card see-sawing around its middle.
     card.style.transformOrigin = t < 0 ? '50% 100%' : '50% 0%';
-    card.style.transform = `perspective(850px) rotateX(${(-t * 30).toFixed(2)}deg) scale(${(1 - Math.abs(t) * .08).toFixed(3)})`;
-    card.style.opacity = (1 - Math.abs(t) * .4).toFixed(3);
+    card.style.transform = `perspective(850px) rotateX(${(-t * 32).toFixed(2)}deg) scale(${(1 - Math.abs(t) * .08).toFixed(3)})`;
+    card.style.opacity = (1 - Math.abs(t) * .45).toFixed(3);
   });
 }
 document.querySelector('.main').addEventListener('scroll', rolodexTick, { passive: true });

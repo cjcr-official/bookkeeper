@@ -1,1 +1,1 @@
-{"version":270,"note":"v270: rolodex curl hinges on the card edge nearest the list — the receding edge tapers with perspective instead of the card see-sawing around its middle."}
+{"version":271,"note":"v271: rolodex curl now driven by actual edge clipping — fully visible cards always rest flat; the curl happens only as a card slides under the topbar / behind the tab bar."}
