@@ -26,10 +26,41 @@ export default {
     if (url.pathname === '/plaid/exchange' && req.method === 'POST') return plaidExchange(req, env);
     if (url.pathname === '/plaid/transactions' && req.method === 'POST') return plaidTransactions(req, env);
     if (url.pathname === '/plaid/disconnect' && req.method === 'POST') return plaidDisconnect(req, env);
-    if (env.ASSETS) return env.ASSETS.fetch(req);
+    if (env.ASSETS) return withSecurityHeaders(await env.ASSETS.fetch(req), env);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
   }
 };
+
+// Security headers on served assets. The CSP allowlists exactly what the app
+// loads — Supabase (REST/auth/storage), jsdelivr + cdnjs (pinned, SRI'd libs),
+// Plaid Link, Google Fonts — so injected script can't pull code from or
+// exfiltrate data to anywhere else. 'unsafe-inline' is required: the whole app
+// is one inline <script>.
+function withSecurityHeaders(res, env) {
+  const h = new Headers(res.headers);
+  h.set('X-Content-Type-Options', 'nosniff');
+  if ((h.get('content-type') || '').includes('text/html')) {
+    const supa = env.SUPABASE_URL || '';
+    h.set('Content-Security-Policy', [
+      "default-src 'self'",
+      `connect-src 'self' ${supa} https://*.plaid.com`,
+      "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.plaid.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net",
+      "font-src https://fonts.gstatic.com https://cdn.jsdelivr.net",
+      `img-src 'self' data: blob: ${supa}`,
+      "frame-src 'self' blob: https://cdn.plaid.com https://*.plaid.com",
+      "worker-src 'self'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'"
+    ].join('; '));
+    h.set('Referrer-Policy', 'no-referrer');
+    h.set('Permissions-Policy', 'geolocation=(self), camera=(), microphone=(), payment=()');
+    h.set('Strict-Transport-Security', 'max-age=31536000');
+  }
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
 
 // Verify the caller's Supabase access token → user object or null.
 async function authUser(req, env) {

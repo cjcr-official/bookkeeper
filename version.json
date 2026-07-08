@@ -1,1 +1,1 @@
-{"version":260,"note":"v260: polish — light-theme green/amber pass contrast, reconcile colors use theme tokens, aria-labels on icon buttons, Escape closes modals, keyboard nav, 44px customer buttons and audit arrows."}
+{"version":261,"note":"v261: security pass — XSS escapes on search echo and name-passing buttons, pinned + integrity-checked CDN scripts, CSP and security headers from the Worker."}

@@ -12,8 +12,9 @@
 <link rel="apple-touch-icon" href="icon.png">
 <title>Bookkeeper — Free Accounting</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet" integrity="sha384-PwEnNZvp50/uDLtKrd1s2D4Xe/y+fCVtEigigjik/PgHlDXUF1uJ32m7guk/XWYV" crossorigin="anonymous">
+<!-- pinned + SRI so a compromised CDN can't swap the code that holds the auth session -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.1" integrity="sha384-fx4y4cDx8NYfissnVzdGJY3yVXWY3rn5ab5HTUjpvgT35oDiyAbjjqnLhnRmESNE" crossorigin="anonymous"></script>
 <!-- html2canvas + jsPDF (~500KB) are loaded on demand via loadPdfLibs(), only when a PDF
      is built/shared/printed — they used to be render-blocking on every app launch. -->
 <style>
@@ -1643,7 +1644,7 @@ function renderDashboard() {
   const ri = document.getElementById('dash-invoices');
   const recent = cache.invoices.slice().sort((a,b)=>String(b.number||'').localeCompare(String(a.number||''),undefined,{numeric:true})).slice(0,5);
   ri.innerHTML = recent.length
-    ? `<div class="dash-wrap"><table class="dash-table dash-inv"><tbody>${recent.map(i=>`<tr style="cursor:pointer" onclick="gotoInvoicesSearch('${(i.number||'').replace(/'/g,"\\'")}')"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(i.total)}</td></tr>`).join('')}</tbody></table></div>`
+    ? `<div class="dash-wrap"><table class="dash-table dash-inv"><tbody>${recent.map(i=>`<tr style="cursor:pointer" data-q="${esc(i.number||'')}" onclick="gotoInvoicesSearch(this.dataset.q)"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(i.total)}</td></tr>`).join('')}</tbody></table></div>`
     : `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices yet</p></div>`;
 
   const re = document.getElementById('dash-expenses');
@@ -2078,14 +2079,15 @@ let _pdfLibsReady = null;
 function loadPdfLibs() {
   if (window.html2canvas && window.jspdf) return Promise.resolve();
   if (_pdfLibsReady) return _pdfLibsReady;
-  const load = src => new Promise((resolve, reject) => {
+  const load = (src, sri) => new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = src; s.onload = resolve; s.onerror = reject;
+    s.src = src; s.integrity = sri; s.crossOrigin = 'anonymous';
+    s.onload = resolve; s.onerror = reject;
     document.head.appendChild(s);
   });
   _pdfLibsReady = Promise.all([
-    window.html2canvas ? null : load('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
-    window.jspdf ? null : load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
+    window.html2canvas ? null : load('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', 'sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H'),
+    window.jspdf ? null : load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', 'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk'),
   ]).catch(e => { _pdfLibsReady = null; throw e; });
   return _pdfLibsReady;
 }
@@ -2357,11 +2359,10 @@ function renderCustomers() {
     (c.contact||'').toLowerCase().includes(q) ||
     (c.email||'').toLowerCase().includes(q)
   );
-  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-search"></i><p>No customers match "${q}"</p></div>`; return; }
+  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-search"></i><p>No customers match "${escHtml(q)}"</p></div>`; return; }
   const esc = escHtml;
   if (window.innerWidth <= 768) {
     el.innerHTML = list.map(c=>{
-      const nm = (c.name||'').replace(/'/g, "\\'");
       const phoneHref = (c.phone||'').replace(/[^\d+]/g,'');
       return '<div class="cust-card" onclick="editCustomer(\'' + c.id + '\')">' +
         '<div class="cust-card-head">' +
@@ -2377,12 +2378,12 @@ function renderCustomers() {
           (c.phone ? '<a class="cust-btn cust-btn-call" href="tel:' + esc(phoneHref) + '"><i class="ti ti-phone"></i><span>Call</span></a>' : '') +
           (c.email ? '<a class="cust-btn cust-btn-email" href="mailto:' + esc(c.email) + '"><i class="ti ti-mail"></i><span>Email</span></a>' : '') +
           (c.address ? '<a class="cust-btn cust-btn-map" href="https://maps.apple.com/?q=' + encodeURIComponent(cleanAddr(c.address)) + '" target="_blank" rel="noopener"><i class="ti ti-map-pin"></i><span>Map</span></a>' : '') +
-          '<button class="cust-btn" onclick="gotoInvoicesSearch(\'' + nm + '\')"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
+          '<button class="cust-btn" data-q="' + esc(c.name||'') + '" onclick="gotoInvoicesSearch(this.dataset.q)"><i class="ti ti-file-invoice"></i><span>Invoices</span></button>' +
         '</div>' +
       '</div>';
     }).join('');
   } else {
-    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${esc(c.name)}</td><td>${esc(c.contact||'—')}</td><td style="color:var(--accent)">${esc(c.email||'—')}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?esc(fmtPhone(c.phone)):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${esc((c.phone||'').replace(/[^\d+]/g,''))}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${esc(c.email)}" title="Email"><i class="ti ti-mail"></i></a>`:''}${c.address?`<a class="btn btn-sm" style="margin-right:4px" href="https://maps.apple.com/?q=${encodeURIComponent(cleanAddr(c.address))}" target="_blank" rel="noopener" title="Open in Maps"><i class="ti ti-map-pin"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" onclick="gotoInvoicesSearch('${(c.name||'').replace(/'/g,"\\'")}')" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr><th>Company / Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>Total Invoiced</th><th></th></tr></thead><tbody>${list.map(c=>`<tr><td style="font-weight:500">${esc(c.name)}</td><td>${esc(c.contact||'—')}</td><td style="color:var(--accent)">${esc(c.email||'—')}</td><td style="font-family:'JetBrains Mono',monospace">${c.phone?esc(fmtPhone(c.phone)):'—'}</td><td>${fmt(totalOf(c))}</td><td style="white-space:nowrap">${c.phone?`<a class="btn btn-sm" style="margin-right:4px" href="tel:${esc((c.phone||'').replace(/[^\d+]/g,''))}" title="Call"><i class="ti ti-phone"></i></a>`:''}${c.email?`<a class="btn btn-sm" style="margin-right:4px" href="mailto:${esc(c.email)}" title="Email"><i class="ti ti-mail"></i></a>`:''}${c.address?`<a class="btn btn-sm" style="margin-right:4px" href="https://maps.apple.com/?q=${encodeURIComponent(cleanAddr(c.address))}" target="_blank" rel="noopener" title="Open in Maps"><i class="ti ti-map-pin"></i></a>`:''}<button class="btn btn-sm" style="margin-right:4px" data-q="${esc(c.name||'')}" onclick="gotoInvoicesSearch(this.dataset.q)" title="View invoices"><i class="ti ti-file-invoice"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
