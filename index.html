@@ -520,12 +520,13 @@ body.modal-open .main{overflow:hidden}
   /* floating create button: the topbar + is out of thumb reach one-handed */
   #fab{position:fixed;right:1.05rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 14px);width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;border:none;display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 6px 20px var(--accent-glow);z-index:600;cursor:pointer;transition:transform .12s cubic-bezier(.2,.8,.2,1)}
   #fab:active{transform:scale(.92)}
-  /* Business Profile: keep Save reachable — the form runs past one screen.
-     (cards clip overflow and .modal-body clips x on mobile — both disable sticky;
-      unclip them on this page only) */
-  #page-profile .card{overflow:visible}
-  #page-profile .modal-body{overflow-x:visible}
-  .settings-save-row{position:sticky;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 10px);z-index:5;background:var(--surface);padding:.55rem 0;box-shadow:0 -10px 14px -12px rgba(0,0,0,.4)}
+  /* Business Profile: Save is a full-width pill LOCKED above the bottom nav.
+     position:fixed, not sticky — sticky kept anchoring to clipped card/modal-body
+     ancestors on iOS and hovered mid-form. The page gets bottom padding so the
+     last field can scroll clear of the bar. */
+  .settings-save-row{position:fixed;left:.875rem;right:.875rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 12px);z-index:350}
+  .settings-save-row .btn{width:100%;justify-content:center;min-height:48px;box-shadow:0 6px 20px var(--accent-glow)}
+  #page-profile{padding-bottom:76px}
   /* audit month grid: two rows of 6 on phones so each month is a real tap target */
   .audit-grid{grid-template-columns:repeat(6,1fr);gap:7px}
   .audit-chip{padding:.7rem .1rem}
