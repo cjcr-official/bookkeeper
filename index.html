@@ -524,7 +524,9 @@ body.modal-open .main{overflow:hidden}
      position:fixed, not sticky — sticky kept anchoring to clipped card/modal-body
      ancestors on iOS and hovered mid-form. The page gets bottom padding so the
      last field can scroll clear of the bar. */
-  .settings-save-row{position:fixed;left:.875rem;right:.875rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 12px);z-index:350}
+  /* no safe-area term: the tab bar itself sits flush at bottom:0 (62px tall),
+     so adding the inset here floats the bar ~34px too high on Face-ID iPhones */
+  .settings-save-row{position:fixed;left:.875rem;right:.875rem;bottom:70px;z-index:350}
   .settings-save-row .btn{width:100%;justify-content:center;min-height:48px;box-shadow:0 6px 20px var(--accent-glow)}
   #page-profile{padding-bottom:76px}
   /* audit month grid: two rows of 6 on phones so each month is a real tap target */

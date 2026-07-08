@@ -1,1 +1,1 @@
-{"version":266,"note":"v266: Save Profile bar is now position:fixed, locked above the bottom nav (sticky kept anchoring to clipped ancestors on iOS and hovered mid-form)."}
+{"version":267,"note":"v267: seat the Save Profile bar 8px above the tab bar (drop the safe-area term \u2014 the tab bar sits flush at bottom:0, so the inset floated the bar too high)."}
