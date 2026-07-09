@@ -325,7 +325,7 @@ async function runReminders(env) {
 // invoice/expense comes due, deduped per occurrence via recurring.reminded_date.
 async function runRecurringReminders(env) {
   const { dateStr: todayDen, hour } = denverParts();
-  if (hour < 8) return { checked: 0, fired: 0 };          // hold until morning
+  if (hour < 6) return { checked: 0, fired: 0 };          // earliest selectable ping hour
   const rows = await supaGet(env, 'recurring?active=eq.true&notify=eq.true&select=id,user_id,next_date,reminded_date');
   const due = rows.filter(r => r.next_date && r.next_date <= todayDen && r.reminded_date !== r.next_date);
   if (!due.length) return { checked: rows.length, fired: 0 };
@@ -333,8 +333,15 @@ async function runRecurringReminders(env) {
   const profs = await supaGet(env, `profiles?id=in.(${userIds.join(',')})&push_subscription=not.is.null&select=id,push_subscription`);
   const subByUser = {};
   for (const p of profs) subByUser[p.id] = p.push_subscription;
+  // Per-user morning-ping hour (best-effort; column may not exist yet → default 8).
+  const hourByUser = {};
+  try {
+    const hrs = await supaGet(env, `profiles?id=in.(${userIds.join(',')})&select=id,notify_hour`);
+    for (const p of hrs) if (p.notify_hour != null) hourByUser[p.id] = p.notify_hour;
+  } catch (e) { /* notify_hour column not added yet — everyone defaults to 8 */ }
   let fired = 0, failed = 0;
   for (const r of due) {
+    if (hour < (hourByUser[r.user_id] ?? 8)) continue;    // before this user's chosen time
     const sub = subByUser[r.user_id];
     if (!sub || !sub.endpoint) continue;                  // no device yet — try again next run
     try {

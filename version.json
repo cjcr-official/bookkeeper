@@ -1,1 +1,1 @@
-{"version":282,"note":"v282: Settings profile — remove the separate My Base/Home Address field; the single 'Address' field now feeds both the business address and the mileage base_address."}
+{"version":283,"note":"v283: Notifications settings gain a Morning reminder time picker (6–11 AM, stored on profiles.notify_hour; Worker recurring-due cron honors it per-user) and a 'Send a test notification' button that fires a local push so you can confirm this device works."}

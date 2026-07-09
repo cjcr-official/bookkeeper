@@ -974,7 +974,20 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div id="push-status" style="font-size:13px;color:var(--text2);margin-bottom:.5rem">Loading…</div>
             <button class="btn" id="push-enable-btn" onclick="enablePush()" style="display:none"><i class="ti ti-bell"></i> Enable on this device</button>
             <div id="push-debug" style="margin-top:.5rem"></div>
-            <div style="font-size:11px;color:var(--text3);margin-top:.5rem;line-height:1.5">A morning ping (8am) when you have invoices, recurring items, or jobs due in the next 2 days. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
+            <div id="push-prefs" style="display:none;margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--border)">
+              <div class="form-group" style="margin-bottom:.75rem"><label>Morning reminder time</label>
+                <select id="s-notify-hour" onchange="saveNotifyHour()">
+                  <option value="6">6:00 AM</option>
+                  <option value="7">7:00 AM</option>
+                  <option value="8">8:00 AM</option>
+                  <option value="9">9:00 AM</option>
+                  <option value="10">10:00 AM</option>
+                  <option value="11">11:00 AM</option>
+                </select>
+              </div>
+              <button class="btn btn-sm" onclick="sendTestNotification()"><i class="ti ti-bell-ringing"></i> Send a test notification</button>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">A morning ping (at the time you pick above) when a recurring item comes due, plus per-job reminders at the time you set on each job. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
           </div>
         </div>
         <div class="card" style="max-width:500px;margin-top:1rem">
@@ -5537,6 +5550,45 @@ function renderPushStatus() {
   } else {
     el.textContent = perm === 'granted' ? 'Permission granted — tap to subscribe.' : 'Not enabled.';
     btn.style.display = ''; btn.innerHTML = '<i class="ti ti-bell"></i> Enable on this device';
+  }
+  // Extra options (reminder time + test) only make sense once it's live on this device.
+  const prefs = document.getElementById('push-prefs');
+  if (prefs) {
+    const live = perm === 'granted' && !!profile.push_subscription;
+    prefs.style.display = live ? '' : 'none';
+    const hr = document.getElementById('s-notify-hour');
+    if (hr) hr.value = String(profile.notify_hour || 8);
+  }
+}
+
+// Persist the morning-ping hour (America/Denver) the Worker cron uses for
+// recurring-due reminders. Keeps working before the column exists (surfaces a hint).
+async function saveNotifyHour() {
+  const hour = parseInt(document.getElementById('s-notify-hour').value, 10) || 8;
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, notify_hour: hour });
+  if (error) {
+    if (/column .*notify_hour/i.test(error.message)) {
+      showToast('Run: alter table profiles add column if not exists notify_hour integer default 8;', 'error');
+    } else showToast(error.message, 'error');
+    return;
+  }
+  profile.notify_hour = hour;
+  showToast('Reminder time saved', 'success');
+}
+
+// Fire a local notification through the service worker so the user can confirm
+// this device actually shows Bookkeeper notifications (no server round-trip).
+async function sendTestNotification() {
+  try {
+    if (Notification.permission !== 'granted') { showToast('Enable notifications first', 'error'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('Bookkeeper', {
+      body: '✓ Test notification — reminders are working on this device.',
+      icon: 'icon-180.png', badge: 'icon-180.png', tag: 'bk-test'
+    });
+    showToast('Test notification sent', 'success');
+  } catch (e) {
+    showToast('Could not show notification: ' + (e && e.message || e), 'error');
   }
 }
 
