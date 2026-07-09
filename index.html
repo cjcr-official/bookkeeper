@@ -1023,6 +1023,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="form-group"><label>Start invoice # at</label><input id="s-inv-start" type="number" min="1" step="1" placeholder="auto"></div>
             </div>
             <div class="form-group"><label>Default notes / footer <span style="color:var(--text3);font-weight:400;font-size:11px">(prefilled on new invoices)</span></label><textarea id="s-inv-terms" rows="3" placeholder="Thank you for your business!"></textarea></div>
+            <div class="form-group"><label>How to pay <span style="color:var(--text3);font-weight:400;font-size:11px">(prints on every invoice)</span></label><textarea id="s-pay-instructions" rows="3" placeholder="Cash or check to Case Johnston Computer Repair&#10;Zelle: (406) 249-1466&#10;Venmo: @your-handle (friends & family)"></textarea></div>
             <button class="btn btn-primary btn-sm" onclick="saveInvoiceDefaults()"><i class="ti ti-check"></i> Save invoice defaults</button>
           </div>
         </div>
@@ -2420,6 +2421,8 @@ function viewInvoice(id) {
     </div>
 
     ${inv.notes?`<div style="margin:1rem 0;font-size:12px;color:#444">${esc(inv.notes)}</div>`:''}
+
+    ${p.pay_instructions?`<div style="margin:1rem 0;padding:.75rem .9rem;background:#f6f6f6;border:1px solid #e5e5e5;border-radius:6px;font-size:12px;color:#333;line-height:1.6"><div style="font-weight:700;text-transform:uppercase;letter-spacing:.5px;font-size:10.5px;color:#666;margin-bottom:.3rem">How to Pay</div>${esc(p.pay_instructions).replace(/\n/g,'<br>')}</div>`:''}
 
     <!-- FOOTER -->
     <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid #ddd;font-size:12px;color:#333;line-height:1.7;text-align:center">
@@ -5422,6 +5425,7 @@ function loadSettingsForm() {
   document.getElementById('s-inv-due-days').value = (profile.invoice_due_days!=null?profile.invoice_due_days:'');
   document.getElementById('s-inv-start').value = (profile.invoice_start!=null?profile.invoice_start:'');
   document.getElementById('s-inv-terms').value = profile.terms||'';
+  document.getElementById('s-pay-instructions').value = profile.pay_instructions||'';
   renderSettingsCats();
   renderLockUI();
   document.getElementById('user-email-display').textContent=currentUser.email;
@@ -5434,17 +5438,19 @@ function saveInvoiceDefaults() {
   const row = {
     id: currentUser.id,
     terms: document.getElementById('s-inv-terms').value,
+    pay_instructions: document.getElementById('s-pay-instructions').value,
     invoice_due_days: days==='' ? null : (parseInt(days,10)||0),
     invoice_start: start==='' ? null : (parseInt(start,10)||null)
   };
   sb.from('profiles').upsert(row).then(({error})=>{
     if (error) {
-      if (/column .*(invoice_due_days|invoice_start)/i.test(error.message))
-        showToast('Run: alter table profiles add column if not exists invoice_due_days integer; add column if not exists invoice_start integer;','error');
+      if (/column .*(invoice_due_days|invoice_start|pay_instructions)/i.test(error.message))
+        showToast('Run: alter table profiles add column if not exists invoice_due_days integer; add column if not exists invoice_start integer; add column if not exists pay_instructions text;','error');
       else showToast(error.message,'error');
       return;
     }
-    profile.terms = row.terms; profile.invoice_due_days = row.invoice_due_days; profile.invoice_start = row.invoice_start;
+    profile.terms = row.terms; profile.pay_instructions = row.pay_instructions;
+    profile.invoice_due_days = row.invoice_due_days; profile.invoice_start = row.invoice_start;
     showToast('Invoice defaults saved','success');
   });
 }

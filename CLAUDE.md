@@ -270,6 +270,10 @@ alter table profiles add column if not exists notify_hour integer default 8;
 -- now also holds the default invoice notes/footer prefilled on new invoices.)
 alter table profiles add column if not exists invoice_due_days integer;
 alter table profiles add column if not exists invoice_start integer;
+-- pay_instructions: free-text "How to pay" block (no-fee methods the user types —
+-- cash/check/Zelle/etc.); printed on every invoice above the footer. No payment
+-- processing, no integration, no fees — it's display-only text.
+alter table profiles add column if not exists pay_instructions text;
 
 -- App lock is fully on-device (no DB): localStorage bk-lock-pin (SHA-256 hash),
 -- bk-lock-len, bk-lock-cred (WebAuthn platform credential id for Face ID unlock).

@@ -1,1 +1,1 @@
-{"version":288,"note":"v288: Expense Categories in Settings is now a collapsible card (native <details>), collapsed by default with a rotating chevron — tap the header to expand and manage categories."}
+{"version":289,"note":"v289: Invoice Defaults gains a 'How to pay' field (profiles.pay_instructions) — free text for your no-fee payment methods (cash/check/Zelle/Venmo F&F/etc.) that prints in a 'How to Pay' box on every invoice. Display-only text; no payment processing, no integration, no fees."}
