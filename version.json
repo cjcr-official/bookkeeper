@@ -1,1 +1,1 @@
-{"version":281,"note":"v281: Settings profile — remove the Currency selector (USD only now; saved as 'USD'), and grow the Address and My Base/Home Address textareas to 3 rows so a full three-line address fits without clipping."}
+{"version":282,"note":"v282: Settings profile — remove the separate My Base/Home Address field; the single 'Address' field now feeds both the business address and the mileage base_address."}

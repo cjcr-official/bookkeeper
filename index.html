@@ -1001,7 +1001,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="form-group"><label>Email</label><input id="s-email" type="email"></div>
               <div class="form-group"><label>Phone</label><input id="s-phone" type="tel"></div>
             </div>
-            <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="3" placeholder="Where your trips start from..."></textarea></div>
             <div class="settings-save-row"><button class="btn btn-primary" onclick="saveProfile()"><i class="ti ti-check"></i> Save Profile</button></div>
           </div>
         </div>
@@ -5340,7 +5339,6 @@ function loadProfileForm() {
   document.getElementById('s-address').value=profile.address||'';
   document.getElementById('s-email').value=profile.email||'';
   document.getElementById('s-phone').value=profile.phone||'';
-  document.getElementById('s-base-address').value=profile.base_address||'';
   renderLogoState();
 }
 
@@ -5414,7 +5412,7 @@ async function saveProfile() {
     phone:   document.getElementById('s-phone').value,
     tax: 0,
     currency: 'USD',
-    base_address: document.getElementById('s-base-address').value
+    base_address: document.getElementById('s-address').value
   };
   const { error } = await sb.from('profiles').upsert({ id: currentUser.id, ...row });
   if (error) { showToast(error.message, 'error'); return; }
