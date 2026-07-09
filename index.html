@@ -136,6 +136,9 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .theme-switch.on{background:var(--accent);border-color:var(--accent)}
 .theme-switch-knob{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.22,1,.36,1)}
 .theme-switch.on .theme-switch-knob{transform:translateX(18px)}
+/* Passcode keypad: fire on touch-down (no iOS click delay) with instant tactile feedback. */
+.lock-key{width:72px;height:72px;border-radius:50%;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:24px;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;transition:transform .05s ease,background .05s ease,color .05s ease}
+.lock-key:active{transform:scale(.9);background:var(--accent);border-color:var(--accent);color:#fff}
 /* Business-logo slot (profile page): white preview tile + pill actions when a
    logo is set; a dashed tap-to-upload zone when there isn't one. */
 .logo-slot{display:flex;align-items:center;gap:.9rem;padding:.7rem .8rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2)}
@@ -5907,11 +5910,12 @@ function showLockScreen() {
 }
 function buildLockPad() {
   const pad = document.getElementById('lock-pad');
-  const btn = 'width:72px;height:72px;border-radius:50%;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:24px;font-family:inherit;cursor:pointer';
+  // pointerdown (not click) = registers the instant your finger lands, no ~300ms
+  // iOS tap delay. preventDefault stops the synthesized click / focus lag.
   pad.innerHTML = ['1','2','3','4','5','6','7','8','9','','0','back'].map(k=>{
     if (k === '') return '<span></span>';
-    if (k === 'back') return `<button onclick="lockBksp()" style="${btn};font-size:20px"><i class="ti ti-arrow-back-up"></i></button>`;
-    return `<button onclick="lockPress('${k}')" style="${btn}">${k}</button>`;
+    if (k === 'back') return `<button type="button" class="lock-key" style="font-size:20px" onpointerdown="event.preventDefault();lockBksp()"><i class="ti ti-arrow-back-up"></i></button>`;
+    return `<button type="button" class="lock-key" onpointerdown="event.preventDefault();lockPress('${k}')">${k}</button>`;
   }).join('');
 }
 function renderLockDots() {
