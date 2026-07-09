@@ -5852,7 +5852,7 @@ async function boot() {
 // biometric gate (no server verification — this is a privacy convenience, not an
 // auth boundary; Supabase auth is the real one). Fails safe: forgetting the code
 // signs the user out (and clears the lock) so they can never be bricked out.
-let _lockEntry = '', _hiddenAt = 0;
+let _lockEntry = '', _hiddenAt = 0, _faceBusy = false;
 function lockPinSet() { return !!lsGet('bk-lock-pin'); }
 function faceIdOn() { return !!lsGet('bk-lock-cred'); }
 function faceIdSupported() { return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create); }
@@ -5897,8 +5897,13 @@ function showLockScreen() {
   if (!scr) return;
   _lockEntry = '';
   buildLockPad(); renderLockDots();
-  document.getElementById('lock-faceid-btn').style.display = (faceIdOn() && faceIdSupported()) ? '' : 'none';
+  const useFace = faceIdOn() && faceIdSupported();
+  document.getElementById('lock-faceid-btn').style.display = useFace ? '' : 'none';
   scr.style.display = 'flex';
+  // Auto-prompt Face ID as soon as the overlay is up. iOS may reject a WebAuthn
+  // call made without a user gesture (cold launch) — if so we fall back silently
+  // to the passcode pad and the "Unlock with Face ID" button for a manual retry.
+  if (useFace) setTimeout(() => lockFaceIdUnlock(true), 350);
 }
 function buildLockPad() {
   const pad = document.getElementById('lock-pad');
@@ -5954,8 +5959,10 @@ async function toggleFaceId() {
     showToast('Face ID unlock on', 'success'); renderLockUI();
   } catch (e) { showToast('Couldn’t set up Face ID: ' + (e && e.message || e), 'error'); }
 }
-async function lockFaceIdUnlock() {
+async function lockFaceIdUnlock(auto) {
   const id = lsGet('bk-lock-cred'); if (!id) return;
+  // Only one prompt in flight (guards the auto-attempt racing a manual tap).
+  if (_faceBusy) return; _faceBusy = true;
   try {
     await navigator.credentials.get({ publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
@@ -5963,7 +5970,11 @@ async function lockFaceIdUnlock() {
       userVerification: 'required', timeout: 60000
     }});
     document.getElementById('lock-screen').style.display = 'none'; _lockEntry = '';
-  } catch (e) { showToast('Face ID failed — enter your passcode', 'error'); }
+  } catch (e) {
+    // Auto attempts fail quietly (no gesture, or user dismissed the sheet) —
+    // the passcode pad is right there. Manual taps surface the error.
+    if (!auto) showToast('Face ID failed — enter your passcode', 'error');
+  } finally { _faceBusy = false; }
 }
 
 // Re-lock after the app has been backgrounded for over a minute.
