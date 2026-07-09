@@ -263,6 +263,16 @@ alter table profiles add column if not exists push_subscription jsonb;
 -- expense_categories: user-editable spending categories (jsonb array of strings).
 -- Source of truth; localStorage bk-expense-cats is now just a local cache.
 alter table profiles add column if not exists expense_categories jsonb;
+-- notify_hour: hour (America/Denver, 6–11) the recurring-due morning push fires.
+alter table profiles add column if not exists notify_hour integer default 8;
+-- invoice defaults (Settings → Invoice Defaults): payment window in days + a
+-- user-chosen starting sequence for auto YYNN numbers. (terms already exists and
+-- now also holds the default invoice notes/footer prefilled on new invoices.)
+alter table profiles add column if not exists invoice_due_days integer;
+alter table profiles add column if not exists invoice_start integer;
+
+-- App lock is fully on-device (no DB): localStorage bk-lock-pin (SHA-256 hash),
+-- bk-lock-len, bk-lock-cred (WebAuthn platform credential id for Face ID unlock).
 
 -- invoices: payments + mileage
 alter table invoices add column if not exists amount_paid numeric default 0;

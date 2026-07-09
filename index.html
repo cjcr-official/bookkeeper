@@ -719,6 +719,16 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="loading-bar" style="margin-top:8px"></div>
 </div>
 
+<!-- APP LOCK (passcode / Face ID) — covers everything until unlocked -->
+<div class="loading-screen" id="lock-screen" style="display:none;z-index:9999">
+  <svg width="46" height="46" viewBox="0 0 92 94"><use href="#bk-logo"/></svg>
+  <div id="lock-title" style="font-size:14px;color:var(--text2);font-family:'JetBrains Mono',monospace;letter-spacing:1px">ENTER PASSCODE</div>
+  <div id="lock-dots" style="display:flex;gap:14px;margin:.25rem 0 1.25rem"></div>
+  <div id="lock-pad" style="display:grid;grid-template-columns:repeat(3,72px);gap:14px"></div>
+  <button id="lock-faceid-btn" onclick="lockFaceIdUnlock()" style="display:none;margin-top:1.25rem;background:none;border:none;color:var(--accent);font-size:14px;cursor:pointer;font-weight:600"><i class="ti ti-face-id"></i> Unlock with Face ID</button>
+  <button onclick="lockForgot()" style="margin-top:1rem;background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer">Forgot passcode? Sign out</button>
+</div>
+
 <!-- AUTH -->
 <div class="auth-wrap" id="auth-wrap" style="display:none">
   <div class="auth-card">
@@ -996,6 +1006,42 @@ input,select,textarea{border-radius:var(--radius-sm)}
               </div>
             </div>
             <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-job reminders at the time you set on each job. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
+          </div>
+        </div>
+        <div class="card" style="max-width:500px;margin-top:1rem">
+          <div class="card-header"><h3>Invoice Defaults</h3></div>
+          <div class="modal-body">
+            <div class="form-row">
+              <div class="form-group"><label>Payment terms (days)</label><input id="s-inv-due-days" type="number" min="0" step="1" placeholder="30"></div>
+              <div class="form-group"><label>Start invoice # at</label><input id="s-inv-start" type="number" min="1" step="1" placeholder="auto"></div>
+            </div>
+            <div class="form-group"><label>Default notes / footer <span style="color:var(--text3);font-weight:400;font-size:11px">(prefilled on new invoices)</span></label><textarea id="s-inv-terms" rows="3" placeholder="Thank you for your business!"></textarea></div>
+            <button class="btn btn-primary btn-sm" onclick="saveInvoiceDefaults()"><i class="ti ti-check"></i> Save invoice defaults</button>
+          </div>
+        </div>
+        <div class="card" style="max-width:500px;margin-top:1rem">
+          <div class="card-header"><h3>Expense Categories</h3></div>
+          <div class="modal-body">
+            <div id="set-cat-list"></div>
+            <div style="display:flex;gap:.5rem;margin-top:.6rem">
+              <input id="set-new-cat" type="text" placeholder="New category…" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addSettingsCategory();}">
+              <button class="btn btn-sm" onclick="addSettingsCategory()"><i class="ti ti-plus"></i> Add</button>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">These are the choices when you categorize an expense.</div>
+          </div>
+        </div>
+        <div class="card" style="max-width:500px;margin-top:1rem">
+          <div class="card-header"><h3>Security</h3></div>
+          <div class="modal-body">
+            <button class="setting-row" id="lock-switch-row" role="switch" aria-checked="false" aria-label="App lock" onclick="toggleAppLock()">
+              <span><span class="setting-row-title">App lock</span><span class="setting-row-sub" id="lock-sub">Require a passcode to open the app</span></span>
+              <span class="theme-switch" id="lock-switch"><span class="theme-switch-knob"></span></span>
+            </button>
+            <button class="setting-row" id="faceid-row" style="display:none" role="switch" aria-checked="false" aria-label="Unlock with Face ID" onclick="toggleFaceId()">
+              <span><span class="setting-row-title">Unlock with Face ID</span><span class="setting-row-sub" id="faceid-sub">Use biometrics instead of the passcode</span></span>
+              <span class="theme-switch" id="faceid-switch"><span class="theme-switch-knob"></span></span>
+            </button>
+            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">The passcode is stored only on this device. If you forget it, the unlock screen can sign you out — sign back in with your email to reset it.</div>
           </div>
         </div>
         <div class="card" style="max-width:500px;margin-top:1rem">
@@ -1500,6 +1546,12 @@ function fmtDate(d) {
 }
 function today() { return new Date().toISOString().slice(0,10); }
 function in30() { const d=new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); }
+// New-invoice due date = issue date + the user's payment-terms window (default 30 days).
+function invDefaultDue() {
+  const n = parseInt(profile && profile.invoice_due_days, 10);
+  const days = isNaN(n) ? 30 : n;
+  const d = new Date(); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10);
+}
 // Parse a date-only 'YYYY-MM-DD' string at LOCAL noon so getFullYear()/getMonth()
 // never roll back a day in negative-UTC timezones (e.g. Montana). new Date('2026-01-01')
 // is UTC midnight = the prior evening locally, which mis-buckets month/year totals.
@@ -1507,6 +1559,7 @@ function parseDate(d) { return d ? new Date(d+'T12:00:00') : new Date(NaN); }
 // Safe localStorage access (no-ops if storage is unavailable, e.g. private mode).
 function lsGet(k, d=null) { try { const v=localStorage.getItem(k); return v===null?d:v; } catch(e){ return d; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch(e){} }
+function lsRemove(k) { try { localStorage.removeItem(k); } catch(e){} }
 function statusBadge(s) {
   const m={draft:'badge-gray',sent:'badge-blue',paid:'badge-green',overdue:'badge-red'};
   return `<span class="badge ${m[s]||'badge-gray'}">${s}</span>`;
@@ -1898,7 +1951,11 @@ function nextInvoiceNumber() {
       if (!isNaN(seq) && seq>max) max = seq;
     }
   });
-  return yy + String(max+1).padStart(2,'0');
+  // Honor a user-set starting number until real invoices catch up past it.
+  let next = max + 1;
+  const start = parseInt(profile && profile.invoice_start, 10);
+  if (!isNaN(start) && next < start) next = start;
+  return yy + String(next).padStart(2,'0');
 }
 
 function openInvoiceModal(inv) {
@@ -1926,7 +1983,7 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-id').value = '';
     document.getElementById('inv-number').value = nextInvoiceNumber();
     document.getElementById('inv-date').value = today();
-    document.getElementById('inv-due').value = in30();
+    document.getElementById('inv-due').value = invDefaultDue();
     document.getElementById('inv-status').value = 'draft';
     document.getElementById('inv-pay-method').value = '';
     document.getElementById('inv-amount-paid').value = '';
@@ -5352,7 +5409,57 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
 function loadSettingsForm() {
   syncThemeUI();
   renderPushStatus();
+  // Invoice defaults
+  document.getElementById('s-inv-due-days').value = (profile.invoice_due_days!=null?profile.invoice_due_days:'');
+  document.getElementById('s-inv-start').value = (profile.invoice_start!=null?profile.invoice_start:'');
+  document.getElementById('s-inv-terms').value = profile.terms||'';
+  renderSettingsCats();
+  renderLockUI();
   document.getElementById('user-email-display').textContent=currentUser.email;
+}
+
+// ── Invoice defaults (terms/footer, payment window, starting number) ──
+function saveInvoiceDefaults() {
+  const days = document.getElementById('s-inv-due-days').value;
+  const start = document.getElementById('s-inv-start').value;
+  const row = {
+    id: currentUser.id,
+    terms: document.getElementById('s-inv-terms').value,
+    invoice_due_days: days==='' ? null : (parseInt(days,10)||0),
+    invoice_start: start==='' ? null : (parseInt(start,10)||null)
+  };
+  sb.from('profiles').upsert(row).then(({error})=>{
+    if (error) {
+      if (/column .*(invoice_due_days|invoice_start)/i.test(error.message))
+        showToast('Run: alter table profiles add column if not exists invoice_due_days integer; add column if not exists invoice_start integer;','error');
+      else showToast(error.message,'error');
+      return;
+    }
+    profile.terms = row.terms; profile.invoice_due_days = row.invoice_due_days; profile.invoice_start = row.invoice_start;
+    showToast('Invoice defaults saved','success');
+  });
+}
+
+// ── Expense categories manager (Settings copy; reuses getCategories/saveCategories) ──
+function renderSettingsCats() {
+  const el = document.getElementById('set-cat-list');
+  if (!el) return;
+  const cats = getCategories();
+  el.innerHTML = cats.map((c,i)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:.55rem .15rem;border-bottom:1px solid var(--border)"><span style="font-size:14px">${escHtml(c)}</span><button class="btn btn-sm btn-danger" onclick="removeSettingsCategory(${i})"><i class="ti ti-trash"></i></button></div>`).join('') || '<div style="color:var(--text3);padding:.55rem 0;font-size:13px">No categories yet</div>';
+}
+function addSettingsCategory() {
+  const inp = document.getElementById('set-new-cat');
+  const name = (inp.value||'').trim();
+  if (!name) return;
+  const cats = getCategories();
+  if (cats.some(c=>c.toLowerCase()===name.toLowerCase())) { showToast('Category already exists','error'); return; }
+  cats.push(name); saveCategories(cats); inp.value='';
+  renderSettingsCats(); renderCategoryOptions();
+}
+function removeSettingsCategory(i) {
+  const cats = getCategories();
+  cats.splice(i,1); saveCategories(cats);
+  renderSettingsCats(); renderCategoryOptions();
 }
 // Profile page = business identity (company, logo, contact, currency, base address).
 function loadProfileForm() {
@@ -5709,6 +5816,7 @@ async function boot() {
       document.getElementById('app').style.display='flex';
       renderDashboard();
       refreshPushSubscription();
+      maybeShowLock();
     } else {
       hide();
       document.getElementById('auth-wrap').style.display='flex';
@@ -5737,6 +5845,133 @@ async function boot() {
     }
   });
 }
+
+// ====== APP LOCK (passcode + optional Face ID) ======
+// Purely on-device: the passcode is stored only as a SHA-256 hash in
+// localStorage, and Face ID uses a platform WebAuthn credential as a local
+// biometric gate (no server verification — this is a privacy convenience, not an
+// auth boundary; Supabase auth is the real one). Fails safe: forgetting the code
+// signs the user out (and clears the lock) so they can never be bricked out.
+let _lockEntry = '', _hiddenAt = 0;
+function lockPinSet() { return !!lsGet('bk-lock-pin'); }
+function faceIdOn() { return !!lsGet('bk-lock-cred'); }
+function faceIdSupported() { return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create); }
+async function sha256(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function renderLockUI() {
+  const sw = document.getElementById('lock-switch'), row = document.getElementById('lock-switch-row'), sub = document.getElementById('lock-sub');
+  const on = lockPinSet();
+  if (sw) sw.classList.toggle('on', on);
+  if (row) row.setAttribute('aria-checked', on ? 'true' : 'false');
+  if (sub) sub.textContent = on ? 'Passcode required to open the app' : 'Require a passcode to open the app';
+  const fRow = document.getElementById('faceid-row'), fSw = document.getElementById('faceid-switch');
+  if (fRow) { fRow.style.display = (on && faceIdSupported()) ? '' : 'none'; fRow.setAttribute('aria-checked', faceIdOn() ? 'true' : 'false'); }
+  if (fSw) fSw.classList.toggle('on', faceIdOn());
+}
+
+async function toggleAppLock() {
+  if (lockPinSet()) {
+    const pin = prompt('Enter your current passcode to turn off App Lock');
+    if (pin == null) return;
+    if (await sha256(pin) !== lsGet('bk-lock-pin')) { showToast('Wrong passcode', 'error'); return; }
+    lsRemove('bk-lock-pin'); lsRemove('bk-lock-len'); lsRemove('bk-lock-cred');
+    showToast('App lock off', 'success'); renderLockUI(); return;
+  }
+  const p1 = prompt('Set a passcode (4–8 digits)');
+  if (p1 == null) return;
+  if (!/^\d{4,8}$/.test(p1)) { showToast('Use 4–8 digits', 'error'); return; }
+  const p2 = prompt('Re-enter the passcode');
+  if (p2 == null) return;
+  if (p1 !== p2) { showToast('Passcodes didn’t match', 'error'); return; }
+  lsSet('bk-lock-pin', await sha256(p1)); lsSet('bk-lock-len', String(p1.length));
+  showToast('App lock on', 'success'); renderLockUI();
+}
+
+// Show the lock overlay (on cold launch and after a long background).
+function maybeShowLock() { if (lockPinSet()) showLockScreen(); }
+function showLockScreen() {
+  const scr = document.getElementById('lock-screen');
+  if (!scr) return;
+  _lockEntry = '';
+  buildLockPad(); renderLockDots();
+  document.getElementById('lock-faceid-btn').style.display = (faceIdOn() && faceIdSupported()) ? '' : 'none';
+  scr.style.display = 'flex';
+}
+function buildLockPad() {
+  const pad = document.getElementById('lock-pad');
+  const btn = 'width:72px;height:72px;border-radius:50%;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:24px;font-family:inherit;cursor:pointer';
+  pad.innerHTML = ['1','2','3','4','5','6','7','8','9','','0','back'].map(k=>{
+    if (k === '') return '<span></span>';
+    if (k === 'back') return `<button onclick="lockBksp()" style="${btn};font-size:20px"><i class="ti ti-arrow-back-up"></i></button>`;
+    return `<button onclick="lockPress('${k}')" style="${btn}">${k}</button>`;
+  }).join('');
+}
+function renderLockDots() {
+  const len = parseInt(lsGet('bk-lock-len'),10) || 4;
+  const dots = document.getElementById('lock-dots');
+  let h = '';
+  for (let i=0;i<len;i++) h += `<span style="width:12px;height:12px;border-radius:50%;background:${i<_lockEntry.length?'var(--accent)':'var(--surface2)'};border:1px solid var(--border2)"></span>`;
+  dots.innerHTML = h;
+}
+async function lockPress(d) {
+  const len = parseInt(lsGet('bk-lock-len'),10) || 4;
+  if (_lockEntry.length >= len) return;
+  _lockEntry += d; renderLockDots();
+  if (_lockEntry.length === len) {
+    const ok = (await sha256(_lockEntry)) === lsGet('bk-lock-pin');
+    _lockEntry = '';
+    if (ok) { document.getElementById('lock-screen').style.display = 'none'; }
+    else { showToast('Wrong passcode', 'error'); renderLockDots(); }
+  }
+}
+function lockBksp() { _lockEntry = _lockEntry.slice(0,-1); renderLockDots(); }
+function lockForgot() {
+  if (!confirm('Sign out and reset your passcode? You’ll sign back in with your email.')) return;
+  lsRemove('bk-lock-pin'); lsRemove('bk-lock-len'); lsRemove('bk-lock-cred');
+  document.getElementById('lock-screen').style.display = 'none';
+  doLogout();
+}
+
+// WebAuthn platform credential as a biometric unlock gate.
+function _b64u(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_'); }
+function _unb64u(b) { const pad='='.repeat((4-b.length%4)%4); const s=(b+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(s); const a=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i); return a.buffer; }
+async function toggleFaceId() {
+  if (!faceIdSupported()) { showToast('Face ID isn’t available here', 'error'); return; }
+  if (faceIdOn()) { lsRemove('bk-lock-cred'); showToast('Face ID unlock off', 'success'); renderLockUI(); return; }
+  try {
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rp: { name: 'Bookkeeper' },
+      user: { id: new TextEncoder().encode(currentUser.id), name: currentUser.email || 'user', displayName: currentUser.email || 'user' },
+      pubKeyCredParams: [{ type:'public-key', alg:-7 }, { type:'public-key', alg:-257 }],
+      authenticatorSelection: { authenticatorAttachment:'platform', userVerification:'required' },
+      timeout: 60000, attestation: 'none'
+    }});
+    lsSet('bk-lock-cred', _b64u(cred.rawId));
+    showToast('Face ID unlock on', 'success'); renderLockUI();
+  } catch (e) { showToast('Couldn’t set up Face ID: ' + (e && e.message || e), 'error'); }
+}
+async function lockFaceIdUnlock() {
+  const id = lsGet('bk-lock-cred'); if (!id) return;
+  try {
+    await navigator.credentials.get({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      allowCredentials: [{ type:'public-key', id: _unb64u(id) }],
+      userVerification: 'required', timeout: 60000
+    }});
+    document.getElementById('lock-screen').style.display = 'none'; _lockEntry = '';
+  } catch (e) { showToast('Face ID failed — enter your passcode', 'error'); }
+}
+
+// Re-lock after the app has been backgrounded for over a minute.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { _hiddenAt = Date.now(); return; }
+  const appShown = (document.getElementById('app')||{}).style && document.getElementById('app').style.display !== 'none';
+  if (appShown && lockPinSet() && _hiddenAt && Date.now() - _hiddenAt > 60000) maybeShowLock();
+});
 
 // ====== THEME ======
 // Reflect the active theme on the Dark-mode switch (Settings page — the only
