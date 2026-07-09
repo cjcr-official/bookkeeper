@@ -1,1 +1,1 @@
-{"version":289,"note":"v289: Invoice Defaults gains a 'How to pay' field (profiles.pay_instructions) — free text for your no-fee payment methods (cash/check/Zelle/Venmo F&F/etc.) that prints in a 'How to Pay' box on every invoice. Display-only text; no payment processing, no integration, no fees."}
+{"version":290,"note":"v290: nicer 'How to Pay' box on invoices — a clean two-tone panel (dark heading bar matching the TOTAL, left accent border) with each payment method on its own spaced line instead of a plain grey block."}
