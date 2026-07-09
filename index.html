@@ -1310,10 +1310,20 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Vendor</label><input id="exp-vendor" type="text" placeholder="Amazon..."></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Category <span onclick="openCatManager()" style="float:right;font-weight:600;font-size:11px;color:var(--accent);cursor:pointer">Manage</span></label>
+        <div class="form-group"><label>Category <span onclick="toggleCatManager()" style="float:right;font-weight:600;font-size:11px;color:var(--accent);cursor:pointer">Manage</span></label>
           <select id="exp-category"></select>
         </div>
         <div class="form-group"><label>Amount</label><input id="exp-amount" type="number" step="0.01" min="0"></div>
+      </div>
+      <!-- Inline category manager: revealed by the Category "Manage" link. Lives in
+           the expense modal itself (not a second overlay) so you can add/remove a
+           category without leaving a half-typed expense. -->
+      <div id="cat-manager-inline" hidden style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .7rem;margin-bottom:.75rem;background:var(--bg2)">
+        <div style="display:flex;gap:.5rem;margin-bottom:.6rem">
+          <input id="new-cat" type="text" placeholder="New category name" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addCategory()}">
+          <button class="btn btn-primary btn-sm" type="button" onclick="addCategory()"><i class="ti ti-plus"></i> Add</button>
+        </div>
+        <div id="cat-list"></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Payment Method</label>
@@ -1342,22 +1352,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
-<!-- CATEGORY MANAGER MODAL -->
-<div class="modal-overlay" id="modal-categories">
-  <div class="modal">
-    <div class="modal-header"><h2>Expense Categories</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-categories')"><i class="ti ti-x"></i></button></div>
-    <div class="modal-body">
-      <div style="display:flex;gap:.5rem;margin-bottom:.85rem">
-        <input id="new-cat" type="text" placeholder="New category name" style="flex:1" onkeydown="if(event.key==='Enter')addCategory()">
-        <button class="btn btn-primary" onclick="addCategory()"><i class="ti ti-plus"></i> Add</button>
-      </div>
-      <div id="cat-list"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-primary" onclick="closeModal('modal-categories')"><i class="ti ti-check"></i> Done</button>
-    </div>
-  </div>
-</div>
 
 
 <!-- ACCOUNT MODAL -->
@@ -3275,9 +3269,10 @@ function renderExpInvoiceOptions(selectedId) {
   if (selectedId) sel.value = selectedId;
 }
 
-function openCatManager() {
-  renderCatList();
-  openModal('modal-categories');
+function toggleCatManager() {
+  const el = document.getElementById('cat-manager-inline');
+  if (el.hasAttribute('hidden')) { renderCatList(); el.removeAttribute('hidden'); }
+  else el.setAttribute('hidden','');
 }
 function renderCatList() {
   const cats = getCategories();
@@ -3345,6 +3340,7 @@ function openExpenseModal(exp) {
   document.getElementById('exp-reimbursed').checked = !!e.reimbursed;
   renderExpAccountOptions(e.account_id||'');
   renderReceiptState(exp);
+  document.getElementById('cat-manager-inline').setAttribute('hidden','');  // start collapsed each open
   openModal('modal-expense');
 }
 function editExpense(id) { openExpenseModal(cache.expenses.find(e=>e.id===id)); }

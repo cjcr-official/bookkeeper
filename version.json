@@ -1,1 +1,1 @@
-{"version":277,"note":"v277: modal a11y + safety — every popup is now a labelled dialog with focus moved in, a Tab focus-trap, and focus restored on close; the 8 remaining Save buttons disable + spin during the write (no double-submit); owner-activity Delete button now labelled to match the others."}
+{"version":278,"note":"v278: kill the one stacked modal — the expense-category 'Manage' link now toggles an inline panel inside the expense modal instead of opening a second overlay on top of it, so adding/removing a category no longer stacks dialogs or traps focus twice."}
