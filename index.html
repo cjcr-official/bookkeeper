@@ -525,6 +525,7 @@ body.modal-open .main{overflow:hidden}
   .settings-save-row{position:fixed;left:.875rem;right:.875rem;bottom:70px;z-index:350}
   .settings-save-row .btn{width:100%;justify-content:center;min-height:48px;box-shadow:0 6px 20px var(--accent-glow)}
   #page-profile{padding-bottom:76px}
+  #page-settings{padding-bottom:40px}
   /* audit month grid: two rows of 6 on phones so each month is a real tap target */
   .audit-grid{grid-template-columns:repeat(6,1fr);gap:7px}
   .audit-chip{padding:.7rem .1rem}
@@ -971,12 +972,16 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="card" style="max-width:500px;margin-top:1rem">
           <div class="card-header"><h3>Notifications</h3></div>
           <div class="modal-body">
-            <div id="push-status" style="font-size:13px;color:var(--text2);margin-bottom:.5rem">Loading…</div>
-            <button class="btn" id="push-enable-btn" onclick="enablePush()" style="display:none"><i class="ti ti-bell"></i> Enable on this device</button>
+            <button class="setting-row" id="push-switch-row" role="switch" aria-checked="false" aria-label="Push notifications" onclick="togglePush()">
+              <span><span class="setting-row-title">Push notifications</span><span class="setting-row-sub" id="push-sub">Loading…</span></span>
+              <span class="theme-switch" id="push-switch"><span class="theme-switch-knob"></span></span>
+            </button>
+            <div id="push-status" style="font-size:12px;color:var(--text2);margin-top:.5rem;display:none"></div>
             <div id="push-debug" style="margin-top:.5rem"></div>
-            <div id="push-prefs" style="display:none;margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--border)">
-              <div class="form-group" style="margin-bottom:.75rem"><label>Morning reminder time</label>
-                <select id="s-notify-hour" onchange="saveNotifyHour()">
+            <div id="push-prefs" style="display:none;margin-top:.5rem;padding-top:.75rem;border-top:1px solid var(--border)">
+              <div class="setting-row" style="cursor:default">
+                <span><span class="setting-row-title">Morning reminder time</span><span class="setting-row-sub">When a recurring item comes due</span></span>
+                <select id="s-notify-hour" onchange="saveNotifyHour()" style="width:auto;flex-shrink:0">
                   <option value="6">6:00 AM</option>
                   <option value="7">7:00 AM</option>
                   <option value="8">8:00 AM</option>
@@ -985,9 +990,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
                   <option value="11">11:00 AM</option>
                 </select>
               </div>
-              <button class="btn btn-sm" onclick="sendTestNotification()"><i class="ti ti-bell-ringing"></i> Send a test notification</button>
+              <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.6rem">
+                <button class="btn btn-sm" onclick="sendTestNotification()"><i class="ti ti-bell-ringing"></i> Send a test</button>
+                <button class="btn btn-sm" onclick="enablePush()"><i class="ti ti-refresh"></i> Re-register</button>
+              </div>
             </div>
-            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">A morning ping (at the time you pick above) when a recurring item comes due, plus per-job reminders at the time you set on each job. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-job reminders at the time you set on each job. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
           </div>
         </div>
         <div class="card" style="max-width:500px;margin-top:1rem">
@@ -5529,36 +5537,62 @@ async function refreshPushSubscription() {
 }
 
 function renderPushStatus() {
+  const sw = document.getElementById('push-switch');
+  const row = document.getElementById('push-switch-row');
+  const sub = document.getElementById('push-sub');
   const el = document.getElementById('push-status');
-  const btn = document.getElementById('push-enable-btn');
-  if (!el || !btn) return;
+  const prefs = document.getElementById('push-prefs');
+  if (!sw || !el) return;
+  const setSwitch = on => { sw.classList.toggle('on', on); if (row) row.setAttribute('aria-checked', on ? 'true' : 'false'); };
+  const setEnabled = ok => { if (row) { row.style.opacity = ok ? '' : '.5'; row.style.pointerEvents = ok ? '' : 'none'; } };
+  const showPrefs = on => {
+    if (prefs) prefs.style.display = on ? '' : 'none';
+    if (on) { const hr = document.getElementById('s-notify-hour'); if (hr) hr.value = String(profile.notify_hour || 8); }
+  };
+  const hint = html => { el.innerHTML = html || ''; el.style.display = html ? '' : 'none'; };
+
+  // Unsupported / not-installed / blocked → toggle disabled with an explanatory line.
   if (!('PushManager' in window) || !('Notification' in window)) {
-    el.textContent = 'Push not supported in this browser.';
-    btn.style.display = 'none'; return;
+    setSwitch(false); setEnabled(false); showPrefs(false);
+    if (sub) sub.textContent = 'Not supported on this browser'; hint(''); return;
   }
   if (!isStandalone() && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
-    el.innerHTML = 'On iPhone: Share → <strong>Add to Home Screen</strong> first, then open from the icon. iOS 16.4+ required.';
-    btn.style.display = 'none'; return;
+    setSwitch(false); setEnabled(false); showPrefs(false);
+    if (sub) sub.textContent = 'Add to Home Screen to enable';
+    hint('On iPhone: Share → <strong>Add to Home Screen</strong> first, then open from the icon. iOS 16.4+ required.'); return;
   }
   const perm = Notification.permission;
   if (perm === 'denied') {
-    el.innerHTML = '<span style="color:var(--red)">Blocked.</span> Enable in iOS Settings → Notifications → Bookkeeper, then come back.';
-    btn.style.display = 'none';
-  } else if (perm === 'granted' && profile.push_subscription) {
-    el.innerHTML = '<span style="color:var(--green)">✓ Enabled on this device</span>';
-    btn.style.display = ''; btn.innerHTML = '<i class="ti ti-refresh"></i> Re-register';
-  } else {
-    el.textContent = perm === 'granted' ? 'Permission granted — tap to subscribe.' : 'Not enabled.';
-    btn.style.display = ''; btn.innerHTML = '<i class="ti ti-bell"></i> Enable on this device';
+    setSwitch(false); setEnabled(false); showPrefs(false);
+    if (sub) sub.textContent = 'Blocked in iOS Settings';
+    hint('<span style="color:var(--red)">Blocked.</span> Enable in iOS Settings → Notifications → Bookkeeper, then come back.'); return;
   }
-  // Extra options (reminder time + test) only make sense once it's live on this device.
-  const prefs = document.getElementById('push-prefs');
-  if (prefs) {
-    const live = perm === 'granted' && !!profile.push_subscription;
-    prefs.style.display = live ? '' : 'none';
-    const hr = document.getElementById('s-notify-hour');
-    if (hr) hr.value = String(profile.notify_hour || 8);
-  }
+  setEnabled(true);
+  const on = perm === 'granted' && !!profile.push_subscription;
+  setSwitch(on); showPrefs(on); hint('');
+  if (sub) sub.textContent = on ? 'Enabled on this device' : 'Off — tap to enable reminders';
+}
+
+// Master on/off: subscribe when off, tear the subscription down when on.
+function togglePush() {
+  const on = Notification.permission === 'granted' && !!profile.push_subscription;
+  return on ? disablePush() : enablePush();
+}
+
+// Turn reminders off on this device: drop the push subscription and clear the
+// stored endpoint so the Worker cron stops sending. (Can't revoke the OS-level
+// permission from JS — but with no subscription saved, nothing is delivered.)
+async function disablePush() {
+  const sw = document.getElementById('push-switch');
+  if (sw) sw.classList.remove('on');   // optimistic
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) { const sub = await reg.pushManager.getSubscription(); if (sub) await sub.unsubscribe(); }
+  } catch (e) { console.warn('unsubscribe failed', e); }
+  try { await sb.from('profiles').upsert({ id: currentUser.id, push_subscription: null }); } catch (e) { /* clear cache anyway */ }
+  profile.push_subscription = null;
+  showToast('Notifications off', 'success');
+  renderPushStatus();
 }
 
 // Persist the morning-ping hour (America/Denver) the Worker cron uses for
