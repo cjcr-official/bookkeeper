@@ -1,1 +1,1 @@
-{"version":279,"note":"v279: the inline category manager now sits directly under the Category dropdown (moved inside the Category field) instead of spanning full-width below the row where it read as detached near the Account field."}
+{"version":280,"note":"v280: remove the floating + FAB entirely (element, CSS, handler, dead per-page toggle) — create from the top-bar New buttons instead; drop the + icon from the category Add button and turn '+ New account' into a quiet 'New' link on the Account label to match Category's 'Manage'."}

@@ -257,7 +257,6 @@ textarea{resize:vertical;min-height:70px}
 /* ── LAYOUT HELPERS ── */
 .page{display:none}
 .page.active{display:block}
-#fab{display:none}   /* mobile-only; shown by the mobile media block below */
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .empty{text-align:center;padding:3rem 1rem;color:var(--text3)}
 .empty i{font-size:36px;margin-bottom:.75rem;display:block;opacity:.5}
@@ -517,9 +516,6 @@ body.modal-open .main{overflow:hidden}
   .card-header{padding:.75rem 1rem}
   /* row action buttons (view/edit/delete) must be real touch targets — 44px min */
   .page .btn-sm{min-height:44px;min-width:44px;justify-content:center}
-  /* floating create button: the topbar + is out of thumb reach one-handed */
-  #fab{position:fixed;right:1.05rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 14px);width:54px;height:54px;border-radius:50%;background:var(--accent);color:#fff;border:none;display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 6px 20px var(--accent-glow);z-index:600;cursor:pointer;transition:transform .12s cubic-bezier(.2,.8,.2,1)}
-  #fab:active{transform:scale(.92)}
   /* Business Profile: Save is a full-width pill LOCKED above the bottom nav.
      position:fixed, not sticky — sticky kept anchoring to clipped card/modal-body
      ancestors on iOS and hovered mid-form. The page gets bottom padding so the
@@ -1034,8 +1030,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
     </div>
   </div>
-  <!-- Floating create button (mobile only, CSS-gated): current tab's New action -->
-  <button id="fab" aria-label="Add new" onclick="fabClick()"><i class="ti ti-plus"></i></button>
 </div>
 
 <!-- INVOICE MODAL -->
@@ -1318,7 +1312,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <div id="cat-manager-inline" hidden style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .7rem;margin-top:.5rem;background:var(--bg2)">
             <div style="display:flex;gap:.5rem;margin-bottom:.6rem">
               <input id="new-cat" type="text" placeholder="New category name" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter'){event.preventDefault();addCategory()}">
-              <button class="btn btn-primary btn-sm" type="button" onclick="addCategory()"><i class="ti ti-plus"></i> Add</button>
+              <button class="btn btn-primary btn-sm" type="button" onclick="addCategory()">Add</button>
             </div>
             <div id="cat-list"></div>
           </div>
@@ -1329,9 +1323,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Payment Method</label>
           <select id="exp-method"><option>Credit Card</option><option>Debit Card</option><option>Cash</option><option>Check</option><option>ACH/Wire</option></select>
         </div>
-        <div class="form-group"><label>Account <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label>
+        <div class="form-group"><label>Account <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span> <span onclick="addAccountForExpense()" style="float:right;font-weight:600;font-size:11px;color:var(--accent);cursor:pointer">New</span></label>
           <select id="exp-account"></select>
-          <button type="button" class="btn btn-sm" onclick="addAccountForExpense()" style="margin-top:.45rem;width:100%;justify-content:center"><i class="ti ti-plus"></i> <span>New account</span></button>
         </div>
       </div>
       <div class="form-group"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
@@ -1622,18 +1615,12 @@ function showPage(page, el) {
     mileage:`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
-  const fab = document.getElementById('fab');
-  if (fab) fab.style.display = (page==='accounts'||page==='settings'||page==='profile'||page==='mileage') ? 'none' : '';
   rerenderCurrentView();
 }
 
 // Floating + (mobile): runs the current tab's New action — the topbar + is out
 // of thumb reach on a phone. Dashboard creates a job; Statements/Settings/Mileage
 // hide it (Mileage keeps only the topbar Log Trip button).
-function fabClick() {
-  const acts = {dashboard:openJobModal, invoices:openInvoiceModal, customers:openCustomerModal, expenses:openExpenseModal};
-  const a = acts[currentPage]; if (a) a();
-}
 
 // ====== DASHBOARD ======
 function updateTopbarLogo() {
