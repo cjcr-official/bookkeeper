@@ -1,1 +1,1 @@
-{"version":287,"note":"v287: Passcode keypad is now snappy — keys fire on pointerdown (touch-down) instead of click, killing the ~300ms iOS tap delay, with touch-action:manipulation and an instant :active press state so fast PIN entry keeps up."}
+{"version":288,"note":"v288: Expense Categories in Settings is now a collapsible card (native <details>), collapsed by default with a rotating chevron — tap the header to expand and manage categories."}

@@ -139,6 +139,10 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 /* Passcode keypad: fire on touch-down (no iOS click delay) with instant tactile feedback. */
 .lock-key{width:72px;height:72px;border-radius:50%;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:24px;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;transition:transform .05s ease,background .05s ease,color .05s ease}
 .lock-key:active{transform:scale(.9);background:var(--accent);border-color:var(--accent);color:#fff}
+/* Collapsible settings card (native <details>): hide the default marker, rotate a chevron. */
+.settings-collapse>summary::-webkit-details-marker{display:none}
+.settings-collapse .settings-collapse-chev{color:var(--text3);transition:transform .2s ease}
+.settings-collapse[open] .settings-collapse-chev{transform:rotate(180deg)}
 /* Business-logo slot (profile page): white preview tile + pill actions when a
    logo is set; a dashed tap-to-upload zone when there isn't one. */
 .logo-slot{display:flex;align-items:center;gap:.9rem;padding:.7rem .8rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2)}
@@ -1023,15 +1027,17 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
         </div>
         <div class="card" style="max-width:500px;margin-top:1rem">
-          <div class="card-header"><h3>Expense Categories</h3></div>
-          <div class="modal-body">
-            <div id="set-cat-list"></div>
-            <div style="display:flex;gap:.5rem;margin-top:.6rem">
-              <input id="set-new-cat" type="text" placeholder="New category…" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addSettingsCategory();}">
-              <button class="btn btn-sm" onclick="addSettingsCategory()"><i class="ti ti-plus"></i> Add</button>
+          <details class="settings-collapse">
+            <summary class="card-header" style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between"><h3>Expense Categories</h3><i class="ti ti-chevron-down settings-collapse-chev"></i></summary>
+            <div class="modal-body">
+              <div id="set-cat-list"></div>
+              <div style="display:flex;gap:.5rem;margin-top:.6rem">
+                <input id="set-new-cat" type="text" placeholder="New category…" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addSettingsCategory();}">
+                <button class="btn btn-sm" onclick="addSettingsCategory()"><i class="ti ti-plus"></i> Add</button>
+              </div>
+              <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">These are the choices when you categorize an expense.</div>
             </div>
-            <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">These are the choices when you categorize an expense.</div>
-          </div>
+          </details>
         </div>
         <div class="card" style="max-width:500px;margin-top:1rem">
           <div class="card-header"><h3>Security</h3></div>
