@@ -1,1 +1,1 @@
-{"version":278,"note":"v278: kill the one stacked modal — the expense-category 'Manage' link now toggles an inline panel inside the expense modal instead of opening a second overlay on top of it, so adding/removing a category no longer stacks dialogs or traps focus twice."}
+{"version":279,"note":"v279: the inline category manager now sits directly under the Category dropdown (moved inside the Category field) instead of spanning full-width below the row where it read as detached near the Account field."}
