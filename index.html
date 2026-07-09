@@ -1140,7 +1140,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-recur-edit')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveRecurring()"><i class="ti ti-check"></i> Save</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveRecurring)"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -1170,7 +1170,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-footer">
       <button class="btn btn-danger" id="cust-delete-btn" style="display:none;margin-right:auto" onclick="deleteCustomer(document.getElementById('cust-id').value)"><i class="ti ti-trash"></i> Delete</button>
       <button class="btn" onclick="closeModal('modal-customer')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveCustomer()"><i class="ti ti-check"></i> Save</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveCustomer)"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -1202,7 +1202,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-trip')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveTrip()"><i class="ti ti-check"></i> Save</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveTrip)"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -1222,7 +1222,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-store-credit')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveStoreCredit()"><i class="ti ti-check"></i> Save</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveStoreCredit)"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -1250,9 +1250,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Owner activity is equity, not income or expense — it won't show up in revenue or expense totals, but it will reconcile against the bank.</div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-danger" id="owner-tx-delete-btn" onclick="deleteOwnerTxFromModal()" style="margin-right:auto"><i class="ti ti-trash"></i></button>
+      <button class="btn btn-danger" id="owner-tx-delete-btn" onclick="deleteOwnerTxFromModal()" style="margin-right:auto"><i class="ti ti-trash"></i> Delete</button>
       <button class="btn" onclick="closeModal('modal-owner-tx')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveOwnerTx()"><i class="ti ti-check"></i> Save</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveOwnerTx)"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -1294,7 +1294,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-footer">
       <button class="btn btn-danger" id="job-delete-btn" onclick="deleteJobFromModal()" style="margin-right:auto;display:none"><i class="ti ti-trash"></i> Delete</button>
       <button class="btn" onclick="closeModal('modal-job')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveJob()"><i class="ti ti-check"></i> Save</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveJob)"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -1337,7 +1337,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-expense')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveExpense()"><i class="ti ti-check"></i> Save</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveExpense)"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -1377,7 +1377,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-account')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveAccount()"><i class="ti ti-check"></i> Save</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveAccount)"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -5564,14 +5564,43 @@ function renderPushStatus() {
 }
 
 // ====== MODAL ======
+let _modalReturnFocus = null;
 function openModal(id) {
-  document.getElementById(id).classList.add('open');
+  const overlay = document.getElementById(id);
+  const modal = overlay.querySelector('.modal');
+  // a11y: announce as a dialog, labelled by its heading (set once, idempotent)
+  if (modal && !modal.hasAttribute('role')) {
+    modal.setAttribute('role','dialog');
+    modal.setAttribute('aria-modal','true');
+    modal.setAttribute('tabindex','-1');
+    const h = modal.querySelector('.modal-header h2');
+    if (h) { if (!h.id) h.id = id+'-title'; modal.setAttribute('aria-labelledby', h.id); }
+  }
+  _modalReturnFocus = document.activeElement;   // restore when it closes
+  overlay.classList.add('open');
   document.body.classList.add('modal-open');
+  // Move focus INTO the dialog — but to the container, not the first field, so a
+  // sheet opening doesn't instantly pop the iOS keyboard. Tab then starts inside.
+  if (modal) setTimeout(()=>modal.focus(), 50);
 }
 function closeModal(id) {
   document.getElementById(id).classList.remove('open');
   // only unlock scroll if no other modal is still open
   if (!document.querySelector('.modal-overlay.open')) document.body.classList.remove('modal-open');
+  // Return focus to whatever opened the modal (keyboard / screen-reader users).
+  if (_modalReturnFocus && _modalReturnFocus.focus) { try { _modalReturnFocus.focus(); } catch(_){} }
+  _modalReturnFocus = null;
+}
+// Guard async save buttons against double-taps + show progress during the write.
+// (saveInvoice manages its own button already; the other save modals opt in via
+// onclick="withBusy(this,saveX)".)
+async function withBusy(btn, fn) {
+  if (btn.disabled) return;
+  const html = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving...';
+  try { await fn(); }
+  finally { btn.disabled = false; btn.innerHTML = html; }
 }
 // Backdrop click closes a modal, EXCEPT modals marked data-keep-open (e.g. the
 // invoice editor) — those only close via their X / Cancel / Save buttons so a
@@ -5580,9 +5609,16 @@ document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click
 // Keyboard: Escape closes the top open modal (data-keep-open still only closes
 // via its own buttons); Enter/Space activate a focused nav item (they're divs).
 document.addEventListener('keydown', e => {
+  const openOverlay = [...document.querySelectorAll('.modal-overlay.open')].pop();
   if (e.key === 'Escape') {
-    const open = [...document.querySelectorAll('.modal-overlay.open')].pop();
-    if (open && !open.hasAttribute('data-keep-open')) closeModal(open.id);
+    if (openOverlay && !openOverlay.hasAttribute('data-keep-open')) closeModal(openOverlay.id);
+  } else if (e.key === 'Tab' && openOverlay) {
+    // Trap focus inside the top modal (Tab must not walk the page behind it).
+    const items = [...openOverlay.querySelectorAll('a[href],button:not([disabled]),input:not([type=hidden]):not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(el=>el.offsetParent!==null);
+    if (!items.length) return;
+    const first=items[0], last=items[items.length-1], a=document.activeElement;
+    if (e.shiftKey && (a===first || !openOverlay.contains(a))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && (a===last || !openOverlay.contains(a))) { e.preventDefault(); first.focus(); }
   } else if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('nav-item')) {
     e.preventDefault(); e.target.click();
   }
