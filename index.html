@@ -996,15 +996,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <input type="file" id="s-logo-file" accept="image/*" onchange="onLogoPick(event)" style="display:none">
               <div id="s-logo-state"></div>
             </div>
-            <div class="form-group"><label>Address</label><textarea id="s-address" rows="2" placeholder="123 Main St..."></textarea></div>
+            <div class="form-group"><label>Address</label><textarea id="s-address" rows="3" placeholder="123 Main St..."></textarea></div>
             <div class="form-row">
               <div class="form-group"><label>Email</label><input id="s-email" type="email"></div>
               <div class="form-group"><label>Phone</label><input id="s-phone" type="tel"></div>
             </div>
-            <div class="form-group"><label>Currency</label>
-              <select id="s-currency"><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option><option value="CAD">CAD ($)</option><option value="AUD">AUD ($)</option></select>
-            </div>
-            <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="2" placeholder="Where your trips start from..."></textarea></div>
+            <div class="form-group"><label>My Base / Home Address (for mileage)</label><textarea id="s-base-address" rows="3" placeholder="Where your trips start from..."></textarea></div>
             <div class="settings-save-row"><button class="btn btn-primary" onclick="saveProfile()"><i class="ti ti-check"></i> Save Profile</button></div>
           </div>
         </div>
@@ -5343,7 +5340,6 @@ function loadProfileForm() {
   document.getElementById('s-address').value=profile.address||'';
   document.getElementById('s-email').value=profile.email||'';
   document.getElementById('s-phone').value=profile.phone||'';
-  document.getElementById('s-currency').value=profile.currency||'USD';
   document.getElementById('s-base-address').value=profile.base_address||'';
   renderLogoState();
 }
@@ -5417,7 +5413,7 @@ async function saveProfile() {
     email:   document.getElementById('s-email').value,
     phone:   document.getElementById('s-phone').value,
     tax: 0,
-    currency: document.getElementById('s-currency').value,
+    currency: 'USD',
     base_address: document.getElementById('s-base-address').value
   };
   const { error } = await sb.from('profiles').upsert({ id: currentUser.id, ...row });
