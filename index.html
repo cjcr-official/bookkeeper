@@ -1775,7 +1775,16 @@ async function toggleMfa() {
   const {data, error} = await sb.auth.mfa.enroll({factorType:'totp'});
   if (error) { showToast(error.message,'error'); return; }
   _mfaEnrollId = data.id;
-  document.getElementById('mfa-qr').innerHTML = '<img alt="2FA QR code" style="width:200px;height:200px;background:#fff;border-radius:8px;padding:8px" src="'+data.totp.qr_code+'">';
+  // Set the QR via a DOM property, not innerHTML: Supabase's qr_code is an
+  // unescaped SVG data-URI whose quotes/brackets would break the src="" attribute
+  // (leaving a broken image + a stray leaked-SVG QR). Assigning .src sidesteps HTML parsing.
+  const qrEl = document.getElementById('mfa-qr');
+  qrEl.innerHTML = '';
+  const qrImg = document.createElement('img');
+  qrImg.alt = '2FA QR code';
+  qrImg.style.cssText = 'width:200px;height:200px;background:#fff;border-radius:8px;padding:8px';
+  qrImg.src = data.totp.qr_code;
+  qrEl.appendChild(qrImg);
   document.getElementById('mfa-secret').value = data.totp.secret;
   document.getElementById('mfa-code').value = '';
   document.getElementById('mfa-enroll-error').textContent = '';

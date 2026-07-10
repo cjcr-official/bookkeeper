@@ -1,1 +1,1 @@
-{"version":291,"note":"v291: real two-factor authentication (2FA) via Supabase TOTP — enroll in Settings › Security with an authenticator app (QR + manual key); a 6-digit code is then required at sign-in on every device."}
+{"version":292,"note":"v292: fix the 2FA setup screen — the authenticator QR code now renders as a single clean image (was showing a broken-image box plus a stray duplicate QR because the SVG data-URI was concatenated into innerHTML)."}
