@@ -1,1 +1,1 @@
-{"version":290,"note":"v290: nicer 'How to Pay' box on invoices — a clean two-tone panel (dark heading bar matching the TOTAL, left accent border) with each payment method on its own spaced line instead of a plain grey block."}
+{"version":291,"note":"v291: real two-factor authentication (2FA) via Supabase TOTP — enroll in Settings › Security with an authenticator app (QR + manual key); a 6-digit code is then required at sign-in on every device."}

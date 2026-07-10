@@ -764,6 +764,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <div class="form-group"><label>Company Name</label><input id="signup-company" type="text" placeholder="Acme Inc."></div>
       <button class="btn btn-primary btn-full" onclick="doSignup()" id="signup-btn"><i class="ti ti-user-plus"></i> Create Account</button>
     </div>
+    <div id="mfa-login-form" style="display:none">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Enter the 6-digit code from your authenticator app to finish signing in.</p>
+      <div class="form-group"><label>Authentication code</label><input id="mfa-login-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:18px" onkeydown="if(event.key==='Enter')doMfaLogin()"></div>
+      <button class="btn btn-primary btn-full" onclick="doMfaLogin()" id="mfa-login-btn"><i class="ti ti-shield-lock"></i> Verify</button>
+      <div style="text-align:center;margin-top:1rem"><button style="background:none;border:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="cancelMfaLogin()">Cancel</button></div>
+    </div>
   </div>
 </div>
 
@@ -1052,6 +1058,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span class="theme-switch" id="faceid-switch"><span class="theme-switch-knob"></span></span>
             </button>
             <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">The passcode is stored only on this device. If you forget it, the unlock screen can sign you out — sign back in with your email to reset it.</div>
+            <div style="border-top:1px solid var(--border);margin:1rem 0 .25rem"></div>
+            <button class="setting-row" id="mfa-row" role="switch" aria-checked="false" aria-label="Two-factor authentication" onclick="toggleMfa()">
+              <span><span class="setting-row-title">Two-factor authentication (2FA)</span><span class="setting-row-sub" id="mfa-sub">Require an authenticator code when signing in</span></span>
+              <span class="theme-switch" id="mfa-switch"><span class="theme-switch-knob"></span></span>
+            </button>
+            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Unlike App Lock (this device only), 2FA is tied to your account and applies on every device. You'll need an authenticator app (Google Authenticator, Authy, 1Password, iOS Passwords…).</div>
           </div>
         </div>
         <div class="card" style="max-width:500px;margin-top:1rem">
@@ -1320,6 +1332,24 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <button class="btn btn-danger" id="owner-tx-delete-btn" onclick="deleteOwnerTxFromModal()" style="margin-right:auto"><i class="ti ti-trash"></i> Delete</button>
       <button class="btn" onclick="closeModal('modal-owner-tx')">Cancel</button>
       <button class="btn btn-primary" onclick="withBusy(this,saveOwnerTx)"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- 2FA ENROLLMENT MODAL -->
+<div class="modal-overlay" id="modal-mfa-enroll">
+  <div class="modal">
+    <div class="modal-header"><h2>Set up two-factor authentication</h2><button class="btn btn-sm" aria-label="Close" onclick="cancelMfaEnroll()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Scan this code with an authenticator app (Google Authenticator, Authy, 1Password, iOS Passwords…), then enter the 6-digit code it shows to turn on 2FA.</p>
+      <div id="mfa-qr" style="display:flex;justify-content:center;margin-bottom:1rem"></div>
+      <div class="form-group"><label>Can't scan? Enter this key manually</label><input id="mfa-secret" type="text" readonly onclick="this.select()" style="font-family:'JetBrains Mono',monospace;font-size:12px"></div>
+      <div class="form-group"><label>6-digit code</label><input id="mfa-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:18px" onkeydown="if(event.key==='Enter')verifyMfaEnroll()"></div>
+      <div id="mfa-enroll-error" style="color:var(--red);font-size:12px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="cancelMfaEnroll()">Cancel</button>
+      <button class="btn btn-primary" id="mfa-verify-btn" onclick="verifyMfaEnroll()"><i class="ti ti-check"></i> Verify &amp; turn on</button>
     </div>
   </div>
 </div>
@@ -1644,7 +1674,132 @@ async function doLogout() {
   await sb.auth.signOut();
   currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[],store_credits:[]};
   document.getElementById('app').style.display = 'none';
+  resetAuthView();
   document.getElementById('auth-wrap').style.display = 'flex';
+}
+
+// ====== TWO-FACTOR AUTH (Supabase TOTP) ======
+// A verified TOTP factor bumps the account's assurance level: after a password
+// sign-in the session is aal1, and it must be raised to aal2 with an app code
+// before the app opens. Enrollment lives in Settings; the login challenge reuses
+// the auth card (a third sub-form).
+
+// The verified TOTP factor for this account (or null if 2FA is off).
+async function mfaVerifiedFactor() {
+  try {
+    const {data, error} = await sb.auth.mfa.listFactors();
+    if (error || !data) return null;
+    return (data.totp||[]).find(f=>f.status==='verified')
+      || (data.all||[]).find(f=>f.factor_type==='totp'&&f.status==='verified')
+      || null;
+  } catch(_) { return null; }
+}
+// True when the signed-in session still needs an app code to reach aal2.
+async function mfaChallengeNeeded() {
+  try {
+    const {data} = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    return !!(data && data.nextLevel==='aal2' && data.currentLevel!=='aal2');
+  } catch(_) { return false; }
+}
+
+// Swap the auth card to the 6-digit code prompt.
+function resetAuthView() {
+  document.getElementById('mfa-login-form').style.display='none';
+  document.querySelector('.auth-tabs').style.display='';
+  document.getElementById('login-form').style.display='block';
+  document.getElementById('signup-form').style.display='none';
+  document.querySelectorAll('.auth-tab').forEach((t,i)=>t.classList.toggle('active', i===0));
+}
+function showMfaChallenge() {
+  document.getElementById('app').style.display='none';
+  document.getElementById('auth-wrap').style.display='flex';
+  document.querySelector('.auth-tabs').style.display='none';
+  document.getElementById('login-form').style.display='none';
+  document.getElementById('signup-form').style.display='none';
+  document.getElementById('auth-error').classList.remove('show');
+  document.getElementById('auth-success').classList.remove('show');
+  document.getElementById('mfa-login-form').style.display='block';
+  const c=document.getElementById('mfa-login-code'); c.value=''; setTimeout(()=>c.focus(),100);
+}
+async function doMfaLogin() {
+  const code=(document.getElementById('mfa-login-code').value||'').trim();
+  if (!/^\d{6}$/.test(code)) { showAuthError('Enter the 6-digit code from your authenticator app.'); return; }
+  const factor = await mfaVerifiedFactor();
+  if (!factor) { showAuthError('No 2FA device found on this account.'); return; }
+  const btn=document.getElementById('mfa-login-btn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Verifying...';
+  const {error} = await sb.auth.mfa.challengeAndVerify({factorId:factor.id, code});
+  btn.disabled=false; btn.innerHTML='<i class="ti ti-shield-lock"></i> Verify';
+  if (error) { showAuthError(error.message); return; }
+  // Verify raises the session to aal2 but fires no SIGNED_IN — enter the app here.
+  resetAuthView();
+  document.getElementById('auth-wrap').style.display='none';
+  document.getElementById('loading-screen').style.display='flex';
+  await loadAllData();
+  await processRecurring();
+  document.getElementById('user-company-name').textContent = profile.company||'My Business';
+  document.getElementById('loading-screen').style.display='none';
+  document.getElementById('app').style.display='flex';
+  renderDashboard();
+  refreshPushSubscription();
+}
+async function cancelMfaLogin() {
+  await sb.auth.signOut();
+  resetAuthView();
+}
+
+// ── Enrollment (Settings) ──
+let _mfaEnrollId = null;
+async function renderMfaUI() {
+  const sw=document.getElementById('mfa-switch'), row=document.getElementById('mfa-row'), sub=document.getElementById('mfa-sub');
+  if (!row) return;
+  const on = !!(await mfaVerifiedFactor());
+  if (sw) sw.classList.toggle('on', on);
+  row.setAttribute('aria-checked', on?'true':'false');
+  if (sub) sub.textContent = on ? 'On — an authenticator code is required at sign-in' : 'Require an authenticator code when signing in';
+}
+async function toggleMfa() {
+  const factor = await mfaVerifiedFactor();
+  if (factor) {
+    if (!confirm('Turn off two-factor authentication? You’ll sign in with just your password.')) return;
+    const {error} = await sb.auth.mfa.unenroll({factorId:factor.id});
+    if (error) { showToast(error.message,'error'); return; }
+    showToast('Two-factor authentication off','success');
+    renderMfaUI(); return;
+  }
+  // Clear any half-finished (unverified) factor so enroll doesn't hit a dup/limit.
+  try {
+    const {data} = await sb.auth.mfa.listFactors();
+    for (const f of ((data&&data.all)||[])) if (f.status==='unverified') await sb.auth.mfa.unenroll({factorId:f.id});
+  } catch(_){}
+  const {data, error} = await sb.auth.mfa.enroll({factorType:'totp'});
+  if (error) { showToast(error.message,'error'); return; }
+  _mfaEnrollId = data.id;
+  document.getElementById('mfa-qr').innerHTML = '<img alt="2FA QR code" style="width:200px;height:200px;background:#fff;border-radius:8px;padding:8px" src="'+data.totp.qr_code+'">';
+  document.getElementById('mfa-secret').value = data.totp.secret;
+  document.getElementById('mfa-code').value = '';
+  document.getElementById('mfa-enroll-error').textContent = '';
+  openModal('modal-mfa-enroll');
+}
+async function verifyMfaEnroll() {
+  const code=(document.getElementById('mfa-code').value||'').trim();
+  const errEl=document.getElementById('mfa-enroll-error');
+  if (!/^\d{6}$/.test(code)) { errEl.textContent='Enter the 6-digit code from your app.'; return; }
+  if (!_mfaEnrollId) { errEl.textContent='Enrollment expired — close and try again.'; return; }
+  const btn=document.getElementById('mfa-verify-btn');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Verifying...';
+  const {error} = await sb.auth.mfa.challengeAndVerify({factorId:_mfaEnrollId, code});
+  btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Verify &amp; turn on';
+  if (error) { errEl.textContent=error.message; return; }
+  _mfaEnrollId=null;
+  closeModal('modal-mfa-enroll');
+  showToast('Two-factor authentication on','success');
+  renderMfaUI();
+}
+async function cancelMfaEnroll() {
+  if (_mfaEnrollId) { try { await sb.auth.mfa.unenroll({factorId:_mfaEnrollId}); } catch(_){} _mfaEnrollId=null; }
+  closeModal('modal-mfa-enroll');
+  renderMfaUI();
 }
 
 // ====== DATA LOADING ======
@@ -5431,6 +5586,7 @@ function loadSettingsForm() {
   document.getElementById('s-pay-instructions').value = profile.pay_instructions||'';
   renderSettingsCats();
   renderLockUI();
+  renderMfaUI();
   document.getElementById('user-email-display').textContent=currentUser.email;
 }
 
@@ -5827,6 +5983,7 @@ async function boot() {
     const {data:{session}} = await sb.auth.getSession();
     if (session) {
       currentUser = session.user;
+      if (await mfaChallengeNeeded()) { hide(); showMfaChallenge(); return; }
       await loadAllData();
       await processRecurring();
       document.getElementById('user-company-name').textContent = profile.company||'My Business';
@@ -5848,6 +6005,7 @@ async function boot() {
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event==='SIGNED_IN' && session) {
       currentUser = session.user;
+      if (await mfaChallengeNeeded()) { showMfaChallenge(); return; }
       document.getElementById('auth-wrap').style.display='none';
       document.getElementById('loading-screen').style.display='flex';
       await loadAllData();
