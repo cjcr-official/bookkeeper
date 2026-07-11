@@ -279,9 +279,20 @@ textarea{resize:vertical;min-height:70px}
 /* ── LAYOUT HELPERS ── */
 .page{display:none}
 .page.active{display:block}
-/* Settings & Business Profile are form pages, not data tables — center them in a
-   comfortable column instead of hugging the left of the wide content area. */
-#page-settings,#page-profile{max-width:620px;margin-inline:auto}
+/* Settings & Business Profile are form pages, not data tables. On narrow screens
+   they're a single column; on wide screens they USE the width instead of leaving a
+   lonely strip — settings flows into two masonry columns, profile into a two-column
+   form — both centered so they read as deliberate, not stranded. */
+#page-settings{max-width:660px;margin-inline:auto}
+#page-profile{max-width:820px;margin-inline:auto}
+.profile-grid{display:grid;gap:0 1.75rem}
+@media(min-width:700px){
+  .profile-grid{grid-template-columns:1fr 1fr;align-items:start}
+}
+@media(min-width:1040px){
+  #page-settings{max-width:1120px;column-count:2;column-gap:1.5rem}
+  #page-settings>.card{break-inside:avoid;margin:0 0 1.5rem!important}
+}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .empty{text-align:center;padding:3rem 1rem;color:var(--text3)}
 .empty i{font-size:36px;margin-bottom:.75rem;display:block;opacity:.5}
@@ -1108,15 +1119,21 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="card">
           <div class="card-header"><h3>Business Profile</h3></div>
           <div class="modal-body">
-            <div class="form-group"><label>Company Name</label><input id="s-company" type="text" placeholder="Acme Inc."></div>
-            <div class="form-group"><label>Business Logo <span style="color:var(--text3);font-weight:400;font-size:11px">(shown on invoices, reports & home)</span></label>
-              <input type="file" id="s-logo-file" accept="image/*" onchange="onLogoPick(event)" style="display:none">
-              <div id="s-logo-state"></div>
-            </div>
-            <div class="form-group"><label>Address</label><textarea id="s-address" rows="3" placeholder="123 Main St..."></textarea></div>
-            <div class="form-row">
-              <div class="form-group"><label>Email</label><input id="s-email" type="email"></div>
-              <div class="form-group"><label>Phone</label><input id="s-phone" type="tel"></div>
+            <div class="profile-grid">
+              <div class="profile-col">
+                <div class="form-group"><label>Company Name</label><input id="s-company" type="text" placeholder="Acme Inc."></div>
+                <div class="form-group"><label>Business Logo <span style="color:var(--text3);font-weight:400;font-size:11px">(shown on invoices, reports &amp; home)</span></label>
+                  <input type="file" id="s-logo-file" accept="image/*" onchange="onLogoPick(event)" style="display:none">
+                  <div id="s-logo-state"></div>
+                </div>
+              </div>
+              <div class="profile-col">
+                <div class="form-group"><label>Address</label><textarea id="s-address" rows="3" placeholder="123 Main St..."></textarea></div>
+                <div class="form-row">
+                  <div class="form-group"><label>Email</label><input id="s-email" type="email"></div>
+                  <div class="form-group"><label>Phone</label><input id="s-phone" type="tel"></div>
+                </div>
+              </div>
             </div>
             <div class="settings-save-row"><button class="btn btn-primary" onclick="saveProfile()"><i class="ti ti-check"></i> Save Profile</button></div>
           </div>
