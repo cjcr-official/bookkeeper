@@ -17,7 +17,13 @@ export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(Promise.all([runReminders(env), runRecurringReminders(env)])); },
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (url.pathname === '/run' && url.searchParams.get('key') === env.MANUAL_KEY) {
+    if (url.pathname === '/run') {
+      // Gated by MANUAL_KEY. Refuse if the secret is unset (never leave the
+      // endpoint open) and compare in constant time so the key can't be
+      // recovered by timing the response.
+      if (!env.MANUAL_KEY || !timingSafeEqual(url.searchParams.get('key') || '', env.MANUAL_KEY)) {
+        return new Response('Not found', { status: 404 });
+      }
       const summary = { jobs: await runReminders(env), recurring: await runRecurringReminders(env) };
       return new Response(JSON.stringify(summary, null, 2), { headers: { 'content-type': 'application/json' } });
     }
@@ -40,6 +46,11 @@ export default {
 function withSecurityHeaders(res, env) {
   const h = new Headers(res.headers);
   h.set('X-Content-Type-Options', 'nosniff');
+  // Cross-origin isolation + clickjacking defense apply to every asset, not just
+  // the HTML doc. COOP severs the opener relationship (no window.opener leaks);
+  // X-Frame-Options backs up CSP frame-ancestors for pre-CSP2 browsers.
+  h.set('Cross-Origin-Opener-Policy', 'same-origin');
+  h.set('X-Frame-Options', 'DENY');
   if ((h.get('content-type') || '').includes('text/html')) {
     const supa = env.SUPABASE_URL || '';
     h.set('Content-Security-Policy', [
@@ -51,16 +62,26 @@ function withSecurityHeaders(res, env) {
       `img-src 'self' data: blob: ${supa}`,
       "frame-src 'self' blob: https://cdn.plaid.com https://*.plaid.com",
       "worker-src 'self'",
+      "manifest-src 'self'",
       "base-uri 'self'",
       "form-action 'self'",
       "object-src 'none'",
-      "frame-ancestors 'none'"
+      "frame-ancestors 'none'",
+      "upgrade-insecure-requests"
     ].join('; '));
     h.set('Referrer-Policy', 'no-referrer');
-    h.set('Permissions-Policy', 'geolocation=(self), camera=(), microphone=(), payment=()');
-    h.set('Strict-Transport-Security', 'max-age=31536000');
+    h.set('Permissions-Policy', 'geolocation=(self), camera=(), microphone=(), payment=(), usb=(), bluetooth=(), accelerometer=(), gyroscope=(), magnetometer=(), interest-cohort=()');
+    h.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   }
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+
+// Constant-time string comparison (avoids leaking secret length/prefix via timing).
+function timingSafeEqual(a, b) {
+  a = String(a); b = String(b);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i % b.length);
+  return diff === 0;
 }
 
 // Verify the caller's Supabase access token → user object or null.

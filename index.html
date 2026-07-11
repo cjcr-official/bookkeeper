@@ -1732,7 +1732,7 @@ async function doSignup() {
   const password = document.getElementById('signup-password').value;
   const company = document.getElementById('signup-company').value.trim();
   if (!email||!password) { showAuthError('Please fill in all fields.'); return; }
-  if (password.length < 6) { showAuthError('Password must be at least 6 characters.'); return; }
+  if (password.length < 8) { showAuthError('Password must be at least 8 characters.'); return; }
   const btn = document.getElementById('signup-btn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Creating account...';
   const {data, error} = await sb.auth.signUp({email, password});
@@ -2333,7 +2333,7 @@ function renderInvLines() {
     wrap.innerHTML = editingInvLines.map((l,i)=>`
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .7rem;margin-bottom:.5rem">
         <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
-          <input type="text" value="${(l.desc||'').replace(/"/g,'&quot;')}" oninput="editingInvLines[${i}].desc=this.value" style="flex:1;font-size:13.5px;padding:.4rem .55rem" placeholder="Service or item...">
+          <input type="text" value="${escHtml(l.desc||'')}" oninput="editingInvLines[${i}].desc=this.value" style="flex:1;font-size:13.5px;padding:.4rem .55rem" placeholder="Service or item...">
           <button onclick="removeInvLine(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;flex-shrink:0;padding:.2rem"><i class="ti ti-x"></i></button>
         </div>
         <div style="display:flex;gap:.5rem;align-items:flex-end">
@@ -2353,7 +2353,7 @@ function renderInvLines() {
           <th style="background:var(--bg2);width:32px"></th>
         </tr></thead>
         <tbody>${editingInvLines.map((l,i)=>`<tr>
-          <td style="padding:4px 6px"><input type="text" value="${(l.desc||'').replace(/"/g,'&quot;')}" oninput="editingInvLines[${i}].desc=this.value" style="font-size:13px;padding:.3rem .5rem" placeholder="Service or item..."></td>
+          <td style="padding:4px 6px"><input type="text" value="${escHtml(l.desc||'')}" oninput="editingInvLines[${i}].desc=this.value" style="font-size:13px;padding:.3rem .5rem" placeholder="Service or item..."></td>
           <td style="padding:4px 4px"><input type="number" value="${l.qty}" min="0" oninput="editingInvLines[${i}].qty=+this.value;calcLine(${i})" style="font-size:13px;padding:.3rem;text-align:center;width:55px"></td>
           <td style="padding:4px 4px"><input type="number" value="${l.rate}" min="0" step="0.01" oninput="editingInvLines[${i}].rate=+this.value;calcLine(${i})" style="font-size:13px;padding:.3rem;text-align:right;width:80px"></td>
           <td id="line-amount-${i}" style="padding:4px 6px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px">${fmt(l.amount||0)}</td>
@@ -2379,7 +2379,7 @@ function renderInvExpenses() {
   if (!editingInvExpenses.length) { wrap.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:.25rem 0 .6rem">None added.</div>'; return; }
   wrap.innerHTML = editingInvExpenses.map((e,i)=>`
     <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
-      <input type="text" value="${(e.vendor||'').replace(/"/g,'&quot;')}" oninput="editingInvExpenses[${i}].vendor=this.value" placeholder="Vendor / item" style="flex:1;font-size:13.5px;padding:.4rem .55rem">
+      <input type="text" value="${escHtml(e.vendor||'')}" oninput="editingInvExpenses[${i}].vendor=this.value" placeholder="Vendor / item" style="flex:1;font-size:13.5px;padding:.4rem .55rem">
       <input type="number" value="${e.amount||''}" min="0" step="0.01" inputmode="decimal" oninput="editingInvExpenses[${i}].amount=+this.value;calcInvTotals()" placeholder="0.00" style="width:90px;font-size:13.5px;padding:.4rem;text-align:right">
       <button class="btn btn-sm btn-danger" onclick="removeInvExpense(${i})"><i class="ti ti-x"></i></button>
     </div>`).join('');
