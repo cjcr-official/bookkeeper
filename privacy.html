@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Bookkeeper (Case Johnston Computer Repair, LLC)</title>
+<style>
+  :root{ --bg:#0f1117; --card:#171a22; --text:#e7e9ee; --text2:#aab0bd; --text3:#7b8290; --accent:#7c5cff; --border:#262b36; }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f6f7f9; --card:#ffffff; --text:#1a1d24; --text2:#454b57; --text3:#6b7280; --accent:#6d4bf0; --border:#e5e7eb; }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.6; }
+  .wrap{ max-width:760px; margin:0 auto; padding:2.5rem 1.25rem 4rem; }
+  header{ border-bottom:1px solid var(--border); padding-bottom:1.25rem; margin-bottom:1.75rem; }
+  h1{ font-size:1.6rem; margin:0 0 .35rem; }
+  h2{ font-size:1.1rem; margin:2rem 0 .5rem; }
+  .sub{ color:var(--text3); font-size:.85rem; }
+  p, li{ color:var(--text2); font-size:.95rem; }
+  a{ color:var(--accent); }
+  ul{ padding-left:1.2rem; }
+  .card{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:1rem 1.25rem; margin-top:1rem; }
+  code{ font-size:.85rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Privacy Policy</h1>
+    <div class="sub">Bookkeeper — operated by Case Johnston Computer Repair, LLC<br>Effective July 10, 2026</div>
+  </header>
+
+  <p>This Privacy Policy explains how Case Johnston Computer Repair, LLC (“we,” “us,” “our”)
+  handles information in the Bookkeeper application (“the App”), a bookkeeping tool for
+  managing invoices, customers, expenses, accounts, mileage, and related financial records.
+  We keep this simple and collect only what the App needs to work for you.</p>
+
+  <h2>Information we collect</h2>
+  <ul>
+    <li><strong>Account information</strong> — the email address you use to sign in, and any
+      business details you enter (company name, address, phone, logo).</li>
+    <li><strong>Data you enter</strong> — the financial records you create in the App:
+      invoices, customers, expenses, payments, accounts, mileage, jobs, and notes.</li>
+    <li><strong>Bank data via Plaid</strong> — if you connect a bank account, we use
+      <a href="https://plaid.com" target="_blank" rel="noopener">Plaid</a> to retrieve your
+      account transactions so the App can reconcile them against your records. This data is
+      retrieved live for reconciliation and is not retained by the App. Your bank login
+      credentials are entered directly into Plaid and are never seen or stored by us.</li>
+  </ul>
+
+  <h2>How we use your information</h2>
+  <p>We use your information solely to provide the App’s features to you: storing and
+  displaying your records, generating invoices and reports, sending reminders you enable,
+  and reconciling bank activity. <strong>We do not sell your data, and we do not use it for
+  advertising.</strong></p>
+
+  <h2>Bank connections and Plaid</h2>
+  <p>Bank connections are powered by Plaid Inc. When you link a bank, Plaid securely collects
+  your credentials and returns an access token that lets us fetch your transactions. That
+  access token is stored server-side only and is never exposed to your browser or device.
+  Plaid’s handling of your information is governed by the
+  <a href="https://plaid.com/legal/#end-user-privacy-policy" target="_blank" rel="noopener">Plaid End User Privacy Policy</a>.</p>
+
+  <h2>How we store and protect your information</h2>
+  <ul>
+    <li>Your data is stored in <strong>Supabase</strong> (hosted Postgres), <strong>encrypted
+      at rest</strong>, and is isolated to your account using row-level security so no other
+      user can access it.</li>
+    <li>All traffic between the App and our servers is encrypted in transit using
+      <strong>TLS 1.2 or better (HTTPS)</strong>.</li>
+    <li>Bank access tokens and application secrets are held server-side only and are never
+      sent to the browser.</li>
+    <li>You can protect access with an on-device passcode, Face ID / passkey, and optional
+      account-level two-factor authentication.</li>
+  </ul>
+
+  <h2>Who we share it with</h2>
+  <p>We share information only with the service providers that run the App on our behalf:</p>
+  <ul>
+    <li><strong>Supabase</strong> — database, authentication, and file storage.</li>
+    <li><strong>Cloudflare</strong> — application hosting and delivery.</li>
+    <li><strong>Plaid</strong> — bank account connections (only if you link a bank).</li>
+  </ul>
+  <p>We may also disclose information if required by law. We do not sell or rent your
+  information to anyone.</p>
+
+  <h2>Data retention and deletion</h2>
+  <p>We keep your records for as long as your account is active so the App remains useful to
+  you. You can delete individual records at any time within the App. To delete your account
+  and all associated data, or to disconnect a linked bank, contact us at the email below and
+  we will remove it.</p>
+
+  <h2>Your rights</h2>
+  <p>You may request access to, correction of, or deletion of your personal information at any
+  time by contacting us. Depending on where you live, you may have additional rights under
+  applicable privacy laws.</p>
+
+  <h2>Children’s privacy</h2>
+  <p>The App is intended for business use by adults and is not directed to children. We do not
+  knowingly collect information from children under 13.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>We may update this Privacy Policy from time to time. When we do, we will revise the
+  “Effective” date above and post the updated policy at this address.</p>
+
+  <h2>Contact us</h2>
+  <p>
+    Case Johnston Computer Repair, LLC<br>
+    111 W McGowan St, Plains, MT 59859<br>
+    Phone: (406) 249-1466<br>
+    Email: <a href="mailto:casejohnstoncomputerrepair@hotmail.com">casejohnstoncomputerrepair@hotmail.com</a>
+  </p>
+</div>
+</body>
+</html>
