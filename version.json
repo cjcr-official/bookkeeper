@@ -1,1 +1,1 @@
-{"version":298,"note":"v298: connecting a bank now requires two-factor authentication (2FA) first — Connect/Reconnect a bank prompts you to enable 2FA if it's off and blocks Plaid until it's on (then the Face ID/passkey gate as before)."}
+{"version":299,"note":"v299: link the Data Retention & Disposal Policy in Settings › Legal (next to the Privacy Policy); also served publicly at /data-retention-policy.html."}
