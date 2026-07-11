@@ -109,12 +109,12 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .sidebar-logo{padding:1.25rem 1rem 1rem;border-bottom:1px solid var(--border);margin-bottom:.5rem;display:flex;align-items:center;gap:10px}
 .sidebar-logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--cyan));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
 .sidebar-logo h1{font-size:16px;letter-spacing:-0.3px;line-height:1.1}
-.sidebar-logo span{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;display:block}
-.nav-item{display:flex;align-items:center;gap:9px;padding:.55rem 1rem;cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;border-radius:8px;margin:1px 8px;transition:all .15s}
+.sidebar-logo span{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;margin-top:1px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:.62rem 1rem;cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;border-radius:10px;margin:2px 8px;transition:background .15s,color .15s}
 .nav-item:hover{background:var(--surface);color:var(--text)}
-.nav-item.active{background:var(--accent-bg);color:var(--accent-text);box-shadow:inset 0 0 0 1px rgba(99,102,241,.22)}
+.nav-item.active{background:var(--accent-bg);color:var(--accent-text);font-weight:600}
 .nav-item i{font-size:17px;flex-shrink:0}
-.nav-section{font-size:10px;font-weight:700;letter-spacing:1.2px;color:var(--text3);padding:.8rem 1.25rem .3rem;text-transform:uppercase;font-family:'JetBrains Mono',monospace}
+.nav-item.active i{color:var(--accent)}
 .main{flex:1;overflow-y:auto;display:flex;flex-direction:column}
 .topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:.7rem 1.5rem;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:1rem;position:sticky;top:0;z-index:400}
 .topbar-left{display:flex;align-items:center;gap:.75rem}
@@ -279,6 +279,9 @@ textarea{resize:vertical;min-height:70px}
 /* ── LAYOUT HELPERS ── */
 .page{display:none}
 .page.active{display:block}
+/* Settings & Business Profile are form pages, not data tables — center them in a
+   comfortable column instead of hugging the left of the wide content area. */
+#page-settings,#page-profile{max-width:620px;margin-inline:auto}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .empty{text-align:center;padding:3rem 1rem;color:var(--text3)}
 .empty i{font-size:36px;margin-bottom:.75rem;display:block;opacity:.5}
@@ -803,14 +806,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
       </div>
     </div>
     <div class="sidebar-nav-scroll">
-    <div class="nav-section">Overview</div>
     <div class="nav-item active" role="button" tabindex="0" onclick="showPage('dashboard',this)"><i class="ti ti-layout-dashboard"></i><span>Home</span></div>
-    <div class="nav-section">Money In</div>
     <div class="nav-item" role="button" tabindex="0" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i><span>Invoices</span></div>
     <div class="nav-item" role="button" tabindex="0" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
-    <div class="nav-section">Money Out</div>
     <div class="nav-item" role="button" tabindex="0" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
-    <div class="nav-section">Finance</div>
     <div class="nav-item" role="button" tabindex="0" onclick="showPage('accounts',this)"><i class="ti ti-file-dollar"></i><span>Statements</span></div>
     <div class="nav-item" role="button" tabindex="0" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
     </div>
@@ -999,7 +998,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <!-- SETTINGS -->
       <!-- SETTINGS (app: appearance, notifications, account) -->
       <div id="page-settings" class="page">
-        <div class="card" style="max-width:500px">
+        <div class="card">
           <div class="card-header"><h3>Appearance</h3></div>
           <div class="modal-body">
             <button class="setting-row" id="theme-switch-row" role="switch" aria-label="Dark mode" onclick="toggleTheme()">
@@ -1008,7 +1007,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </button>
           </div>
         </div>
-        <div class="card" style="max-width:500px;margin-top:1rem">
+        <div class="card" style="margin-top:1rem">
           <div class="card-header"><h3>Notifications</h3></div>
           <div class="modal-body">
             <button class="setting-row" id="push-switch-row" role="switch" aria-checked="false" aria-label="Push notifications" onclick="togglePush()">
@@ -1037,7 +1036,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-job reminders at the time you set on each job. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
           </div>
         </div>
-        <div class="card" style="max-width:500px;margin-top:1rem">
+        <div class="card" style="margin-top:1rem">
           <div class="card-header"><h3>Invoice Defaults</h3></div>
           <div class="modal-body">
             <div class="form-row">
@@ -1049,7 +1048,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <button class="btn btn-primary btn-sm" onclick="saveInvoiceDefaults()"><i class="ti ti-check"></i> Save invoice defaults</button>
           </div>
         </div>
-        <div class="card" style="max-width:500px;margin-top:1rem">
+        <div class="card" style="margin-top:1rem">
           <details class="settings-collapse">
             <summary class="card-header" style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between"><h3>Expense Categories</h3><i class="ti ti-chevron-down settings-collapse-chev"></i></summary>
             <div class="modal-body">
@@ -1062,7 +1061,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </div>
           </details>
         </div>
-        <div class="card" style="max-width:500px;margin-top:1rem">
+        <div class="card" style="margin-top:1rem">
           <div class="card-header"><h3>Security</h3></div>
           <div class="modal-body">
             <button class="setting-row" id="lock-switch-row" role="switch" aria-checked="false" aria-label="App lock" onclick="toggleAppLock()">
@@ -1083,7 +1082,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div id="mfa-trust-row" style="display:none;margin-top:.6rem"><button class="btn btn-sm" onclick="forgetTrustedDeviceUI()"><i class="ti ti-shield-x"></i> Forget this trusted device</button><span style="font-size:11px;color:var(--text3);margin-left:.5rem">This device skips the code until it expires — tap to require it again.</span></div>
           </div>
         </div>
-        <div class="card" style="max-width:500px;margin-top:1rem">
+        <div class="card" style="margin-top:1rem">
           <div class="card-header"><h3>Account</h3></div>
           <div class="modal-body">
             <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Signed in as <strong id="user-email-display"></strong></p>
@@ -1093,7 +1092,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">Permanently deletes your login and all your data. This can't be undone.</div>
           </div>
         </div>
-        <div class="card" style="max-width:500px;margin-top:1rem">
+        <div class="card" style="margin-top:1rem">
           <div class="card-header"><h3>Legal</h3></div>
           <div class="modal-body">
             <a class="btn" href="privacy.html" target="_blank" rel="noopener"><i class="ti ti-shield-lock"></i> Privacy Policy</a>
@@ -1106,7 +1105,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- PROFILE (business identity: company, logo, contact) — reached via the logo -->
       <div id="page-profile" class="page">
-        <div class="card" style="max-width:500px">
+        <div class="card">
           <div class="card-header"><h3>Business Profile</h3></div>
           <div class="modal-body">
             <div class="form-group"><label>Company Name</label><input id="s-company" type="text" placeholder="Acme Inc."></div>
