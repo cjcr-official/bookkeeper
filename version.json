@@ -1,1 +1,1 @@
-{"version":293,"note":"v293: 2FA enrollment labels the authenticator entry 'Bookkeeper' (was falling back to the Supabase Site URL, e.g. 'localhost:3000') via an explicit issuer/friendlyName. (v292 fixed the QR code rendering as a single clean image.)"}
+{"version":294,"note":"v294: phishing-resistant MFA before Plaid Link — connecting or reconnecting a bank now requires a Face ID / passkey (WebAuthn platform authenticator, user-verification required) first. First use enrolls a device passkey; reuses the App Lock credential if present."}

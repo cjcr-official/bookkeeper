@@ -4136,7 +4136,42 @@ async function migratePlaidKeys(primaryId) {
   if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
 }
 // Open Plaid Link → exchange the public_token server-side → refresh the card.
+// Phishing-resistant MFA gate that runs BEFORE Plaid Link is surfaced: a platform
+// passkey / biometric (Face ID / Touch ID) verification via WebAuthn with
+// userVerification required. First use enrolls a device passkey (that ceremony is
+// itself a biometric check); later uses verify it. Reuses the App Lock credential
+// if one exists. On a platform without WebAuthn it falls through so the feature
+// still works — but on the installed iPhone PWA this always prompts Face ID.
+async function requirePlaidPasskey() {
+  if (!faceIdSupported()) return true;
+  let id = lsGet('bk-plaid-cred') || lsGet('bk-lock-cred');
+  try {
+    if (!id) {
+      const cred = await navigator.credentials.create({ publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: 'Bookkeeper' },
+        user: { id: new TextEncoder().encode(currentUser.id), name: currentUser.email || 'user', displayName: currentUser.email || 'user' },
+        pubKeyCredParams: [{ type:'public-key', alg:-7 }, { type:'public-key', alg:-257 }],
+        authenticatorSelection: { authenticatorAttachment:'platform', userVerification:'required' },
+        timeout: 60000, attestation: 'none'
+      }});
+      lsSet('bk-plaid-cred', _b64u(cred.rawId));
+      return true;
+    }
+    await navigator.credentials.get({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      allowCredentials: [{ type:'public-key', id: _unb64u(id) }],
+      userVerification: 'required', timeout: 60000
+    }});
+    return true;
+  } catch (e) {
+    showToast('Face ID / passkey required to connect a bank', 'error');
+    return false;
+  }
+}
+
 async function plaidConnect() {
+  if (!(await requirePlaidPasskey())) return;
   try {
     await loadPlaidLink();
     const { link_token } = await plaidFetch('/plaid/link-token', { method: 'POST', body: '{}' });
@@ -4248,6 +4283,7 @@ async function plaidDisconnect(itemId) {
 // asks for a fresh sign-in. Keeps the same item, so no new duplicate is created.
 async function plaidReconnect(itemId) {
   if (!itemId) return plaidConnect();   // fallback: treat as a fresh add
+  if (!(await requirePlaidPasskey())) return;
   try {
     await loadPlaidLink();
     const { link_token } = await plaidFetch('/plaid/link-token', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
