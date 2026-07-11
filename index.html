@@ -767,6 +767,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div id="mfa-login-form" style="display:none">
       <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Enter the 6-digit code from your authenticator app to finish signing in.</p>
       <div class="form-group"><label>Authentication code</label><input id="mfa-login-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:18px" onkeydown="if(event.key==='Enter')doMfaLogin()"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin:.25rem 0 1rem;cursor:pointer"><input type="checkbox" id="mfa-remember" style="width:auto;margin:0"> Remember this device for 30 days</label>
       <button class="btn btn-primary btn-full" onclick="doMfaLogin()" id="mfa-login-btn"><i class="ti ti-shield-lock"></i> Verify</button>
       <div style="text-align:center;margin-top:1rem"><button style="background:none;border:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="cancelMfaLogin()">Cancel</button></div>
     </div>
@@ -1064,6 +1065,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span class="theme-switch" id="mfa-switch"><span class="theme-switch-knob"></span></span>
             </button>
             <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Unlike App Lock (this device only), 2FA is tied to your account and applies on every device. You'll need an authenticator app (Google Authenticator, Authy, 1Password, iOS Passwords…).</div>
+            <div id="mfa-trust-row" style="display:none;margin-top:.6rem"><button class="btn btn-sm" onclick="forgetTrustedDeviceUI()"><i class="ti ti-shield-x"></i> Forget this trusted device</button><span style="font-size:11px;color:var(--text3);margin-left:.5rem">This device skips the code until it expires — tap to require it again.</span></div>
           </div>
         </div>
         <div class="card" style="max-width:500px;margin-top:1rem">
@@ -1694,11 +1696,27 @@ async function mfaVerifiedFactor() {
       || null;
   } catch(_) { return null; }
 }
-// True when the signed-in session still needs an app code to reach aal2.
+// Trusted-device: skip the code prompt on this device for a while after the user
+// opts in. Stored per-account in localStorage with an expiry; the passkey gate
+// before Plaid Link is unaffected (it always runs).
+function deviceTrusted() {
+  try {
+    const t = JSON.parse(lsGet('bk-mfa-trust')||'null');
+    return !!(t && currentUser && t.uid===currentUser.id && t.exp>Date.now());
+  } catch(_) { return false; }
+}
+function trustThisDevice(days=30) {
+  try { lsSet('bk-mfa-trust', JSON.stringify({uid:currentUser.id, exp:Date.now()+days*86400000})); } catch(_){}
+}
+function forgetTrustedDevice() { lsRemove('bk-mfa-trust'); }
+
+// True when the signed-in session still needs an app code to reach aal2 — unless
+// this device is trusted.
 async function mfaChallengeNeeded() {
   try {
     const {data} = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
-    return !!(data && data.nextLevel==='aal2' && data.currentLevel!=='aal2');
+    if (!(data && data.nextLevel==='aal2' && data.currentLevel!=='aal2')) return false;
+    return !deviceTrusted();
   } catch(_) { return false; }
 }
 
@@ -1731,6 +1749,8 @@ async function doMfaLogin() {
   const {error} = await sb.auth.mfa.challengeAndVerify({factorId:factor.id, code});
   btn.disabled=false; btn.innerHTML='<i class="ti ti-shield-lock"></i> Verify';
   if (error) { showAuthError(error.message); return; }
+  const rem = document.getElementById('mfa-remember');
+  if (rem && rem.checked) trustThisDevice(30);
   // Verify raises the session to aal2 but fires no SIGNED_IN — enter the app here.
   resetAuthView();
   document.getElementById('auth-wrap').style.display='none';
@@ -1757,6 +1777,13 @@ async function renderMfaUI() {
   if (sw) sw.classList.toggle('on', on);
   row.setAttribute('aria-checked', on?'true':'false');
   if (sub) sub.textContent = on ? 'On — an authenticator code is required at sign-in' : 'Require an authenticator code when signing in';
+  const tr = document.getElementById('mfa-trust-row');
+  if (tr) tr.style.display = (on && deviceTrusted()) ? '' : 'none';
+}
+function forgetTrustedDeviceUI() {
+  forgetTrustedDevice();
+  showToast('This device will ask for a code next sign-in','success');
+  renderMfaUI();
 }
 async function toggleMfa() {
   const factor = await mfaVerifiedFactor();
@@ -1764,6 +1791,7 @@ async function toggleMfa() {
     if (!confirm('Turn off two-factor authentication? You’ll sign in with just your password.')) return;
     const {error} = await sb.auth.mfa.unenroll({factorId:factor.id});
     if (error) { showToast(error.message,'error'); return; }
+    forgetTrustedDevice();
     showToast('Two-factor authentication off','success');
     renderMfaUI(); return;
   }
