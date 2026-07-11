@@ -174,7 +174,7 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
    Matched / finder / set-aside / pending are reference → flat rows in a zone
    set off by space, so a loaded month reads primary-first at a glance. */
 .rec-action{box-shadow:var(--shadow)}
-.rec-clear{display:flex;align-items:center;gap:.75rem;padding:.95rem 1.05rem;border-radius:var(--radius);background:var(--green-bg);border:1px solid rgba(34,197,94,.28);margin-bottom:.85rem}
+.rec-clear{display:flex;align-items:center;gap:.75rem;padding:.95rem 1.05rem;border-radius:var(--radius);background:var(--green-bg);border:1px solid rgba(34,197,94,.3);margin-bottom:.85rem}
 .rec-refzone{margin-top:1.5rem;padding-top:.15rem;border-top:1px solid var(--border)}
 .rec-ref{border-bottom:1px solid var(--border)}
 .rec-ref:last-child{border-bottom:none}
@@ -270,7 +270,7 @@ input[type="date"]::-webkit-calendar-picker-indicator{margin-left:auto;flex-shri
 input[type="date"]::-webkit-datetime-edit{padding:0}
 
 input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
-button:focus-visible,.btn:focus-visible,.nav-item:focus-visible,.theme-toggle:focus-visible,a:focus-visible,[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:focus-visible,.btn:focus-visible,.nav-item:focus-visible,.theme-toggle:focus-visible,a:focus-visible,summary:focus-visible,[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
 select option{background:var(--surface);color:var(--text)}
 textarea{resize:vertical;min-height:70px}
@@ -4202,8 +4202,8 @@ async function renderPlaidBlock() {
         <div style="font-size:11px;display:flex;align-items:center;gap:.28rem;margin-top:2px;color:${active ? 'var(--accent)' : 'var(--green)'}"><i class="ti ti-${active ? 'checkbox' : 'circle-check'}" style="font-size:12px"></i> ${active ? 'Reconciling this bank' : 'Tap to reconcile'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0;margin-left:auto" onclick="event.stopPropagation()">
-        <button class="btn btn-sm" onclick="plaidReconnect('${escHtml(bk.item_id)}')" title="Reconnect / fix sign-in" style="padding:.35rem .6rem"><i class="ti ti-refresh"></i>Reconnect</button>
-        <button class="btn btn-sm btn-danger" onclick="plaidDisconnect('${escHtml(bk.item_id)}')" title="Disconnect this bank" style="padding:.35rem .6rem"><i class="ti ti-unlink"></i>Disconnect</button>
+        <button class="btn btn-sm" onclick="plaidReconnect('${escHtml(bk.item_id)}')" title="Reconnect / fix sign-in" style="padding:.3rem .6rem"><i class="ti ti-refresh"></i>Reconnect</button>
+        <button class="btn btn-sm btn-danger" onclick="plaidDisconnect('${escHtml(bk.item_id)}')" title="Disconnect this bank" style="padding:.3rem .6rem"><i class="ti ti-unlink"></i>Disconnect</button>
       </div>
     </div>`;
   }).join('');
@@ -5687,7 +5687,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const actionZone = passedClean
     ? `<div class="rec-clear">
         <i class="ti ti-circle-check" style="font-size:22px;color:var(--green);flex-shrink:0"></i>
-        <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14.5px;color:var(--text)">Everything's matched</div><div style="font-size:12px;color:var(--text2);margin-top:1px">Nothing on ${escHtml(monthLabel||'this month')} needs your attention.</div></div>
+        <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14.5px;color:var(--text)">Everything’s matched</div><div style="font-size:12px;color:var(--text2);margin-top:1px">Nothing on ${escHtml(monthLabel||'this month')} needs your attention.</div></div>
       </div>`
     : (onBankOnly.length ? `<div class="card rec-action" style="padding:.9rem 1rem;margin-bottom:.85rem">${secHead('On the bank · not in your books', onBankOnly.length)}${bankRows}</div>` : '')
       + (inRecordsOnly.length ? `<div class="card rec-action" style="padding:.9rem 1rem;margin-bottom:.85rem">${secHead('In your books · not on the bank', inRecordsOnly.length)}${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true)))}</div>` : '');
