@@ -291,7 +291,8 @@ textarea{resize:vertical;min-height:70px}
 .settings-nav{display:none}
 .settings-panel .settings-section{margin-top:0}
 @media(min-width:769px){
-  #page-settings{display:grid;grid-template-columns:210px minmax(0,600px);gap:2rem;justify-content:center;align-items:start}
+  /* .active keeps this ID rule from beating .page{display:none} on other pages. */
+  #page-settings.active{display:grid;grid-template-columns:210px minmax(0,600px);gap:2rem;justify-content:center;align-items:start}
   .settings-nav{display:flex;flex-direction:column;gap:2px;position:sticky;top:1.5rem}
   .settings-nav-item{display:flex;align-items:center;gap:10px;padding:.6rem .8rem;border-radius:10px;border:none;background:none;color:var(--text2);font-family:inherit;font-size:13.5px;font-weight:500;cursor:pointer;text-align:left;transition:background .15s,color .15s}
   .settings-nav-item:hover{background:var(--surface);color:var(--text)}
