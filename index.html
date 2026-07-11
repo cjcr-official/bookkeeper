@@ -279,19 +279,27 @@ textarea{resize:vertical;min-height:70px}
 /* ── LAYOUT HELPERS ── */
 .page{display:none}
 .page.active{display:block}
-/* Settings & Business Profile are form pages, not data tables. On narrow screens
-   they're a single column; on wide screens they USE the width instead of leaving a
-   lonely strip — settings flows into two masonry columns, profile into a two-column
-   form — both centered so they read as deliberate, not stranded. */
-#page-settings{max-width:660px;margin-inline:auto}
+/* Business Profile: two-column form on wide screens, single column on mobile. */
 #page-profile{max-width:820px;margin-inline:auto}
 .profile-grid{display:grid;gap:0 1.75rem}
 @media(min-width:700px){
   .profile-grid{grid-template-columns:1fr 1fr;align-items:start}
 }
-@media(min-width:1040px){
-  #page-settings{max-width:1120px;column-count:2;column-gap:1.5rem}
-  #page-settings>.card{break-inside:avoid;margin:0 0 1.5rem!important}
+/* Settings: a left section-nav + one focused panel — the pattern real apps use for
+   multi-section settings. It fills the width structurally instead of stranding cards
+   in empty space. On mobile the nav hides and every section stacks (phone unchanged). */
+.settings-nav{display:none}
+.settings-panel .settings-section{margin-top:0}
+@media(min-width:769px){
+  #page-settings{display:grid;grid-template-columns:210px minmax(0,600px);gap:2rem;justify-content:center;align-items:start}
+  .settings-nav{display:flex;flex-direction:column;gap:2px;position:sticky;top:1.5rem}
+  .settings-nav-item{display:flex;align-items:center;gap:10px;padding:.6rem .8rem;border-radius:10px;border:none;background:none;color:var(--text2);font-family:inherit;font-size:13.5px;font-weight:500;cursor:pointer;text-align:left;transition:background .15s,color .15s}
+  .settings-nav-item:hover{background:var(--surface);color:var(--text)}
+  .settings-nav-item.active{background:var(--accent-bg);color:var(--accent-text);font-weight:600}
+  .settings-nav-item i{font-size:17px;flex-shrink:0}
+  .settings-nav-item.active i{color:var(--accent)}
+  .settings-panel .settings-section{display:none;margin-bottom:0}
+  .settings-panel .settings-section.active{display:block}
 }
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .empty{text-align:center;padding:3rem 1rem;color:var(--text3)}
@@ -1009,7 +1017,17 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <!-- SETTINGS -->
       <!-- SETTINGS (app: appearance, notifications, account) -->
       <div id="page-settings" class="page">
-        <div class="card">
+        <aside class="settings-nav">
+          <button class="settings-nav-item active" data-sec="appearance" onclick="showSettingsSection('appearance')"><i class="ti ti-palette"></i>Appearance</button>
+          <button class="settings-nav-item" data-sec="notifications" onclick="showSettingsSection('notifications')"><i class="ti ti-bell"></i>Notifications</button>
+          <button class="settings-nav-item" data-sec="invoice" onclick="showSettingsSection('invoice')"><i class="ti ti-file-invoice"></i>Invoice defaults</button>
+          <button class="settings-nav-item" data-sec="categories" onclick="showSettingsSection('categories')"><i class="ti ti-tags"></i>Expense categories</button>
+          <button class="settings-nav-item" data-sec="security" onclick="showSettingsSection('security')"><i class="ti ti-shield-lock"></i>Security</button>
+          <button class="settings-nav-item" data-sec="account" onclick="showSettingsSection('account')"><i class="ti ti-user"></i>Account</button>
+          <button class="settings-nav-item" data-sec="legal" onclick="showSettingsSection('legal')"><i class="ti ti-file-text"></i>Legal</button>
+        </aside>
+        <div class="settings-panel">
+        <div class="card settings-section active" data-sec="appearance">
           <div class="card-header"><h3>Appearance</h3></div>
           <div class="modal-body">
             <button class="setting-row" id="theme-switch-row" role="switch" aria-label="Dark mode" onclick="toggleTheme()">
@@ -1018,7 +1036,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </button>
           </div>
         </div>
-        <div class="card" style="margin-top:1rem">
+        <div class="card settings-section" data-sec="notifications">
           <div class="card-header"><h3>Notifications</h3></div>
           <div class="modal-body">
             <button class="setting-row" id="push-switch-row" role="switch" aria-checked="false" aria-label="Push notifications" onclick="togglePush()">
@@ -1047,7 +1065,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-job reminders at the time you set on each job. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
           </div>
         </div>
-        <div class="card" style="margin-top:1rem">
+        <div class="card settings-section" data-sec="invoice">
           <div class="card-header"><h3>Invoice Defaults</h3></div>
           <div class="modal-body">
             <div class="form-row">
@@ -1059,20 +1077,18 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <button class="btn btn-primary btn-sm" onclick="saveInvoiceDefaults()"><i class="ti ti-check"></i> Save invoice defaults</button>
           </div>
         </div>
-        <div class="card" style="margin-top:1rem">
-          <details class="settings-collapse">
-            <summary class="card-header" style="cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between"><h3>Expense Categories</h3><i class="ti ti-chevron-down settings-collapse-chev"></i></summary>
-            <div class="modal-body">
-              <div id="set-cat-list"></div>
-              <div style="display:flex;gap:.5rem;margin-top:.6rem">
-                <input id="set-new-cat" type="text" placeholder="New category…" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addSettingsCategory();}">
-                <button class="btn btn-sm" onclick="addSettingsCategory()"><i class="ti ti-plus"></i> Add</button>
-              </div>
-              <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">These are the choices when you categorize an expense.</div>
+        <div class="card settings-section" data-sec="categories">
+          <div class="card-header"><h3>Expense Categories</h3></div>
+          <div class="modal-body">
+            <div id="set-cat-list"></div>
+            <div style="display:flex;gap:.5rem;margin-top:.6rem">
+              <input id="set-new-cat" type="text" placeholder="New category…" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addSettingsCategory();}">
+              <button class="btn btn-sm" onclick="addSettingsCategory()"><i class="ti ti-plus"></i> Add</button>
             </div>
-          </details>
+            <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">These are the choices when you categorize an expense.</div>
+          </div>
         </div>
-        <div class="card" style="margin-top:1rem">
+        <div class="card settings-section" data-sec="security">
           <div class="card-header"><h3>Security</h3></div>
           <div class="modal-body">
             <button class="setting-row" id="lock-switch-row" role="switch" aria-checked="false" aria-label="App lock" onclick="toggleAppLock()">
@@ -1093,7 +1109,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div id="mfa-trust-row" style="display:none;margin-top:.6rem"><button class="btn btn-sm" onclick="forgetTrustedDeviceUI()"><i class="ti ti-shield-x"></i> Forget this trusted device</button><span style="font-size:11px;color:var(--text3);margin-left:.5rem">This device skips the code until it expires — tap to require it again.</span></div>
           </div>
         </div>
-        <div class="card" style="margin-top:1rem">
+        <div class="card settings-section" data-sec="account">
           <div class="card-header"><h3>Account</h3></div>
           <div class="modal-body">
             <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Signed in as <strong id="user-email-display"></strong></p>
@@ -1103,7 +1119,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">Permanently deletes your login and all your data. This can't be undone.</div>
           </div>
         </div>
-        <div class="card" style="margin-top:1rem">
+        <div class="card settings-section" data-sec="legal">
           <div class="card-header"><h3>Legal</h3></div>
           <div class="modal-body">
             <a class="btn" href="privacy.html" target="_blank" rel="noopener"><i class="ti ti-shield-lock"></i> Privacy Policy</a>
@@ -1111,6 +1127,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <a class="btn" href="data-retention-policy.html" target="_blank" rel="noopener" style="margin-top:1rem"><i class="ti ti-clock-hour-4"></i> Data Retention &amp; Disposal Policy</a>
             <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">What data is kept, for how long, and how it's deleted.</div>
           </div>
+        </div>
         </div>
       </div>
 
@@ -5861,6 +5878,13 @@ function loadSettingsForm() {
   renderLockUI();
   renderMfaUI();
   document.getElementById('user-email-display').textContent=currentUser.email;
+}
+
+// Settings is a left section-nav + one focused panel on desktop (on mobile the nav
+// is hidden and every section stacks). Toggle which section shows + which nav is lit.
+function showSettingsSection(name) {
+  document.querySelectorAll('#page-settings .settings-section').forEach(s => s.classList.toggle('active', s.dataset.sec === name));
+  document.querySelectorAll('#page-settings .settings-nav-item').forEach(b => b.classList.toggle('active', b.dataset.sec === name));
 }
 
 // ── Invoice defaults (terms/footer, payment window, starting number) ──
