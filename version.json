@@ -1,1 +1,1 @@
-{"version":292,"note":"v292: fix the 2FA setup screen — the authenticator QR code now renders as a single clean image (was showing a broken-image box plus a stray duplicate QR because the SVG data-URI was concatenated into innerHTML)."}
+{"version":293,"note":"v293: 2FA enrollment labels the authenticator entry 'Bookkeeper' (was falling back to the Supabase Site URL, e.g. 'localhost:3000') via an explicit issuer/friendlyName. (v292 fixed the QR code rendering as a single clean image.)"}
