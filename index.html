@@ -4225,6 +4225,18 @@ async function migratePlaidKeys(primaryId) {
   if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
 }
 // Open Plaid Link → exchange the public_token server-side → refresh the card.
+// Require account-level 2FA (TOTP) to be ON before a bank can be linked. If it
+// isn't, offer to set it up now and block the connect until it is.
+async function requirePlaidMfa() {
+  if (await mfaVerifiedFactor()) return true;
+  if (confirm('To connect a bank you must first turn on two-factor authentication (2FA). Set it up now?')) {
+    await toggleMfa();   // opens the enrollment modal; user re-taps Connect a bank after
+  } else {
+    showToast('Two-factor authentication is required to connect a bank', 'error');
+  }
+  return false;
+}
+
 // Phishing-resistant MFA gate that runs BEFORE Plaid Link is surfaced: a platform
 // passkey / biometric (Face ID / Touch ID) verification via WebAuthn with
 // userVerification required. First use enrolls a device passkey (that ceremony is
@@ -4260,6 +4272,7 @@ async function requirePlaidPasskey() {
 }
 
 async function plaidConnect() {
+  if (!(await requirePlaidMfa())) return;
   if (!(await requirePlaidPasskey())) return;
   try {
     await loadPlaidLink();
@@ -4372,6 +4385,7 @@ async function plaidDisconnect(itemId) {
 // asks for a fresh sign-in. Keeps the same item, so no new duplicate is created.
 async function plaidReconnect(itemId) {
   if (!itemId) return plaidConnect();   // fallback: treat as a fresh add
+  if (!(await requirePlaidMfa())) return;
   if (!(await requirePlaidPasskey())) return;
   try {
     await loadPlaidLink();

@@ -1,1 +1,1 @@
-{"version":297,"note":"v297: Delete account (Settings › Account) — type DELETE to confirm, then a new Worker endpoint unlinks banks at Plaid, drops the service-key-only plaid_items, wipes Storage files + every data row, and deletes the login itself. Irreversible; also clears on-device state."}
+{"version":298,"note":"v298: connecting a bank now requires two-factor authentication (2FA) first — Connect/Reconnect a bank prompts you to enable 2FA if it's off and blocks Plaid until it's on (then the Face ID/passkey gate as before)."}
