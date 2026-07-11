@@ -1,1 +1,1 @@
-{"version":299,"note":"v299: link the Data Retention & Disposal Policy in Settings › Legal (next to the Privacy Policy); also served publicly at /data-retention-policy.html."}
+{"version":300,"note":"v300: 'Restore reconciliation history' — when a broken bank link is reconnected under a new Plaid item_id, earlier audit results + manual matches get orphaned; a button on the Statements bank card moves them onto the reconnected bank (keeping months already redone) so you don't re-reconcile everything."}

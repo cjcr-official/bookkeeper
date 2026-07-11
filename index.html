@@ -4187,6 +4187,7 @@ async function renderPlaidBlock() {
       <div style="font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3)">${multi ? 'Your banks — tap one to reconcile it' : 'Connected bank'}</div>
       ${bankRows}
       <button class="btn" onclick="plaidConnect()" style="width:100%;margin-top:.7rem"><i class="ti ti-plus"></i> Add another bank</button>
+      ${orphanedReconKeys().length ? `<button class="btn" onclick="restoreReconToSelected()" style="width:100%;margin-top:.7rem;color:var(--accent);border-color:var(--accent)"><i class="ti ti-history"></i> Restore reconciliation history</button><div style="font-size:11px;color:var(--text3);margin-top:.4rem;text-align:center;line-height:1.5">Reconnected bank looks empty? Move your earlier months onto it — no need to re-reconcile.</div>` : ''}
       <div id="plaid-pending-note" style="font-size:11.5px;color:var(--text3);margin-top:.6rem;display:flex;align-items:center;gap:.35rem"></div>
       <button class="btn btn-primary" id="plaid-year-btn" onclick="plaidCheckYear()" style="width:100%;margin-top:.7rem"><i class="ti ti-calendar-stats"></i> Check all 12 months</button>
       <div style="font-size:11.5px;color:var(--text3);margin-top:.55rem;text-align:center">Or tap a month below to reconcile just that one</div>
@@ -4225,6 +4226,43 @@ async function migratePlaidKeys(primaryId) {
     }
   }
   if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
+}
+// Recovery: when a bank link breaks and is re-linked, Plaid may issue a NEW
+// item_id, leaving the old months' audit results + manual matches orphaned under
+// the OLD id. These helpers find that orphaned history and move it onto the
+// currently selected (reconnected) bank so nothing has to be re-reconciled.
+function orphanedReconKeys() {
+  const cur = new Set((_plaidBanks || []).map(b => b.item_id));
+  const isReal = k => k && k !== '_' && !/^\d{4}-\d{2}$/.test(k) && !cur.has(k);
+  const keys = new Set();
+  Object.keys(profile.audited_months || {}).forEach(k => { if (isReal(k)) keys.add(k); });
+  Object.keys(profile.plaid_recon || {}).forEach(k => { if (isReal(k)) keys.add(k); });
+  return [...keys];
+}
+async function restoreReconToSelected() {
+  const orphans = orphanedReconKeys();
+  if (!orphans.length) { showToast('No earlier reconciliation history to restore', 'success'); return; }
+  if (!_selBank) { showToast('Select the reconnected bank first', 'error'); return; }
+  const am = profile.audited_months || {}, pr = profile.plaid_recon || {};
+  const monthsSet = new Set();
+  orphans.forEach(k => { Object.keys(am[k] || {}).forEach(m => monthsSet.add(m)); Object.keys(pr[k] || {}).forEach(m => monthsSet.add(m)); });
+  const targetName = ((_plaidBanks || []).find(b => b.item_id === _selBank) || {}).institution || 'the selected bank';
+  if (!confirm(`Restore ${monthsSet.size} month(s) of reconciliation history onto ${targetName}? This moves your earlier audit results and manual matches from the old (broken) bank link onto the reconnected one. Months you've already redone are kept.`)) return;
+  profile.audited_months = profile.audited_months || {};
+  profile.plaid_recon = profile.plaid_recon || {};
+  // Existing (already-redone) months on the target win; old months fill the gaps.
+  orphans.forEach(oldId => {
+    if (profile.audited_months[oldId]) profile.audited_months[_selBank] = Object.assign({}, profile.audited_months[oldId], profile.audited_months[_selBank] || {});
+    if (profile.plaid_recon[oldId]) profile.plaid_recon[_selBank] = Object.assign({}, profile.plaid_recon[oldId], profile.plaid_recon[_selBank] || {});
+    delete profile.audited_months[oldId];
+    delete profile.plaid_recon[oldId];
+  });
+  try {
+    await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id);
+    showToast('Reconciliation history restored', 'success');
+    _recState = null;
+    renderPlaidBlock();
+  } catch (e) { showToast('Restore failed: ' + (e.message || e), 'error'); }
 }
 // Open Plaid Link → exchange the public_token server-side → refresh the card.
 // Require account-level 2FA (TOTP) to be ON before a bank can be linked. If it
