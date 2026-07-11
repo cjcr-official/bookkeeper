@@ -286,21 +286,24 @@ textarea{resize:vertical;min-height:70px}
   .profile-grid{grid-template-columns:1fr 1fr;align-items:start}
 }
 /* Settings: a left section-nav + one focused panel — the pattern real apps use for
-   multi-section settings. It fills the width structurally instead of stranding cards
-   in empty space. On mobile the nav hides and every section stacks (phone unchanged). */
+   multi-section settings. Below the two-pane breakpoint every section stacks in a
+   single capped column (nav hidden); the two-pane only turns on once there's room
+   for a 210px rail AND a comfortable panel (~1000px), so it never engages cramped.
+   On mobile it's the same stacked column (phone unchanged). */
 .settings-nav{display:none}
-.settings-panel .settings-section{margin-top:0}
-@media(min-width:769px){
+.settings-panel .settings-section{margin-top:0;max-width:640px;margin-inline:auto}
+@media(min-width:1000px){
   /* .active keeps this ID rule from beating .page{display:none} on other pages. */
   #page-settings.active{display:grid;grid-template-columns:210px minmax(0,600px);gap:2rem;justify-content:center;align-items:start}
-  .settings-nav{display:flex;flex-direction:column;gap:2px;position:sticky;top:1.5rem}
+  .settings-nav{display:flex;flex-direction:column;gap:2px;position:sticky;top:4.5rem;align-self:start}
   .settings-nav-item{display:flex;align-items:center;gap:10px;padding:.6rem .8rem;border-radius:10px;border:none;background:none;color:var(--text2);font-family:inherit;font-size:13.5px;font-weight:500;cursor:pointer;text-align:left;transition:background .15s,color .15s}
   .settings-nav-item:hover{background:var(--surface);color:var(--text)}
   .settings-nav-item.active{background:var(--accent-bg);color:var(--accent-text);font-weight:600}
   .settings-nav-item i{font-size:17px;flex-shrink:0}
   .settings-nav-item.active i{color:var(--accent)}
-  .settings-panel .settings-section{display:none;margin-bottom:0}
-  .settings-panel .settings-section.active{display:block}
+  .settings-panel{min-width:0}
+  .settings-panel .settings-section{display:none;margin:0;max-width:none}
+  .settings-panel .settings-section.active{display:block;animation:bkFade .15s ease-out}
 }
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .empty{text-align:center;padding:3rem 1rem;color:var(--text3)}
@@ -5886,6 +5889,9 @@ function loadSettingsForm() {
 function showSettingsSection(name) {
   document.querySelectorAll('#page-settings .settings-section').forEach(s => s.classList.toggle('active', s.dataset.sec === name));
   document.querySelectorAll('#page-settings .settings-nav-item').forEach(b => b.classList.toggle('active', b.dataset.sec === name));
+  // Reset scroll so the new section starts at its top (a tall previous section may
+  // have left the scroll mid-page). No-op when nothing was scrolled.
+  const m = document.querySelector('.main'); if (m) m.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ── Invoice defaults (terms/footer, payment window, starting number) ──
