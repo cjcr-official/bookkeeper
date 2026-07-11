@@ -1073,6 +1073,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <div class="modal-body">
             <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Signed in as <strong id="user-email-display"></strong></p>
             <button class="btn btn-danger" onclick="doLogout()"><i class="ti ti-logout"></i> Sign Out</button>
+            <div style="border-top:1px solid var(--border);margin:1.25rem 0 .75rem"></div>
+            <button class="btn" style="color:var(--red);border-color:var(--red)" onclick="openDeleteAccount()"><i class="ti ti-trash"></i> Delete account</button>
+            <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">Permanently deletes your login and all your data. This can't be undone.</div>
           </div>
         </div>
         <div class="card" style="max-width:500px;margin-top:1rem">
@@ -1359,6 +1362,22 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-footer">
       <button class="btn" onclick="cancelMfaEnroll()">Cancel</button>
       <button class="btn btn-primary" id="mfa-verify-btn" onclick="verifyMfaEnroll()"><i class="ti ti-check"></i> Verify &amp; turn on</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE ACCOUNT MODAL -->
+<div class="modal-overlay" id="modal-delete-account">
+  <div class="modal">
+    <div class="modal-header"><h2>Delete account</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-delete-account')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">This permanently deletes your login and <strong>all</strong> your data — invoices, customers, expenses, accounts, mileage, jobs, receipts, and any linked bank connections. <strong style="color:var(--red)">This cannot be undone.</strong></p>
+      <div class="form-group"><label>Type <strong>DELETE</strong> to confirm</label><input id="delete-confirm-input" type="text" autocomplete="off" autocapitalize="characters" placeholder="DELETE" oninput="onDeleteConfirmInput()"></div>
+      <div id="delete-account-error" style="color:var(--red);font-size:12px;min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-delete-account')">Cancel</button>
+      <button class="btn btn-danger" id="delete-account-btn" onclick="confirmDeleteAccount()" disabled><i class="ti ti-trash"></i> Delete my account</button>
     </div>
   </div>
 </div>
@@ -1850,6 +1869,41 @@ async function cancelMfaEnroll() {
   if (_mfaEnrollId) { try { await sb.auth.mfa.unenroll({factorId:_mfaEnrollId}); } catch(_){} _mfaEnrollId=null; }
   closeModal('modal-mfa-enroll');
   renderMfaUI();
+}
+
+// ── Delete account (verifiable: must type DELETE) ──
+function openDeleteAccount() {
+  document.getElementById('delete-confirm-input').value = '';
+  document.getElementById('delete-account-error').textContent = '';
+  document.getElementById('delete-account-btn').disabled = true;
+  openModal('modal-delete-account');
+}
+function onDeleteConfirmInput() {
+  const v = document.getElementById('delete-confirm-input').value.trim().toUpperCase();
+  document.getElementById('delete-account-btn').disabled = (v !== 'DELETE');
+}
+async function confirmDeleteAccount() {
+  const v = document.getElementById('delete-confirm-input').value.trim().toUpperCase();
+  if (v !== 'DELETE') return;
+  const btn = document.getElementById('delete-account-btn');
+  const errEl = document.getElementById('delete-account-error');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Deleting...';
+  try {
+    const { data: sess } = await sb.auth.getSession();
+    const token = sess && sess.session && sess.session.access_token;
+    if (!token) throw new Error('Session expired — sign in again.');
+    const res = await fetch('/delete-account', { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+token } });
+    const out = await res.json().catch(()=>({}));
+    if (!res.ok || !out.ok) throw new Error(out.error || ('Server error '+res.status));
+    // Wipe on-device state so nothing lingers on this device.
+    ['bk-mfa-trust','bk-lock-pin','bk-lock-len','bk-lock-cred','bk-plaid-cred','bk-installed-version'].forEach(lsRemove);
+    try { await sb.auth.signOut(); } catch(_){}
+    showToast('Account deleted', 'success');
+    setTimeout(()=>location.reload(), 1200);
+  } catch (e) {
+    errEl.textContent = e.message || 'Delete failed';
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-trash"></i> Delete my account';
+  }
 }
 
 // ====== DATA LOADING ======

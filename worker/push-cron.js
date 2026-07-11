@@ -26,6 +26,7 @@ export default {
     if (url.pathname === '/plaid/exchange' && req.method === 'POST') return plaidExchange(req, env);
     if (url.pathname === '/plaid/transactions' && req.method === 'POST') return plaidTransactions(req, env);
     if (url.pathname === '/plaid/disconnect' && req.method === 'POST') return plaidDisconnect(req, env);
+    if (url.pathname === '/delete-account' && req.method === 'POST') return deleteAccount(req, env);
     if (env.ASSETS) return withSecurityHeaders(await env.ASSETS.fetch(req), env);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
   }
@@ -277,6 +278,61 @@ async function plaidDisconnect(req, env) {
     } catch (e) { console.error('plaid_items delete', e); }
   }
   await plaidRefreshMirror(env, user.id);
+  return jsonResp({ ok: true });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Account deletion. Verifies the caller's own session, then (service key)
+// unlinks banks at Plaid, drops the service-key-only plaid_items rows, deletes
+// the user's Storage files and every data row, and finally removes the auth
+// login itself via the GoTrue admin API. Irreversible; the client requires the
+// user to type DELETE before calling this.
+function svcHeaders(env, prefer) {
+  const h = { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' };
+  if (prefer) h.Prefer = prefer;
+  return h;
+}
+// Best-effort wipe of a private bucket's <uid>/ folder.
+async function deleteUserStorage(env, bucket, uid) {
+  const listRes = await fetch(`${env.SUPABASE_URL}/storage/v1/object/list/${bucket}`, {
+    method: 'POST', headers: svcHeaders(env), body: JSON.stringify({ prefix: uid + '/', limit: 1000 })
+  });
+  if (!listRes.ok) return;
+  const files = await listRes.json().catch(() => []);
+  const names = (Array.isArray(files) ? files : []).map(f => `${uid}/${f.name}`);
+  if (!names.length) return;
+  await fetch(`${env.SUPABASE_URL}/storage/v1/object/${bucket}`, {
+    method: 'DELETE', headers: svcHeaders(env), body: JSON.stringify({ prefixes: names })
+  });
+}
+async function deleteAccount(req, env) {
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  const uid = user.id;
+  // 1. Unlink banks at Plaid, then drop the stored tokens.
+  try {
+    const items = await plaidLoadAll(env, uid).catch(() => []);
+    for (const item of items) {
+      if (item.access_token && plaidConfigured(env)) {
+        try { await plaidApi(env, '/item/remove', { access_token: item.access_token }); } catch (e) { console.error('del plaid remove', e.plaid || e); }
+      }
+    }
+    await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?user_id=eq.${uid}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') });
+  } catch (e) { console.error('del plaid', e); }
+  // 2. Storage files (best-effort).
+  for (const bucket of ['receipts', 'statements']) {
+    try { await deleteUserStorage(env, bucket, uid); } catch (e) { console.error('del storage ' + bucket, e); }
+  }
+  // 3. Data rows — children before parents so FKs don't block.
+  for (const t of ['store_credits', 'owner_transactions', 'trips', 'jobs', 'recurring', 'expenses', 'invoices', 'customers', 'accounts']) {
+    try { await fetch(`${env.SUPABASE_URL}/rest/v1/${t}?user_id=eq.${uid}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') }); } catch (e) { console.error('del ' + t, e); }
+  }
+  try { await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') }); } catch (e) { console.error('del profiles', e); }
+  // 4. The login itself (GoTrue admin) — last, since it invalidates the session.
+  const r = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users/${uid}`, {
+    method: 'DELETE', headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}` }
+  });
+  if (!r.ok) return jsonResp({ ok: false, error: 'Data removed, but the login could not be deleted (' + r.status + '). Contact support.' }, 500);
   return jsonResp({ ok: true });
 }
 

@@ -1,1 +1,1 @@
-{"version":296,"note":"v296: add a Privacy Policy — a standalone page served at /privacy.html (public link for Plaid) and linked in Settings › Legal so it's displayed in-app. Covers data collected, Plaid bank data, storage/encryption, sharing, retention/deletion, and contact."}
+{"version":297,"note":"v297: Delete account (Settings › Account) — type DELETE to confirm, then a new Worker endpoint unlinks banks at Plaid, drops the service-key-only plaid_items, wipes Storage files + every data row, and deletes the login itself. Irreversible; also clears on-device state."}
