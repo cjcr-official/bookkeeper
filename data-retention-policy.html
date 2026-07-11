@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Data Retention and Disposal Policy — Case Johnston Computer Repair, LLC</title>
+<style>
+  *{ box-sizing:border-box; }
+  body{ margin:0; color:#1a1d24; background:#fff;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap{ max-width:720px; margin:0 auto; padding:2.5rem 1.5rem 4rem; }
+  header{ border-bottom:2px solid #1a1d24; padding-bottom:1rem; margin-bottom:1.5rem; }
+  h1{ font-size:1.5rem; margin:0 0 .35rem; }
+  h2{ font-size:1.05rem; margin:1.6rem 0 .4rem; }
+  .meta{ color:#555; font-size:.85rem; }
+  p, li{ font-size:.92rem; color:#22262e; }
+  ul{ padding-left:1.2rem; }
+  table{ width:100%; border-collapse:collapse; margin:.6rem 0 .2rem; }
+  th, td{ text-align:left; border:1px solid #ccc; padding:.5rem .6rem; font-size:.85rem; vertical-align:top; }
+  th{ background:#f2f3f5; }
+  a{ color:#1a1d24; }
+  @media print{ .wrap{ padding:0 .25in; } body{ font-size:11pt; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Data Retention and Disposal Policy</h1>
+    <div class="meta">
+      Case Johnston Computer Repair, LLC — “Bookkeeper” application<br>
+      Effective July 10, 2026 · Reviewed annually
+    </div>
+  </header>
+
+  <h2>1. Purpose and scope</h2>
+  <p>This policy defines how Case Johnston Computer Repair, LLC (“we,” “us”) retains and
+  disposes of the data handled by the Bookkeeper application. It covers all customer/consumer
+  data stored by the application, including any financial account information obtained through
+  the Plaid API. We are a sole-proprietor business with no employees; the owner is responsible
+  for enforcing this policy and reviewing it at least annually.</p>
+
+  <h2>2. Data we retain and retention periods</h2>
+  <table>
+    <tr><th>Data category</th><th>Where stored</th><th>Retention period</th></tr>
+    <tr>
+      <td>Account &amp; business profile (login email, company details)</td>
+      <td>Supabase (encrypted at rest)</td>
+      <td>For the life of the account; deleted on account closure or request.</td>
+    </tr>
+    <tr>
+      <td>Financial records entered by the user (invoices, customers, expenses, accounts, mileage, jobs, payments)</td>
+      <td>Supabase (encrypted at rest)</td>
+      <td>Retained while the account is active so records remain available for the user's own tax/bookkeeping needs; deleted on account closure or request.</td>
+    </tr>
+    <tr>
+      <td>Uploaded receipt / statement files</td>
+      <td>Supabase Storage (private buckets)</td>
+      <td>Until the user deletes the item or the account; deleted on account closure or request.</td>
+    </tr>
+    <tr>
+      <td>Bank account access tokens (from Plaid)</td>
+      <td>Server-side only (Worker service key; never exposed to the browser)</td>
+      <td>Held only while the bank is linked; deleted immediately on disconnect or account deletion.</td>
+    </tr>
+    <tr>
+      <td>Bank transaction data (from the Plaid API)</td>
+      <td>Not stored</td>
+      <td>Retrieved live for on-screen reconciliation and not retained after the session.</td>
+    </tr>
+  </table>
+  <p>We retain data only for as long as it is needed to provide the service to the user, or as
+  required to comply with applicable law. We do not sell data and do not retain it for
+  secondary purposes such as advertising.</p>
+
+  <h2>3. Disposal methods</h2>
+  <p>When data reaches the end of its retention period, or when a user deletes it, we dispose of
+  it as follows:</p>
+  <ul>
+    <li><strong>Database records</strong> are permanently deleted from Supabase (a managed,
+      encrypted-at-rest Postgres service).</li>
+    <li><strong>Stored files</strong> (receipts/statements) are deleted from the private
+      Storage buckets.</li>
+    <li><strong>Bank access tokens</strong> are revoked at Plaid (item removal) and the stored
+      token record is deleted.</li>
+    <li><strong>The login/identity</strong> is removed from the authentication system.</li>
+    <li><strong>Provider backups</strong> containing residual copies are purged automatically
+      on our infrastructure providers' standard backup-rotation cycles.</li>
+  </ul>
+
+  <h2>4. Deletion triggers</h2>
+  <ul>
+    <li><strong>User self-service:</strong> a user can permanently delete individual records at
+      any time, disconnect a linked bank at any time, or delete their entire account and all
+      associated data from within the application (Settings &rsaquo; Account &rsaquo; Delete
+      account), confirmed by typing “DELETE.”</li>
+    <li><strong>User request:</strong> a user may email us to have their account and data
+      deleted, and we will action it.</li>
+    <li><strong>Account closure / inactivity:</strong> data associated with a closed account is
+      deleted.</li>
+  </ul>
+
+  <h2>5. Data handled through the Plaid API</h2>
+  <p>Consumer bank data received from Plaid is minimized: transaction data is pulled live for
+  reconciliation and is not stored, and the only Plaid-derived item retained is the access
+  token, which is held server-side only and destroyed as soon as the bank is disconnected or
+  the account is deleted.</p>
+
+  <h2>6. Security of retained data</h2>
+  <p>All retained data is encrypted at rest, isolated per user with row-level security, and
+  transmitted only over TLS 1.2 or higher. Access requires authentication, with multi-factor /
+  passkey protection available on the account.</p>
+
+  <h2>7. Review</h2>
+  <p>This policy is reviewed at least once per year, and whenever there is a material change to
+  how the application stores or processes data, and updated as needed.</p>
+
+  <h2>8. Contact</h2>
+  <p>
+    Case Johnston Computer Repair, LLC<br>
+    111 W McGowan St, Plains, MT 59859<br>
+    Phone: (406) 249-1466<br>
+    Email: <a href="mailto:casejohnstoncomputerrepair@hotmail.com">casejohnstoncomputerrepair@hotmail.com</a>
+  </p>
+</div>
+</body>
+</html>
