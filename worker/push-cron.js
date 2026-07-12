@@ -31,6 +31,7 @@ export default {
     if (url.pathname === '/plaid/link-token' && req.method === 'POST') return plaidLinkToken(req, env);
     if (url.pathname === '/plaid/exchange' && req.method === 'POST') return plaidExchange(req, env);
     if (url.pathname === '/plaid/transactions' && req.method === 'POST') return plaidTransactions(req, env);
+    if (url.pathname === '/plaid/refresh' && req.method === 'POST') return plaidRefresh(req, env);
     if (url.pathname === '/plaid/disconnect' && req.method === 'POST') return plaidDisconnect(req, env);
     if (url.pathname === '/delete-account' && req.method === 'POST') return deleteAccount(req, env);
     if (env.ASSETS) return withSecurityHeaders(await env.ASSETS.fetch(req), env);
@@ -278,6 +279,44 @@ async function plaidTransactions(req, env) {
     return jsonResp({ error: first.message, itemErrors }, 502);
   }
   return jsonResp({ ok: true, institution: items[0].institution || null, transactions, pending, accounts, itemErrors });
+}
+
+// Repair a stale bank link in place — no re-linking, so the item_id (and all the
+// reconciliation history keyed to it) is preserved. Checks each item's health,
+// then asks Plaid to re-pull from the bank (`/transactions/refresh`) when the login
+// is still good. If the item needs a fresh sign-in (ITEM_LOGIN_REQUIRED) it can't
+// be refreshed silently — we report `needs_reauth` so the client opens update-mode
+// Plaid Link instead. With an `item_id`, repair just that bank; without, all of them.
+async function plaidRefresh(req, env) {
+  if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured.' }, 500);
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  let b; try { b = await req.json(); } catch { b = {}; }
+  const allItems = (await plaidLoadAll(env, user.id).catch(() => [])).filter(i => i.access_token);
+  const items = (b && b.item_id) ? allItems.filter(i => i.item_id === b.item_id) : allItems;
+  if (!items.length) return jsonResp({ error: 'That bank isn’t connected.' }, 400);
+  const results = [];
+  for (const item of items) {
+    let needs_reauth = false, refreshed = false, error = null;
+    // Is the login still valid? A pre-existing item error (esp. ITEM_LOGIN_REQUIRED)
+    // means a silent refresh will just fail — go straight to re-auth.
+    try {
+      const info = await plaidApi(env, '/item/get', { access_token: item.access_token });
+      const ie = info.item && info.item.error;
+      if (ie) { if (ie.error_code === 'ITEM_LOGIN_REQUIRED') needs_reauth = true; else error = ie.error_message || ie.error_code; }
+    } catch (e) {
+      if (e.plaid && e.plaid.error_code === 'ITEM_LOGIN_REQUIRED') needs_reauth = true; else error = (e.plaid && e.plaid.error_message) || e.message;
+    }
+    if (!needs_reauth) {
+      try { await plaidApi(env, '/transactions/refresh', { access_token: item.access_token }); refreshed = true; }
+      catch (e) {
+        if (e.plaid && e.plaid.error_code === 'ITEM_LOGIN_REQUIRED') needs_reauth = true;
+        else error = error || (e.plaid && e.plaid.error_message) || e.message;
+      }
+    }
+    results.push({ item_id: item.item_id, needs_reauth, refreshed, error });
+  }
+  return jsonResp({ ok: true, needs_reauth: results.some(r => r.needs_reauth), results });
 }
 
 // Unlink: invalidate the item(s) at Plaid, then drop the stored token(s). With an

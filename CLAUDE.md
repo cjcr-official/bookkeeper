@@ -138,6 +138,14 @@ balance = null` (Plaid gives no per-month opening/closing), so the balance check
 Plaid's fake test banks (free, works immediately with the client credentials); switch
 to `production` once Plaid approves the account. `/plaid/disconnect` removes the item
 at Plaid and drops the stored token (one bank when passed `{item_id}`, else all).
+`/plaid/refresh` repairs a link **in place** (item_id preserved, so no lost
+history): it checks item health and, when the login is still good, calls Plaid
+`/transactions/refresh` to force a fresh bank sync (fixes stale data / a settled
+transaction stuck "pending"); if the item needs a fresh sign-in it returns
+`needs_reauth` so the client opens update-mode Link. The **Reconnect** button runs
+this first (silent refresh) and only opens Plaid Link when `needs_reauth` — so
+"Reconnect" fixes both stale-data and login-required breakage without a
+disconnect/re-add.
 
 **Multi-bank (v275+):** a user can link several banks. `/plaid/status` returns a
 `banks: [{item_id, institution}]` array. `/plaid/link-token` takes an optional

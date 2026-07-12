@@ -4511,10 +4511,31 @@ async function plaidDisconnect(itemId) {
     renderPlaidBlock();
   } catch (e) { showToast(e.message || 'Failed to disconnect', 'error'); }
 }
-// Re-authenticate an existing bank in place (Plaid update mode) — used when a bank
-// asks for a fresh sign-in. Keeps the same item, so no new duplicate is created.
+// Repair a bank link. Two things can be "broken": the data feed has gone stale
+// (Plaid stopped re-syncing — e.g. a transaction that settled still shows as
+// pending), or the bank needs a fresh sign-in (ITEM_LOGIN_REQUIRED). Reconnect
+// handles BOTH: it first asks Plaid to re-pull from the bank in place (fixes stale
+// data with no Plaid Link ceremony), and only opens update-mode Link if the bank
+// actually needs re-authentication. Either way the item id is preserved, so no
+// duplicate and no lost reconciliation history.
 async function plaidReconnect(itemId) {
   if (!itemId) return plaidConnect();   // fallback: treat as a fresh add
+  // Stage 1 — force a fresh sync from the bank. No passkey gate: this re-pulls
+  // existing data (like a transactions pull), it doesn't authorize a new bank.
+  let needsReauth = true;
+  try {
+    showToast('Refreshing from your bank…');
+    const r = await plaidFetch('/plaid/refresh', { method: 'POST', body: JSON.stringify({ item_id: itemId }) });
+    needsReauth = !!r.needs_reauth;
+    if (!needsReauth) {
+      _plaidCache = {};   // force the next pull to fetch the freshly-synced data
+      _recState = null;
+      showToast('Refreshed from your bank — new transactions may take a moment to appear', 'success');
+      renderPlaidBlock();
+      return;
+    }
+  } catch (e) { /* couldn't refresh — fall through to a full re-auth */ }
+  // Stage 2 — the bank wants a fresh sign-in: open update-mode Plaid Link.
   if (!(await requirePlaidMfa())) return;
   if (!(await requirePlaidPasskey())) return;
   try {
@@ -4524,6 +4545,9 @@ async function plaidReconnect(itemId) {
       token: link_token,
       onSuccess: async () => {
         _plaidCache = {};
+        // After re-auth, kick a fresh sync so stale data is replaced right away.
+        try { await plaidFetch('/plaid/refresh', { method: 'POST', body: JSON.stringify({ item_id: itemId }) }); } catch (e) {}
+        _recState = null;
         showToast('Bank reconnected', 'success');
         renderPlaidBlock();
       },
