@@ -4224,6 +4224,9 @@ async function renderPlaidBlock() {
   if (!_selBank || !banks.some(b => b.item_id === _selBank)) _selBank = banks[0].item_id;
   // One-time move of legacy single-bank reconcile data under the primary bank's id.
   migratePlaidKeys(banks[0].item_id);
+  // Single-bank users: silently reclaim any history orphaned by a disconnect/
+  // reconnect (new item_id) so matching survives removing & re-adding the bank.
+  await autoRestoreOrphans(banks[0].item_id);
   // Connected card: a clickable list of banks (tap one to make the month buttons
   // reconcile THAT bank), each with its own reconnect/disconnect, an "Add another
   // bank" button, then the pending note + "Check all 12 months" for the selected
@@ -4303,6 +4306,36 @@ function orphanedReconKeys() {
   Object.keys(profile.plaid_recon || {}).forEach(k => { if (isReal(k)) keys.add(k); });
   return [...keys];
 }
+// Merge orphaned months onto a target bank id (gap-fill: months already redone on
+// the target win; orphans fill the rest), then drop the old keys. Mutates profile
+// in place — caller persists.
+function mergeOrphansOnto(targetId, orphans) {
+  profile.audited_months = profile.audited_months || {};
+  profile.plaid_recon = profile.plaid_recon || {};
+  orphans.forEach(oldId => {
+    if (profile.audited_months[oldId]) profile.audited_months[targetId] = Object.assign({}, profile.audited_months[oldId], profile.audited_months[targetId] || {});
+    if (profile.plaid_recon[oldId]) profile.plaid_recon[targetId] = Object.assign({}, profile.plaid_recon[oldId], profile.plaid_recon[targetId] || {});
+    delete profile.audited_months[oldId];
+    delete profile.plaid_recon[oldId];
+  });
+}
+// Disconnect/reconnect issues a NEW Plaid item_id, orphaning the old bank's months.
+// When exactly one bank is connected there's no ambiguity about where that history
+// belongs, so reclaim it automatically — the user never sees "broken matching."
+// Multi-bank stays manual (see restoreReconToSelected) since we can't know which
+// bank an orphan came from. Idempotent: orphan keys are deleted, so a re-run is a
+// no-op. Returns true if anything was moved.
+async function autoRestoreOrphans(targetId) {
+  if (!targetId || (_plaidBanks || []).length !== 1) return false;
+  const orphans = orphanedReconKeys();
+  if (!orphans.length) return false;
+  mergeOrphansOnto(targetId, orphans);
+  try {
+    await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id);
+    showToast('Reconciliation history restored', 'success');
+  } catch (e) { console.error(e); return false; }
+  return true;
+}
 async function restoreReconToSelected() {
   const orphans = orphanedReconKeys();
   if (!orphans.length) { showToast('No earlier reconciliation history to restore', 'success'); return; }
@@ -4312,15 +4345,8 @@ async function restoreReconToSelected() {
   orphans.forEach(k => { Object.keys(am[k] || {}).forEach(m => monthsSet.add(m)); Object.keys(pr[k] || {}).forEach(m => monthsSet.add(m)); });
   const targetName = ((_plaidBanks || []).find(b => b.item_id === _selBank) || {}).institution || 'the selected bank';
   if (!confirm(`Restore ${monthsSet.size} month(s) of reconciliation history onto ${targetName}? This moves your earlier audit results and manual matches from the old (broken) bank link onto the reconnected one. Months you've already redone are kept.`)) return;
-  profile.audited_months = profile.audited_months || {};
-  profile.plaid_recon = profile.plaid_recon || {};
   // Existing (already-redone) months on the target win; old months fill the gaps.
-  orphans.forEach(oldId => {
-    if (profile.audited_months[oldId]) profile.audited_months[_selBank] = Object.assign({}, profile.audited_months[oldId], profile.audited_months[_selBank] || {});
-    if (profile.plaid_recon[oldId]) profile.plaid_recon[_selBank] = Object.assign({}, profile.plaid_recon[oldId], profile.plaid_recon[_selBank] || {});
-    delete profile.audited_months[oldId];
-    delete profile.plaid_recon[oldId];
-  });
+  mergeOrphansOnto(_selBank, orphans);
   try {
     await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id);
     showToast('Reconciliation history restored', 'success');
