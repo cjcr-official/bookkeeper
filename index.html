@@ -1961,9 +1961,15 @@ async function confirmDeleteAccount() {
 }
 
 // ====== DATA LOADING ======
+let _dataLoadFailed = false;
 async function loadAllData() {
-  // Each query wrapped so one missing table (e.g. trips before SQL is run) can't hang the whole load
-  const safe = (q) => q.then(r=>r).catch(e=>({data:null,error:e}));
+  // Each query wrapped so one missing table (e.g. trips before SQL is run) can't
+  // hang the whole load, AND time-boxed so a slow/unreachable Supabase surfaces
+  // an error instead of freezing the app on the loading screen forever.
+  const safe = (q) => Promise.race([
+    q.then(r=>r).catch(e=>({data:null,error:e})),
+    new Promise(res=>setTimeout(()=>res({data:null,error:{message:'timeout',_timeout:true}}), 20000)),
+  ]);
   const [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx, storeCredits] = await Promise.all([
     safe(sb.from('profiles').select('*').eq('id', currentUser.id).single()),
     safe(sb.from('customers').select('*').eq('user_id', currentUser.id).order('name')),
@@ -1986,6 +1992,26 @@ async function loadAllData() {
   cache.jobs = jobs.data || [];
   cache.owner_transactions = ownerTx.data || [];
   cache.store_credits = storeCredits.data || [];
+
+  // Detect a real "couldn't reach Supabase" failure so the app can tell the user
+  // instead of silently showing an empty ledger. A missing table or a brand-new
+  // account with no profile row still returns an error per-query, so only flag
+  // when it looks like a connection/timeout problem: the profile query timed out
+  // or failed on the network, OR every single query errored at once.
+  const results = [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx, storeCredits];
+  const netErr = (e) => !!e && (e._timeout || /fetch|network|load failed|timeout/i.test(e.message||''));
+  _dataLoadFailed = netErr(prof.error) || results.every(r => r && r.error);
+  if (_dataLoadFailed) showDataLoadError();
+}
+// Non-blocking banner: the app still opens with whatever loaded, but the user
+// gets a clear reason + a one-tap retry instead of a mystery blank screen.
+function showDataLoadError() {
+  const retry = async () => { showToast('Reconnecting…'); await loadAllData(); if (!_dataLoadFailed) { renderDashboard(); showToast('Loaded','success'); } };
+  const t = document.getElementById('toast');
+  if (t) { t.innerHTML = "Couldn't reach the server — check your connection. <a href=\"#\" id=\"reload-data-link\" style=\"color:#fff;text-decoration:underline\">Retry</a>"; t.className='toast show error';
+    if (_toastTimer) clearTimeout(_toastTimer); _toastTimer = setTimeout(()=>{ t.className='toast'; _toastTimer=null; }, 8000);
+    const a = document.getElementById('reload-data-link'); if (a) a.onclick = (e)=>{ e.preventDefault(); retry(); };
+  }
 }
 
 // ====== NAVIGATION ======
