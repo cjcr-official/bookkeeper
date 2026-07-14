@@ -327,6 +327,9 @@ textarea{resize:vertical;min-height:70px}
 /* ── SPINNER ── */
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* Skeleton placeholder used while the bank-sync card loads (reserves its height so the page below doesn't jump). */
+.sk-plaid{display:flex;align-items:center;justify-content:center;gap:.4rem;color:var(--text3);font-size:11.5px;animation:skpulse 1.3s ease-in-out infinite}
+@keyframes skpulse{0%,100%{opacity:.5}50%{opacity:.9}}
 
 /* ── LOADING ── */
 .loading-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9998;flex-direction:column;gap:1rem}
@@ -4217,14 +4220,37 @@ function plaidErrMsg(e) {
   if (/sign ?in|session|log ?in|unauthor/.test(m)) return 'Please sign in again, then retry.';
   return 'Couldn’t pull this month from the bank. Try again in a moment.';
 }
+// A card-shaped skeleton shown while /plaid/status is in flight, sized from the
+// last-known state (localStorage hint) so it reserves roughly the real card's
+// height and the Statements content below it doesn't jump when it resolves.
+function plaidSkeleton() {
+  let h = 172;   // sensible default before we've ever seen a status
+  try {
+    const hint = JSON.parse(lsGet('bk-plaid-hint') || 'null');
+    if (hint) h = hint.connected ? 200 + Math.max(1, hint.banks || 1) * 100 : 196;
+  } catch (e) {}
+  return `<div class="card" style="height:${h}px;margin-bottom:1.1rem;box-sizing:border-box"><div class="sk-plaid" style="height:100%"><i class="ti ti-building-bank" style="font-size:15px"></i> Checking bank sync…</div></div>`;
+}
 // Draw the bank-sync card: needs-setup note, a Connect button, or the connected
 // state (bank name + month picker + Pull + Reconnect/Disconnect).
 async function renderPlaidBlock() {
   const el = document.getElementById('rec-plaid'); if (!el) return;
-  el.innerHTML = `<div style="font-size:11.5px;color:var(--text3)">Checking bank sync…</div>`;
+  // Avoid the layout "pop" at the top of the Statements tab: the bank-sync card
+  // takes a moment to load, and swapping a zero-height / one-line placeholder for
+  // the full card shoves everything below it down. On the first load per session
+  // show a skeleton sized (from a remembered hint) to roughly the card's final
+  // height; on re-renders keep the already-drawn card in place until fresh status
+  // arrives — either way the content below never jumps.
+  if (!el.querySelector('.card')) el.innerHTML = plaidSkeleton();
   let status;
   try { status = await plaidFetch('/plaid/status', { method: 'GET' }); }
-  catch (e) { el.innerHTML = ''; return; }   // stay quiet on transient errors
+  catch (e) { if (!el.querySelector('.sk-plaid')) return; el.innerHTML = ''; return; }   // stay quiet on transient errors; keep any real card
+  // Remember a lightweight hint so the next session's first paint reserves the
+  // right height (connected state + bank count), avoiding the same jump.
+  try {
+    const bankCount = Array.isArray(status.banks) ? status.banks.length : (status.connected ? 1 : 0);
+    lsSet('bk-plaid-hint', JSON.stringify({ connected: bankCount > 0, banks: bankCount }));
+  } catch (e) {}
   if (!status.configured) {
     _plaidConnected = false;
     el.innerHTML = `<div class="card" style="padding:1.15rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">Bank sync isn’t set up on this account yet. Add your Plaid keys (<code>PLAID_CLIENT_ID</code> / <code>PLAID_SECRET</code>) to the Worker to enable reconciliation.</div>`;
