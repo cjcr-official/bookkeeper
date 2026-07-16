@@ -96,8 +96,13 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .notif-row:hover{background:var(--surface2)}
 .notif-row.unseen{background:var(--accent-bg)}
 .notif-row.unseen:hover{background:var(--accent-bg)}
-.notif-ico{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:9px;font-size:16px}
-.notif-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:.4rem}
+.notif-ico{width:36px;height:36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:10px;font-size:16px}
+.notif-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:.45rem;box-shadow:0 0 0 3px var(--accent-bg)}
+.notif-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:3.25rem 1.75rem;min-height:270px}
+.notif-empty-badge{position:relative;width:78px;height:78px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:33px;color:var(--accent-text);background:var(--accent-bg);margin-bottom:1.2rem}
+.notif-empty-badge::after{content:'';position:absolute;inset:-9px;border-radius:50%;border:1.5px solid var(--accent-bg)}
+.notif-empty-title{font-weight:700;font-size:16px;color:var(--text);margin-bottom:.4rem;letter-spacing:-.01em}
+.notif-empty-sub{font-size:12.5px;line-height:1.55;color:var(--text3);max-width:250px}
 
 /* ── AUTH ── */
 .auth-wrap{min-height:100vh;height:100%;overflow-y:auto;display:flex;align-items:center;justify-content:center;background:var(--bg);background-image:radial-gradient(ellipse at 20% 50%, var(--accent-glow) 0%, transparent 60%),radial-gradient(ellipse at 80% 20%, rgba(6,182,212,.1) 0%, transparent 50%)}
@@ -2334,7 +2339,11 @@ function renderNotifPane() {
   if (!el) return;
   const seen = getNotifSeen();
   if (!_notifCache.length) {
-    el.innerHTML = `<div class="empty" style="padding:2.5rem 1rem"><i class="ti ti-bell-check"></i><p>You're all caught up</p></div>`;
+    el.innerHTML = `<div class="notif-empty">
+      <div class="notif-empty-badge"><i class="ti ti-bell-check"></i></div>
+      <div class="notif-empty-title">You're all caught up</div>
+      <div class="notif-empty-sub">Alerts about overdue invoices, upcoming jobs, and recurring items will show up here.</div>
+    </div>`;
     return;
   }
   el.innerHTML = _notifCache.map((n,idx) => {
