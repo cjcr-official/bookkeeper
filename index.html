@@ -691,6 +691,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
   .nav-item.active i{background:var(--accent-bg);border-radius:var(--radius-pill);padding:3px 15px;color:var(--accent-text)}
   .nav-item i{display:inline-flex;align-items:center;justify-content:center}
   .card,.stat-card{border-radius:18px}
+  /* Bottom sheets: rounded top, flush square bottom. The global
+     `.modal{border-radius:var(--radius-lg)}` above (desktop) otherwise rounds the
+     bottom corners too, leaving a gap at the screen edge. Restore it here so it
+     wins the cascade on mobile. */
+  .modal{border-radius:20px 20px 0 0}
   .list-card{background:transparent;border:none;box-shadow:none;border-radius:0}
   .list-card table tr, .cust-card, .m-card{box-shadow:var(--shadow)}
   .stat-value{font-size:22px}
