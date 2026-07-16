@@ -24,6 +24,16 @@ version bump.
 
 ---
 
+## Workflow: ship automatically (owner's standing instruction)
+
+The owner wants every completed change **merged to `main` automatically** — no
+"should I merge?" prompt. When work is done and verified: push the feature
+branch, open a PR, and merge it to `main` (which auto-deploys via Cloudflare
+Workers Builds). Only pause to ask when the change is genuinely risky or
+ambiguous; otherwise just ship it and report what was merged.
+
+---
+
 ## Stack & constraints
 
 - **Frontend:** ONE file — `index.html`. All HTML, CSS, JS inline. No build step,
