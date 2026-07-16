@@ -413,6 +413,18 @@ minute until the cache refreshes.
   advancing `next_date` in `processRecurring()` re-arms the next one). Toggled
   per item by the "Push reminder on the due date" checkbox in the recurring
   editor (default on).
+- **Notification center (in-app, v318+):** a bell in the top bar
+  (`#notif-bell`) with a red unread-count badge (`#notif-badge`). Notifications
+  are **derived client-side from `cache`** (no DB table) by `buildNotifications()`:
+  overdue/due-soon invoices, jobs today or missed, recurring items coming due
+  (`NOTIF_SOON_DAYS = 3` horizon). Each has a **stable id**; seen ids live in
+  localStorage `bk-notif-seen`. `refreshNotifBadge()` (called from `showPage()`
+  and on load) sets the badge to the unseen count; `openNotifPane()` renders the
+  `#modal-notifications` pane and marks all shown as seen (clearing the badge);
+  a row tap dispatches to `editInvoice`/`editJob`/`openRecurringManager`.
+  `initNotifications()` runs after `renderDashboard()` in all three login paths
+  and auto-pops the pane once when anything is new — but never over the app-lock
+  screen or another open modal.
 - **Invoices:** status tabs (All/Draft/Sent/Paid/Overdue) + search; pro PDF/print
   modeled on the business Word template; numbers auto-generate **YYNN** (2-digit
   year + sequence, editable). Share builds a real PDF via an off-screen 780px
