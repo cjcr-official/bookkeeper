@@ -90,6 +90,14 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 /* ── THEME TOGGLE ── */
 .theme-toggle{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:var(--radius-sm);border:1px solid var(--border2);background:var(--surface2);color:var(--text2);cursor:pointer;transition:all .15s;flex-shrink:0}
 .theme-toggle:hover{color:var(--text);background:var(--surface);border-color:var(--accent)}
+.notif-bell{position:relative;overflow:visible}
+.notif-badge{position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--red);color:#fff;font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 0 0 2px var(--bg2);pointer-events:none}
+.notif-row{display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+.notif-row:hover{background:var(--surface2)}
+.notif-row.unseen{background:var(--accent-bg)}
+.notif-row.unseen:hover{background:var(--accent-bg)}
+.notif-ico{width:34px;height:34px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-radius:9px;font-size:16px}
+.notif-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:.4rem}
 
 /* ── AUTH ── */
 .auth-wrap{min-height:100vh;height:100%;overflow-y:auto;display:flex;align-items:center;justify-content:center;background:var(--bg);background-image:radial-gradient(ellipse at 20% 50%, var(--accent-glow) 0%, transparent 60%),radial-gradient(ellipse at 80% 20%, rgba(6,182,212,.1) 0%, transparent 50%)}
@@ -856,6 +864,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
       </div>
       <div class="topbar-right">
         <div style="display:flex;gap:.5rem" id="topbar-actions"></div>
+        <button class="theme-toggle notif-bell" id="notif-bell" onclick="openNotifPane()" title="Notifications" aria-label="Notifications"><i class="ti ti-bell"></i><span class="notif-badge" id="notif-badge" style="display:none">0</span></button>
         <button class="theme-toggle" onclick="showPage('settings',null)" title="Settings" aria-label="Settings"><i class="ti ti-settings"></i></button>
       </div>
     </div>
@@ -1375,6 +1384,17 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
+<!-- NOTIFICATIONS PANE -->
+<div class="modal-overlay" id="modal-notifications">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Notifications</h2>
+      <button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-notifications')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" id="notif-list" style="padding:0"></div>
+  </div>
+</div>
+
 <!-- OWNER ACTIVITY MODAL -->
 <div class="modal-overlay" id="modal-owner-tx">
   <div class="modal">
@@ -1845,6 +1865,7 @@ async function doMfaLogin() {
   document.getElementById('app').style.display='flex';
   renderDashboard();
   refreshPushSubscription();
+  initNotifications();
 }
 async function cancelMfaLogin() {
   await sb.auth.signOut();
@@ -2037,6 +2058,7 @@ function showPage(page, el) {
     mileage:`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
+  refreshNotifBadge();
   rerenderCurrentView();
 }
 
@@ -2219,6 +2241,149 @@ function renderUpcoming() {
         ${it.amount>0?`<div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:.1rem">${fmt(it.amount)}</div>`:''}
       </div>
     </div>`).join('');
+}
+
+// ====== NOTIFICATIONS ======
+// In-app notification feed, derived from the current ledger (no extra table).
+// Every actionable event — an overdue/due invoice, a job today or missed, a
+// recurring item coming due — becomes a notification with a STABLE id, so we can
+// remember which ones the user has already seen (localStorage 'bk-notif-seen').
+// The top-bar bell shows a red badge with the unseen count; the pane auto-opens
+// on login the first time a new notification appears (like a push landing).
+const NOTIF_SOON_DAYS = 3;               // "coming up" horizon for due/scheduled items
+let _notifCache = [];                    // last-built list, indexed by openNotifPane()
+
+function _daysAhead(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+
+function buildNotifications() {
+  const t = today(), soon = _daysAhead(NOTIF_SOON_DAYS);
+  const out = [];
+  (cache.invoices||[]).forEach(i => {
+    if (i.status==='draft' || !i.due || effectiveStatus(i)==='paid') return;
+    const bal = balanceDue(i);
+    if (bal <= 0) return;
+    const who = i.customer_name || '—';
+    if (i.due < t) {
+      out.push({ id:'inv-od-'+i.id, date:i.due, tone:'red', icon:'ti-file-invoice',
+        title:'Invoice #'+(i.number||'')+' is overdue',
+        body:who+' · '+fmt(bal)+' · was due '+fmtDate(i.due),
+        target:{action:'invoice', ref:i.id} });
+    } else if (i.due <= soon) {
+      out.push({ id:'inv-due-'+i.id+'-'+i.due, date:i.due, tone:'accent', icon:'ti-file-invoice',
+        title:'Invoice #'+(i.number||'')+(i.due===t?' is due today':' due soon'),
+        body:who+' · '+fmt(bal)+(i.due===t?'':' · '+fmtDate(i.due)),
+        target:{action:'invoice', ref:i.id} });
+    }
+  });
+  (cache.jobs||[]).forEach(j => {
+    if (j.done || !j.date) return;
+    const cust = j.customer_id ? ((cache.customers.find(c=>c.id===j.customer_id)||{}).name||'') : '';
+    const at = j.time ? ' at '+j.time.slice(0,5) : '';
+    if (j.date < t) {
+      out.push({ id:'job-late-'+j.id+'-'+j.date, date:j.date, tone:'red', icon:'ti-briefcase',
+        title:'Missed job: '+(j.title||'Job'),
+        body:(cust?cust+' · ':'')+'was '+fmtDate(j.date),
+        target:{action:'job', ref:j.id} });
+    } else if (j.date <= soon) {
+      out.push({ id:'job-'+j.id+'-'+j.date, date:j.date, tone:'accent', icon:'ti-briefcase',
+        title:(j.title||'Job')+(j.date===t?' today'+at:' '+fmtDate(j.date)+at),
+        body:cust||'Scheduled job',
+        target:{action:'job', ref:j.id} });
+    }
+  });
+  (cache.recurring||[]).forEach(r => {
+    if (!r.active || !r.next_date || r.next_date > soon) return;
+    const d = r.data||{};
+    const who = r.kind==='invoice'
+      ? ((cache.customers.find(c=>c.id===d.customer_id)||{}).name||'')
+      : (d.vendor||'');
+    out.push({ id:'rec-'+r.id+'-'+r.next_date, date:r.next_date, tone:'accent', icon:'ti-repeat',
+      title:(r.kind==='invoice'?'Recurring invoice':'Recurring expense')+(r.next_date<=t?' due':' due '+fmtDate(r.next_date)),
+      body:(r.label||who||'—')+(d.amount?' · '+fmt(d.amount):''),
+      target:{action:'recurring', ref:r.kind} });
+  });
+  // Newest / most-urgent first.
+  out.sort((a,b)=> b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  return out;
+}
+
+function getNotifSeen() { try { return JSON.parse(lsGet('bk-notif-seen','[]'))||[]; } catch(e){ return []; } }
+function setNotifSeen(ids) { lsSet('bk-notif-seen', JSON.stringify(ids)); }
+
+// Badge = count of notifications the user hasn't opened the pane on yet.
+function refreshNotifBadge() {
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  _notifCache = buildNotifications();
+  const seen = getNotifSeen();
+  const unseen = _notifCache.filter(n => !seen.includes(n.id)).length;
+  if (unseen > 0) { badge.textContent = unseen > 9 ? '9+' : unseen; badge.style.display = 'flex'; }
+  else badge.style.display = 'none';
+}
+
+// Mark everything currently shown as seen (clears the badge) and prune the seen
+// list to only ids that still exist, so it can't grow without bound.
+function markNotifsSeen() {
+  const ids = _notifCache.map(n => n.id);
+  setNotifSeen(ids);
+  refreshNotifBadge();
+}
+
+function renderNotifPane() {
+  const el = document.getElementById('notif-list');
+  if (!el) return;
+  const seen = getNotifSeen();
+  if (!_notifCache.length) {
+    el.innerHTML = `<div class="empty" style="padding:2.5rem 1rem"><i class="ti ti-bell-check"></i><p>You're all caught up</p></div>`;
+    return;
+  }
+  el.innerHTML = _notifCache.map((n,idx) => {
+    const isNew = !seen.includes(n.id);
+    const bg = n.tone==='red' ? 'var(--red-bg)' : 'var(--accent-bg)';
+    const fg = n.tone==='red' ? 'var(--red)' : 'var(--accent-text)';
+    return `<div class="notif-row${isNew?' unseen':''}" onclick="notifOpen(${idx})">
+      <div class="notif-ico" style="background:${bg};color:${fg}"><i class="ti ${n.icon}"></i></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13.5px;line-height:1.3">${escHtml(n.title)}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(n.body)}</div>
+      </div>
+      ${isNew?'<span class="notif-dot"></span>':''}
+    </div>`;
+  }).join('');
+}
+
+function openNotifPane() {
+  refreshNotifBadge();          // rebuild _notifCache against the latest ledger
+  renderNotifPane();
+  openModal('modal-notifications');
+  markNotifsSeen();             // opening the pane clears the badge
+}
+
+// A notification row was tapped: close the pane and jump to the thing it's about.
+function notifOpen(idx) {
+  const n = _notifCache[idx];
+  closeModal('modal-notifications');
+  if (!n || !n.target) return;
+  const { action, ref } = n.target;
+  if (action==='invoice') editInvoice(ref);
+  else if (action==='job') editJob(ref);
+  else if (action==='recurring') openRecurringManager(ref);
+}
+
+// Called from each login path after the dashboard renders: refresh the badge and,
+// if anything is new since last time, pop the pane once.
+function initNotifications() {
+  refreshNotifBadge();
+  const seen = getNotifSeen();
+  const hasNew = _notifCache.some(n => !seen.includes(n.id));
+  if (!hasNew) return;
+  // Don't pop over the app-lock screen or another open modal — the badge still
+  // shows, so the user gets it the moment they tap the bell.
+  setTimeout(() => {
+    const locked = (document.getElementById('lock-screen')||{}).style && document.getElementById('lock-screen').style.display === 'flex';
+    if (locked || document.querySelector('.modal-overlay.open')) return;
+    openNotifPane();
+  }, 700);
 }
 
 // ====== INVOICES ======
@@ -6400,6 +6565,7 @@ async function boot() {
       renderDashboard();
       refreshPushSubscription();
       maybeShowLock();
+      initNotifications();
     } else {
       hide();
       document.getElementById('auth-wrap').style.display='flex';
@@ -6429,6 +6595,7 @@ async function boot() {
         document.getElementById('app').style.display='flex';
         renderDashboard();
         refreshPushSubscription();
+        initNotifications();
       }, 0);
     } else if (event==='SIGNED_OUT') {
       document.getElementById('app').style.display='none';
