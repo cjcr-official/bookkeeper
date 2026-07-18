@@ -1096,7 +1096,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <div class="modal-body">
             <div class="form-row">
               <div class="form-group"><label>Payment terms (days)</label><input id="s-inv-due-days" type="number" min="0" step="1" placeholder="30"></div>
-              <div class="form-group"><label>Start invoice # at</label><input id="s-inv-start" type="number" min="1" step="1" placeholder="auto"></div>
+              <div class="form-group"><label>Start invoice # at <span style="color:var(--text3);font-weight:400;font-size:11px">(full number, e.g. 2648)</span></label><input id="s-inv-start" type="number" min="1" step="1" placeholder="auto"></div>
             </div>
             <div class="form-group"><label>Default notes / footer <span style="color:var(--text3);font-weight:400;font-size:11px">(prefilled on new invoices)</span></label><textarea id="s-inv-terms" rows="3" placeholder="Thank you for your business!"></textarea></div>
             <div class="form-group"><label>How to pay <span style="color:var(--text3);font-weight:400;font-size:11px">(prints on every invoice)</span></label><textarea id="s-pay-instructions" rows="3" placeholder="Cash or check to Case Johnston Computer Repair&#10;Zelle: (406) 249-1466&#10;Venmo: @your-handle (friends & family)"></textarea></div>
@@ -2488,11 +2488,14 @@ function nextInvoiceNumber() {
     else if (n.startsWith(yy) && n.length>2) seq = parseInt(n.slice(2),10);   // 26NN
     if (!isNaN(seq) && seq>max) max = seq;
   });
-  // Honor a user-set starting number until real invoices catch up past it.
-  let next = max + 1;
+  // The next number is YY + zero-padded sequence, e.g. "2648".
+  let num = yy + String(max + 1).padStart(2, '0');
+  // "Start invoice # at" holds the FULL number the user wants to start at (e.g.
+  // 2648), NOT a bare sequence — so honor it as-is until real invoices climb past
+  // it. (Older behavior appended it after the year, turning 2601 into 262601.)
   const start = parseInt(profile && profile.invoice_start, 10);
-  if (!isNaN(start) && next < start) next = start;
-  return yy + String(next).padStart(2,'0');
+  if (!isNaN(start) && start > parseInt(num, 10)) num = String(start);
+  return num;
 }
 
 // One-time cleanup: some invoices were saved with a 4-digit-year prefix
