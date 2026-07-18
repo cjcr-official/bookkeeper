@@ -2036,6 +2036,7 @@ async function loadAllData() {
   const netErr = (e) => !!e && (e._timeout || /fetch|network|load failed|timeout/i.test(e.message||''));
   _dataLoadFailed = netErr(prof.error) || results.every(r => r && r.error);
   if (_dataLoadFailed) showDataLoadError();
+  else await migrateInvoiceNumbers();   // normalize any YYYYNN → YYNN before rendering
 }
 // Non-blocking banner: the app still opens with whatever loaded, but the user
 // gets a clear reason + a one-tap retry instead of a mystery blank screen.
@@ -2472,21 +2473,55 @@ function renderInvoices() {
 }
 
 function nextInvoiceNumber() {
-  const yy = String(new Date().getFullYear()).slice(-2);
-  // find highest sequence among invoices starting with this year prefix
+  const now = new Date();
+  const yyyy = String(now.getFullYear());   // "2026"
+  const yy = yyyy.slice(-2);                 // "26"
+  // Highest sequence for this year. Recognize BOTH the current short form
+  // (YYNN, e.g. 2647) and the older long form (YYYYNN, e.g. 202647) so the
+  // sequence keeps climbing instead of restarting when old-format numbers exist.
   let max = 0;
   (cache.invoices||[]).forEach(i=>{
-    const n = String(i.number||'');
-    if (n.startsWith(yy) && n.length>2) {
-      const seq = parseInt(n.slice(2),10);
-      if (!isNaN(seq) && seq>max) max = seq;
-    }
+    const n = String(i.number||'').trim();
+    if (!/^\d+$/.test(n)) return;
+    let seq = NaN;
+    if (n.startsWith(yyyy) && n.length>4) seq = parseInt(n.slice(4),10);      // 2026NN
+    else if (n.startsWith(yy) && n.length>2) seq = parseInt(n.slice(2),10);   // 26NN
+    if (!isNaN(seq) && seq>max) max = seq;
   });
   // Honor a user-set starting number until real invoices catch up past it.
   let next = max + 1;
   const start = parseInt(profile && profile.invoice_start, 10);
   if (!isNaN(start) && next < start) next = start;
   return yy + String(next).padStart(2,'0');
+}
+
+// One-time cleanup: some invoices were saved with a 4-digit-year prefix
+// (YYYYNN, e.g. 202647). The app numbers invoices YYNN (2-digit year + sequence,
+// e.g. 2647), so those long numbers didn't line up and auto-numbering restarted
+// instead of continuing. Rewrite any YYYYNN number to YYNN (202647 -> 2647) and
+// keep its linked mileage-log rows in sync. Idempotent: once every number is
+// short it finds nothing to do and writes nothing.
+async function migrateInvoiceNumbers() {
+  const toShort = (v) => {
+    const s = String(v||'').trim();
+    return /^(19|20)\d{4,}$/.test(s) ? s.slice(2) : null;   // 202647 -> 2647
+  };
+  const fixes = [];
+  (cache.invoices||[]).forEach(inv => {
+    const short = toShort(inv.number);
+    if (short && short !== inv.number) fixes.push({ inv, short, old: inv.number });
+  });
+  if (!fixes.length) return;
+  for (const { inv, short, old } of fixes) {
+    const { error } = await sb.from('invoices').update({ number: short }).eq('id', inv.id);
+    if (error) continue;                 // leave it as-is; retry on a later load
+    inv.number = short;                  // update cache in place
+    (cache.trips||[]).forEach(t => {
+      if (t.invoice_id === inv.id || t.invoice_number === old) t.invoice_number = short;
+    });
+    await sb.from('trips').update({ invoice_number: short }).eq('invoice_id', inv.id)
+      .then(()=>{}, ()=>{});             // best-effort; don't block on mileage rows
+  }
 }
 
 function openInvoiceModal(inv) {
