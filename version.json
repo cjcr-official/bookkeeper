@@ -1,1 +1,1 @@
-{"version":323,"note":"v323: Stopped the annoying zoom-in when you tap into a field to type. The page no longer auto-zooms on any input, anywhere (search boxes, invoice line items, dates, etc.). Trade-off: pinch-to-zoom on the page is now off too."}
+{"version":324,"note":"v324: Redesigned the dashboard with an Origin-style look — a gradient-filled Cash Flow area chart (income area + expenses line over 6 months, tap a month for details) replaces the old bars, plus a new Spending by Category card with a colorful donut ring and per-category spend bars (toggle Month / Year)."}
