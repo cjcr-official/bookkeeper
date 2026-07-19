@@ -777,6 +777,37 @@ input,select,textarea{border-radius:var(--radius-sm)}
   .donut{width:150px;height:150px}
   .cat-bars{width:100%}
 }
+
+/* ── Desktop dashboard grid (Origin-style filled layout) ──
+   On wide screens the dashboard stops being one skinny full-width stack and
+   becomes a two-column grid: cash flow + upcoming fill the left, the category
+   donut + calendar form a right rail, recents + reports span the bottom.
+   Cards stretch to their tracks so the page reads as one solid surface.
+   Mobile keeps the plain stacked flow (block layout) untouched. */
+@media(min-width:1100px){
+  /* .active keeps this ID rule from beating .page{display:none} on other pages. */
+  #page-dashboard.active{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);column-gap:1rem;align-items:stretch;
+    grid-template-areas:"hero hero" "flow cat" "up cat" "up cal" "rec rec" "rep rep"}
+  #page-dashboard .overview{grid-area:hero}
+  #dash-card-flow{grid-area:flow;display:flex;flex-direction:column}
+  /* center the chart in whatever height the row gives the card */
+  #dash-card-flow .ac-wrap{flex:1;display:flex;flex-direction:column;justify-content:center}
+  #dash-card-cat{grid-area:cat}
+  #dash-card-up{grid-area:up}
+  #dash-card-cal{grid-area:cal;align-self:start}
+  #dash-card-recents{grid-area:rec}
+  #dash-card-reports{grid-area:rep}
+}
+/* The category card reflows by ITS OWN width (it's a narrow rail on desktop but
+   full-width on tablets): donut stacks on top when the card is narrow, sits
+   beside the bars when there's room. Width-based media queries can't see this,
+   so the card is a size container (iOS 16+ supports container queries; the
+   640px media rule above stays as the fallback). */
+#dash-card-cat{container-type:inline-size}
+@container (max-width:560px){
+  .cat-wrap{flex-direction:column;gap:1.1rem}
+  .cat-bars{width:100%}
+}
 </style>
 </head>
 <body>
@@ -941,11 +972,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </div>
           </div>
         </div>
-        <div class="card">
+        <div class="card" id="dash-card-up">
           <div class="card-header"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button></div>
           <div id="upcoming-list"></div>
         </div>
-        <div class="card">
+        <div class="card" id="dash-card-cal">
           <div class="card-header" onclick="toggleCalendar()" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Calendar</h3>
             <i class="ti ti-chevron-down" id="calendar-chevron" style="transition:transform .2s;color:var(--text3)"></i>
@@ -964,7 +995,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div id="cal-day-jobs" style="padding:.75rem 1rem"></div>
           </div>
         </div>
-        <div class="card">
+        <div class="card" id="dash-card-flow">
           <div class="card-header">
             <h3><i class="ti ti-wave-sine" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Cash Flow</h3>
             <div class="ac-legend">
@@ -977,7 +1008,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div class="ac-tip" id="cashflow-tip"></div>
           </div>
         </div>
-        <div class="card">
+        <div class="card" id="dash-card-cat">
           <div class="card-header">
             <h3><i class="ti ti-chart-donut-3" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spending by Category</h3>
             <div class="seg" id="cat-period">
@@ -987,7 +1018,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
           <div id="cat-breakdown"></div>
         </div>
-        <div class="two-col">
+        <div class="two-col" id="dash-card-recents">
           <div class="card">
             <div class="card-header"><h3>Recent Invoices</h3><button class="btn btn-sm" onclick="showPage('invoices',null)">View all</button></div>
             <div id="dash-invoices"></div>
@@ -999,7 +1030,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         </div>
 
         <!-- REPORTS (collapsible card on dashboard) -->
-        <div class="card" style="margin-top:1rem">
+        <div class="card" id="dash-card-reports" style="margin-top:1rem">
           <div class="card-header" onclick="toggleReports()" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-chart-pie" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Reports</h3>
             <i class="ti ti-chevron-down" id="reports-chevron" style="transition:transform .2s;color:var(--text3)"></i>
