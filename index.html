@@ -354,20 +354,6 @@ textarea{resize:vertical;min-height:70px}
 /* ── COLORS ── */
 .green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}
 
-/* ── BAR CHART ── */
-.bar-chart{position:relative;display:flex;align-items:flex-end;gap:10px;height:150px;padding-top:8px;padding-left:44px}
-.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end;position:relative;z-index:1}
-.bar-pair{display:flex;gap:3px;align-items:flex-end;width:100%;justify-content:center;height:124px}
-.bar{width:42%;max-width:18px;border-radius:3px 3px 0 0;min-height:3px;transition:filter .15s,transform .15s;cursor:pointer}
-.bar.income{background:linear-gradient(to top,#16a34a,#4ade80)}
-.bar.expense{background:linear-gradient(to top,#dc2626,#f87171)}
-.bar:hover{filter:brightness(1.15);transform:scaleY(1.02)}
-.bar-label{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:6px}
-.bar-grid{position:absolute;left:0;right:0;top:8px;bottom:24px;z-index:0;pointer-events:none}
-.bar-grid-line{position:absolute;left:0;right:0;border-top:1px dashed var(--border);height:0}
-.bar-grid-label{position:absolute;left:0;width:44px;box-sizing:border-box;text-align:right;padding-right:8px;font-size:9px;color:var(--text3);font-family:'JetBrains Mono',monospace;transform:translateY(-50%)}
-.bar-tip{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:.3rem .5rem;font-size:10px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s;margin-bottom:4px;z-index:5;box-shadow:var(--shadow)}
-.bar-col:hover .bar-tip{opacity:1}
 
 /* ── CALENDAR (month grid) ── */
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border)}
@@ -597,8 +583,6 @@ body.modal-open .main{overflow:hidden}
   .tabs{overflow-x:auto;scrollbar-width:none;width:100%}
   .tabs::-webkit-scrollbar{display:none}
   .toast{left:1rem;right:1rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 12px);text-align:center}
-  .bar-chart{height:140px;gap:6px}
-  .bar-pair{height:114px}
   .bar-label{font-size:9px}
 
   /* ── SHARED COMPACT LIST CARDS ── */
@@ -744,6 +728,54 @@ input,select,textarea{border-radius:var(--radius-sm)}
   /* short viewports (phone landscape) can't fit the full side nav — let it scroll
      so Settings / Sign Out are never cut off */
   .sidebar{overflow-y:auto}
+}
+
+/* ══ ORIGIN-STYLE WIDGETS (cash-flow area chart + category donut + spend bars) ══
+   Sleek finance-dashboard visuals: a gradient-filled area chart for cash flow, a
+   colorful donut ring for the category split, and per-category spend bars. All are
+   dependency-free inline SVG/CSS so they sync with the theme (light + dark). */
+
+/* Segmented period toggle (This Month / This Year) — mono micro-label pills */
+.seg{display:inline-flex;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-pill);padding:3px;gap:2px}
+.seg button{border:none;background:transparent;color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;padding:.32rem .7rem;border-radius:var(--radius-pill);cursor:pointer;transition:background .15s,color .15s;white-space:nowrap}
+.seg button.active{background:var(--accent);color:#fff;box-shadow:0 2px 8px var(--accent-glow)}
+.seg button:not(.active):hover{color:var(--text)}
+
+/* Chart legend chips (income green / expenses red — non-negotiable colors) */
+.ac-legend{display:flex;gap:.85rem;flex-wrap:wrap}
+.ac-legend span{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);font-weight:600}
+.ac-legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+
+/* Cash-flow area chart */
+.ac-wrap{position:relative;padding:1rem 1.1rem 1.15rem}
+.ac-wrap svg{display:block;width:100%;height:auto;overflow:visible}
+.ac-hit{fill:transparent;cursor:pointer}
+.ac-vline{stroke:var(--border2);stroke-width:1;stroke-dasharray:3 3;opacity:0;pointer-events:none;transition:opacity .1s}
+.ac-tip{position:absolute;pointer-events:none;opacity:0;transform:translate(-50%,-8px);background:var(--surface2);border:1px solid var(--border2);border-radius:9px;padding:.5rem .65rem;font-size:11px;box-shadow:var(--shadow);z-index:5;transition:opacity .12s;min-width:120px}
+.ac-tip .ac-tip-m{font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--text3);margin-bottom:.3rem}
+.ac-tip .ac-tip-r{display:flex;align-items:center;justify-content:space-between;gap:.9rem;font-variant-numeric:tabular-nums}
+.ac-tip .ac-tip-r b{font-family:'JetBrains Mono',monospace;font-weight:600}
+
+/* Category donut + spend bars */
+.cat-wrap{display:flex;gap:1.4rem;padding:1.15rem 1.25rem 1.25rem;align-items:center}
+.donut{position:relative;flex-shrink:0;width:172px;height:172px}
+.donut svg{width:100%;height:100%;transform:rotate(-90deg)}
+.donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none}
+.donut-total{font-size:23px;font-weight:800;letter-spacing:-.6px;font-variant-numeric:tabular-nums;line-height:1.05}
+.donut-cap{font-size:8.5px;font-family:'JetBrains Mono',monospace;letter-spacing:.7px;text-transform:uppercase;color:var(--text3);margin-top:3px}
+.cat-bars{flex:1;min-width:0;display:flex;flex-direction:column;gap:.85rem}
+.cat-row{display:flex;flex-direction:column;gap:.4rem;cursor:default}
+.cat-row-top{display:flex;align-items:center;gap:.55rem;font-size:12.5px}
+.cat-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.cat-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+.cat-amt{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;flex-shrink:0}
+.cat-pct{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);flex-shrink:0;width:34px;text-align:right}
+.cat-track{height:7px;border-radius:var(--radius-pill);background:var(--bg2);overflow:hidden}
+.cat-fill{height:100%;border-radius:var(--radius-pill);transition:width .5s cubic-bezier(.4,0,.2,1)}
+@media(max-width:640px){
+  .cat-wrap{flex-direction:column;gap:1.1rem}
+  .donut{width:150px;height:150px}
+  .cat-bars{width:100%}
 }
 </style>
 </head>
@@ -932,27 +964,38 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div id="cal-day-jobs" style="padding:.75rem 1rem"></div>
           </div>
         </div>
-        <div class="two-col">
-          <div class="card">
-            <div class="card-header">
-              <h3>Income vs Expenses</h3>
-              <div style="display:flex;gap:.85rem">
-                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:10px;height:10px;background:linear-gradient(to top,#16a34a,#4ade80);border-radius:2px;display:inline-block"></span>Income</span>
-                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)"><span style="width:10px;height:10px;background:linear-gradient(to top,#ef4444,#f87171);border-radius:2px;display:inline-block"></span>Expenses</span>
-              </div>
-            </div>
-            <div style="padding:1rem 1.1rem .85rem">
-              <div class="bar-chart" id="bar-chart"></div>
+        <div class="card">
+          <div class="card-header">
+            <h3><i class="ti ti-wave-sine" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Cash Flow</h3>
+            <div class="ac-legend">
+              <span><i style="background:var(--green)"></i>Income</span>
+              <span><i style="background:var(--red)"></i>Expenses</span>
             </div>
           </div>
+          <div class="ac-wrap">
+            <div id="cashflow-chart"></div>
+            <div class="ac-tip" id="cashflow-tip"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3><i class="ti ti-chart-donut-3" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spending by Category</h3>
+            <div class="seg" id="cat-period">
+              <button class="active" onclick="setCatPeriod('month',this)">Month</button>
+              <button onclick="setCatPeriod('year',this)">Year</button>
+            </div>
+          </div>
+          <div id="cat-breakdown"></div>
+        </div>
+        <div class="two-col">
           <div class="card">
             <div class="card-header"><h3>Recent Invoices</h3><button class="btn btn-sm" onclick="showPage('invoices',null)">View all</button></div>
             <div id="dash-invoices"></div>
           </div>
-        </div>
-        <div class="card">
-          <div class="card-header"><h3>Recent Expenses</h3><button class="btn btn-sm" onclick="showPage('expenses',null)">View all</button></div>
-          <div id="dash-expenses"></div>
+          <div class="card">
+            <div class="card-header"><h3>Recent Expenses</h3><button class="btn btn-sm" onclick="showPage('expenses',null)">View all</button></div>
+            <div id="dash-expenses"></div>
+          </div>
         </div>
 
         <!-- REPORTS (collapsible card on dashboard) -->
@@ -2117,35 +2160,8 @@ function renderDashboard() {
   document.getElementById('stat-outstanding').textContent = fmt(outstanding);
   renderTaxCard(profit);
 
-  const chart = document.getElementById('bar-chart');
-  const months = [];
-  for (let i=5;i>=0;i--) { const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({y:d.getFullYear(),m:d.getMonth(),label:d.toLocaleDateString('en-US',{month:'short'})}); }
-  const data = months.map(mo=>({
-    label: mo.label,
-    inc: cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getMonth()===mo.m&&parseDate(i.date).getFullYear()===mo.y).reduce((s,i)=>s+invoiceRevenue(i),0),
-    exp: cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getMonth()===mo.m&&parseDate(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0)
-  }));
-  const maxVal = Math.max(1, ...data.map(d=>Math.max(d.inc,d.exp)));
-  // round max up to a nice gridline number
-  const niceMax = (v)=>{ const pow=Math.pow(10,Math.floor(Math.log10(v))); const n=v/pow; const step=n<=1?1:n<=2?2:n<=5?5:10; return step*pow; };
-  const chartTop = niceMax(maxVal);
-  // gridlines at 0, 50%, 100%
-  // Compact axis labels (no cents) so they read cleanly in the gutter.
-  const axisLabel = v => '$' + Math.round(v).toLocaleString();
-  const grid = [0,0.5,1].map(f=>`<div class="bar-grid-line" style="bottom:${f*100}%"><span class="bar-grid-label">${f>0?axisLabel(chartTop*f):''}</span></div>`).join('');
-  const bars = data.map(d=>{
-    const ih=Math.max(d.inc>0?3:0,Math.round((d.inc/chartTop)*100));
-    const eh=Math.max(d.exp>0?3:0,Math.round((d.exp/chartTop)*100));
-    return `<div class="bar-col">
-      <div class="bar-tip">${d.label}: <span style="color:#4ade80">${fmt(d.inc)}</span> / <span style="color:#f87171">${fmt(d.exp)}</span></div>
-      <div class="bar-pair">
-        <div class="bar income" style="height:${ih}%"></div>
-        <div class="bar expense" style="height:${eh}%"></div>
-      </div>
-      <div class="bar-label">${d.label}</div>
-    </div>`;
-  }).join('');
-  chart.innerHTML = `<div class="bar-grid">${grid}</div>${bars}`;
+  drawCashFlow();
+  renderCategoryBreakdown();
 
   const esc = escHtml;
   const ri = document.getElementById('dash-invoices');
@@ -2162,6 +2178,191 @@ function renderDashboard() {
 
   renderUpcoming();
   // Reports render on demand when the collapsible card is opened (see toggleReports)
+}
+
+// ══ ORIGIN-STYLE DASHBOARD WIDGETS ══
+// Dependency-free inline SVG. Income is always green, expenses red (house rule).
+
+// Compact money axis label ($1.2k) so the gutter stays readable.
+function fmtAxis(v){
+  v = Math.round(v);
+  if (Math.abs(v) >= 1000) { const k = v/1000; return '$' + (k % 1 === 0 ? k : k.toFixed(1)) + 'k'; }
+  return '$' + v.toLocaleString();
+}
+// Smooth (Catmull-Rom → cubic bezier) path through [x,y] points — the flowing
+// Origin-style curve. Tension kept gentle so lines don't overshoot the data.
+function smoothLine(pts){
+  if (pts.length < 2) return pts.length ? `M${pts[0][0]},${pts[0][1]}` : '';
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||p2;
+    const c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6;
+    const c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+    d += ` C${c1x},${c1y} ${c2x},${c2y} ${p2[0]},${p2[1]}`;
+  }
+  return d;
+}
+
+// 6-month income (green area) vs expenses (red line) gradient area chart.
+function drawCashFlow(){
+  const host = document.getElementById('cashflow-chart');
+  if (!host) return;
+  const now = new Date();
+  const months = [];
+  for (let i=5;i>=0;i--){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({y:d.getFullYear(),m:d.getMonth(),label:d.toLocaleDateString('en-US',{month:'short'})}); }
+  const data = months.map(mo=>({
+    label: mo.label,
+    inc: cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getMonth()===mo.m&&parseDate(i.date).getFullYear()===mo.y).reduce((s,i)=>s+invoiceRevenue(i),0),
+    exp: cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getMonth()===mo.m&&parseDate(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0)
+  }));
+  const maxVal = Math.max(1, ...data.map(d=>Math.max(d.inc,d.exp)));
+  const niceMax = (v)=>{ const pow=Math.pow(10,Math.floor(Math.log10(v))); const n=v/pow; const step=n<=1?1:n<=2?2:n<=5?5:10; return step*pow; };
+  const top = niceMax(maxVal);
+
+  // Geometry (viewBox units; SVG scales to width).
+  const W=700, H=250, padL=44, padR=12, padT=16, padB=34;
+  const x0=padL, x1=W-padR, yTop=padT, yBot=H-padB;
+  const xAt = i => x0 + (x1-x0) * (data.length>1 ? i/(data.length-1) : .5);
+  const yAt = v => yBot - (v/top) * (yBot-yTop);
+  const incPts = data.map((d,i)=>[xAt(i), yAt(d.inc)]);
+  const expPts = data.map((d,i)=>[xAt(i), yAt(d.exp)]);
+  const incLine = smoothLine(incPts);
+  const expLine = smoothLine(expPts);
+  const incArea = incLine + ` L${xAt(data.length-1)},${yBot} L${xAt(0)},${yBot} Z`;
+
+  // Horizontal gridlines + $ labels at 0 / 50% / 100%.
+  const grid = [0,.5,1].map(f=>{
+    const y = yBot - f*(yBot-yTop);
+    return `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="var(--border)" stroke-width="1" ${f>0?'stroke-dasharray="3 4"':''}/>`
+      + `<text x="${x0-8}" y="${y+3}" text-anchor="end" font-family="'JetBrains Mono',monospace" font-size="10" fill="var(--text3)">${f>0?fmtAxis(top*f):'$0'}</text>`;
+  }).join('');
+  const xlabels = data.map((d,i)=>`<text x="${xAt(i)}" y="${H-12}" text-anchor="middle" font-family="'JetBrains Mono',monospace" font-size="10" fill="var(--text3)">${d.label}</text>`).join('');
+  const dots = data.map((d,i)=>
+    `<circle cx="${xAt(i)}" cy="${yAt(d.exp)}" r="3" fill="var(--red)"/>`+
+    `<circle cx="${xAt(i)}" cy="${yAt(d.inc)}" r="3.5" fill="var(--green)" stroke="var(--surface)" stroke-width="1.5"/>`
+  ).join('');
+  // Invisible hover columns + a guide line for the tooltip.
+  const band = (x1-x0)/Math.max(1,data.length-1);
+  const hits = data.map((d,i)=>`<rect class="ac-hit" data-i="${i}" x="${xAt(i)-band/2}" y="${yTop-8}" width="${band}" height="${yBot-yTop+16}"/>`).join('');
+
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Six-month income versus expenses">
+    <defs>
+      <linearGradient id="incGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--green)" stop-opacity=".38"/>
+        <stop offset="100%" stop-color="var(--green)" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    ${grid}
+    <path d="${incArea}" fill="url(#incGrad)"/>
+    <path d="${incLine}" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="${expLine}" fill="none" stroke="var(--red)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 0"/>
+    ${dots}
+    <line class="ac-vline" id="ac-vline" x1="0" y1="${yTop-8}" x2="0" y2="${yBot}"/>
+    ${xlabels}
+    ${hits}
+  </svg>`;
+
+  // Tooltip wiring (works for mouse + touch). Position is % of the SVG width so it
+  // tracks correctly however the chart is scaled.
+  const tip = document.getElementById('cashflow-tip');
+  const vline = document.getElementById('ac-vline');
+  const svg = host.querySelector('svg');
+  const show = i => {
+    const d = data[i];
+    const xp = (xAt(i)/W)*100, yp = (Math.min(yAt(d.inc),yAt(d.exp))/H)*100;
+    tip.style.left = xp+'%'; tip.style.top = yp+'%';
+    tip.innerHTML = `<div class="ac-tip-m">${d.label} ${months[i].y}</div>
+      <div class="ac-tip-r"><span style="color:var(--green)">Income</span><b style="color:var(--green)">${fmt(d.inc)}</b></div>
+      <div class="ac-tip-r"><span style="color:var(--red)">Expenses</span><b style="color:var(--red)">${fmt(d.exp)}</b></div>`;
+    tip.style.opacity='1';
+    if (vline){ vline.setAttribute('x1',xAt(i)); vline.setAttribute('x2',xAt(i)); vline.style.opacity='1'; }
+  };
+  const hide = () => { tip.style.opacity='0'; if (vline) vline.style.opacity='0'; };
+  svg.querySelectorAll('.ac-hit').forEach(r=>{
+    const i = +r.dataset.i;
+    r.addEventListener('mouseenter', ()=>show(i));
+    r.addEventListener('mousemove', ()=>show(i));
+    r.addEventListener('touchstart', (e)=>{ e.preventDefault(); show(i); }, {passive:false});
+  });
+  svg.addEventListener('mouseleave', hide);
+}
+
+// Category color palette (distinct hues; avoids pure income-green / expense-red so
+// the semantic colors stay unambiguous elsewhere).
+const CAT_COLORS = ['#4f8cff','#a78bfa','#f472b6','#f59e0b','#06b6d4','#fb923c','#2dd4bf','#818cf8','#facc15','#38bdf8','#c084fc','#fca5a5'];
+let _catPeriod = 'month';
+function setCatPeriod(p, el){
+  _catPeriod = p;
+  document.querySelectorAll('#cat-period button').forEach(b=>b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderCategoryBreakdown();
+}
+// Colorful donut ring + per-category spend bars (the "where the money goes" card).
+function renderCategoryBreakdown(){
+  const host = document.getElementById('cat-breakdown');
+  if (!host) return;
+  const now = new Date();
+  const inPeriod = (e) => {
+    const d = parseDate(e.date);
+    if (_catPeriod==='year') return d.getFullYear()===now.getFullYear();
+    return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
+  };
+  const cats = {};
+  cache.expenses.filter(e=>!e.reimbursed && inPeriod(e)).forEach(e=>{
+    const k = e.category || 'Uncategorized';
+    cats[k] = (cats[k]||0) + parseFloat(e.amount||0);
+  });
+  let sorted = Object.entries(cats).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const total = sorted.reduce((s,[,v])=>s+v,0);
+
+  if (!total){
+    host.innerHTML = `<div class="empty" style="padding:2.25rem 1rem"><i class="ti ti-chart-donut-3"></i><p>No spending ${_catPeriod==='year'?'this year':'this month'} yet</p></div>`;
+    return;
+  }
+  // Collapse a long tail into "Everything else" so the donut/legend stay legible.
+  if (sorted.length > 7){
+    const head = sorted.slice(0,6);
+    const rest = sorted.slice(6).reduce((s,[,v])=>s+v,0);
+    sorted = head.concat([['Everything else', rest]]);
+  }
+  const colored = sorted.map(([k,v],i)=>({name:k, val:v, color:CAT_COLORS[i%CAT_COLORS.length]}));
+
+  // Donut: stroke-dasharray arcs on a single circle. r/C fixed to the viewBox.
+  const R=54, C=2*Math.PI*R, GAP=2;
+  let off=0;
+  const arcs = colored.map(c=>{
+    const frac = c.val/total;
+    const len = Math.max(0, frac*C - GAP);
+    const seg = `<circle cx="70" cy="70" r="${R}" fill="none" stroke="${c.color}" stroke-width="15" stroke-dasharray="${len} ${C-len}" stroke-dashoffset="${-off}"/>`;
+    off += frac*C;
+    return seg;
+  }).join('');
+  const donut = `<div class="donut">
+    <svg viewBox="0 0 140 140">
+      <circle cx="70" cy="70" r="${R}" fill="none" stroke="var(--bg2)" stroke-width="15"/>
+      ${arcs}
+    </svg>
+    <div class="donut-center">
+      <div class="donut-total">${fmt(total)}</div>
+      <div class="donut-cap">${_catPeriod==='year'?'This Year':'This Month'}</div>
+    </div>
+  </div>`;
+
+  const esc = escHtml;
+  const bars = colored.map(c=>{
+    const pct = Math.round((c.val/total)*100);
+    return `<div class="cat-row">
+      <div class="cat-row-top">
+        <span class="cat-dot" style="background:${c.color}"></span>
+        <span class="cat-name">${esc(c.name)}</span>
+        <span class="cat-amt">${fmt(c.val)}</span>
+        <span class="cat-pct">${pct}%</span>
+      </div>
+      <div class="cat-track"><div class="cat-fill" style="width:${Math.max(2,(c.val/total)*100)}%;background:${c.color}"></div></div>
+    </div>`;
+  }).join('');
+
+  host.innerHTML = `<div class="cat-wrap">${donut}<div class="cat-bars">${bars}</div></div>`;
 }
 
 // ── Estimated-tax set-aside (top of Home) ──
