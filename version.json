@@ -1,1 +1,1 @@
-{"version":332,"note":"v332: Even spacing down the dashboard — the Recent Invoices/Expenses and Reports cards no longer get extra gaps, so every widget in the collapsed list sits a uniform 1rem apart."}
+{"version":333,"note":"v333: Consistent collapse chevrons — every dashboard widget (including Calendar and Reports) now uses the same 18px chevron that points right when collapsed and rotates down when open. No more mismatched sizes or directions."}
