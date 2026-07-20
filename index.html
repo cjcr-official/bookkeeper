@@ -806,6 +806,16 @@ input,select,textarea{border-radius:var(--radius-sm)}
 .sc-cell.today{outline:2px solid var(--accent);outline-offset:-2px}
 .sc-cell.future{opacity:.45}
 
+/* ── Collapsible dashboard widgets ──
+   Any card marked .collapsible gets a chevron in its header; tapping the header
+   folds the card down to just its title bar. State persists in localStorage. */
+.card.collapsible>.card-header{cursor:pointer;user-select:none;gap:.55rem}
+.card.collapsible>.card-header>h3{flex:1 1 auto;min-width:0}
+.dash-chev{transition:transform .2s;color:var(--text3);font-size:18px;flex-shrink:0}
+.card.collapsed>.card-header .dash-chev{transform:rotate(-90deg)}
+.card.collapsed>.card-header{border-bottom:none}
+.card.collapsed>:not(.card-header){display:none!important}
+
 /* ── Desktop dashboard grid (Origin-style filled layout) ──
    On wide screens the dashboard stops being one skinny full-width stack and
    becomes a two-column grid: cash flow + upcoming fill the left, the category
@@ -1001,38 +1011,41 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </div>
           </div>
         </div>
-        <div class="card" id="dash-card-flow">
-          <div class="card-header">
+        <div class="card collapsible" id="dash-card-flow">
+          <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-wave-sine" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Cash Flow</h3>
             <div class="ac-legend">
               <span><i style="background:var(--green)"></i>Income</span>
               <span><i style="background:var(--red)"></i>Expenses</span>
             </div>
+            <i class="ti ti-chevron-down dash-chev"></i>
           </div>
           <div class="ac-wrap">
             <div id="cashflow-chart"></div>
             <div class="ac-tip" id="cashflow-tip"></div>
           </div>
         </div>
-        <div class="card" id="dash-card-spend">
-          <div class="card-header">
+        <div class="card collapsible" id="dash-card-spend">
+          <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-calendar-dollar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spend This Month</h3>
             <div class="spend-total" id="spend-cal-total">$0.00</div>
+            <i class="ti ti-chevron-down dash-chev"></i>
           </div>
           <div id="spend-cal" class="spend-cal"></div>
         </div>
-        <div class="card" id="dash-card-cat">
-          <div class="card-header">
+        <div class="card collapsible" id="dash-card-cat">
+          <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-chart-donut-3" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spending by Category</h3>
             <div class="seg" id="cat-period">
-              <button class="active" onclick="setCatPeriod('month',this)">Month</button>
-              <button onclick="setCatPeriod('year',this)">Year</button>
+              <button class="active" onclick="event.stopPropagation();setCatPeriod('month',this)">Month</button>
+              <button onclick="event.stopPropagation();setCatPeriod('year',this)">Year</button>
             </div>
+            <i class="ti ti-chevron-down dash-chev"></i>
           </div>
           <div id="cat-breakdown"></div>
         </div>
-        <div class="card" id="dash-card-up">
-          <div class="card-header"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button></div>
+        <div class="card collapsible" id="dash-card-up">
+          <div class="card-header" onclick="toggleDashCard(this)"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button><i class="ti ti-chevron-down dash-chev"></i></div>
           <div id="upcoming-list"></div>
         </div>
         <div class="card" id="dash-card-cal">
@@ -1055,12 +1068,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
         </div>
         <div class="two-col" id="dash-card-recents">
-          <div class="card">
-            <div class="card-header"><h3>Recent Invoices</h3><button class="btn btn-sm" onclick="showPage('invoices',null)">View all</button></div>
+          <div class="card collapsible" id="dash-card-inv">
+            <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Invoices</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('invoices',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
             <div id="dash-invoices"></div>
           </div>
-          <div class="card">
-            <div class="card-header"><h3>Recent Expenses</h3><button class="btn btn-sm" onclick="showPage('expenses',null)">View all</button></div>
+          <div class="card collapsible" id="dash-card-exp">
+            <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Expenses</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('expenses',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
             <div id="dash-expenses"></div>
           </div>
         </div>
@@ -2245,6 +2258,7 @@ function renderDashboard() {
     : `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`;
 
   renderUpcoming();
+  applyDashCollapsed();
   // Reports render on demand when the collapsible card is opened (see toggleReports)
 }
 
@@ -4612,6 +4626,20 @@ async function deleteAccount(id) {
 }
 
 // ====== REPORTS ======
+// Fold/unfold a dashboard widget down to its header. State is remembered per
+// card id in localStorage so the layout you set sticks across launches.
+function toggleDashCard(header){
+  const card = header.closest('.card'); if (!card) return;
+  const collapsed = card.classList.toggle('collapsed');
+  try { const st = JSON.parse(lsGet('bk-dash-collapsed')||'{}'); if (card.id) st[card.id]=collapsed; lsSet('bk-dash-collapsed', JSON.stringify(st)); } catch(e){}
+}
+function applyDashCollapsed(){
+  let st = {}; try { st = JSON.parse(lsGet('bk-dash-collapsed')||'{}'); } catch(e){}
+  document.querySelectorAll('#page-dashboard .card.collapsible').forEach(card=>{
+    card.classList.toggle('collapsed', !!(card.id && st[card.id]));
+  });
+}
+
 function toggleReports() {
   const body = document.getElementById('reports-body');
   const chev = document.getElementById('reports-chevron');

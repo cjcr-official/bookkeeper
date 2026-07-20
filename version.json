@@ -1,1 +1,1 @@
-{"version":328,"note":"v328: Tap any category in Spending by Category to expand it — each one now unfolds to show the individual expenses (date, vendor, amount) that make up that slice. 'Everything else' expands to the full folded-in list too."}
+{"version":329,"note":"v329: Every dashboard widget now collapses — tap a card's header (Cash Flow, Spend This Month, Spending by Category, Upcoming, Recent Invoices/Expenses) to fold it down to just its title, with a chevron that remembers each card's state across launches."}
