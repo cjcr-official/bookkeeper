@@ -1,1 +1,1 @@
-{"version":331,"note":"v331: Collapsed dashboard widgets are now uniform — a folded card shows just its title and chevron (the legend, totals, pills and buttons only appear when it's open), so every collapsed widget is the same tidy height. On desktop a collapsed card no longer stretches to fill its grid track."}
+{"version":332,"note":"v332: Even spacing down the dashboard — the Recent Invoices/Expenses and Reports cards no longer get extra gaps, so every widget in the collapsed list sits a uniform 1rem apart."}

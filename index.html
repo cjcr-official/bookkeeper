@@ -819,6 +819,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
    widget is the same height (the legend / totals / pills / action buttons all
    act on the expanded body, so there's nothing to show while it's closed). */
 .card.collapsed>.card-header>*:not(h3):not(.dash-chev){display:none!important}
+/* On phones the Recent Invoices/Expenses pair stacks in a single column, so the
+   grid's own gap doubled up with each card's margin-bottom. Drop the grid gap
+   there and let the shared 1rem card margin set the rhythm, matching every other
+   widget in the collapsed stack. */
+@media(max-width:768px){#dash-card-recents{gap:0}}
 
 /* ── Desktop dashboard grid (Origin-style filled layout) ──
    On wide screens the dashboard stops being one skinny full-width stack and
@@ -1087,7 +1092,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         </div>
 
         <!-- REPORTS (collapsible card on dashboard) -->
-        <div class="card" id="dash-card-reports" style="margin-top:1rem">
+        <div class="card" id="dash-card-reports">
           <div class="card-header" onclick="toggleReports()" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-chart-pie" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Reports</h3>
             <i class="ti ti-chevron-down" id="reports-chevron" style="transition:transform .2s;color:var(--text3)"></i>
