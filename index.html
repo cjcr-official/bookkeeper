@@ -1064,7 +1064,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="card" id="dash-card-cal">
           <div class="card-header" onclick="toggleCalendar()" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Calendar</h3>
-            <i class="ti ti-chevron-down" id="calendar-chevron" style="transition:transform .2s;color:var(--text3)"></i>
+            <i class="ti ti-chevron-down dash-chev" id="calendar-chevron" style="transform:rotate(-90deg)"></i>
           </div>
           <div id="calendar-body" style="display:none">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;gap:.5rem;border-bottom:1px solid var(--border)">
@@ -1095,7 +1095,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="card" id="dash-card-reports">
           <div class="card-header" onclick="toggleReports()" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-chart-pie" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Reports</h3>
-            <i class="ti ti-chevron-down" id="reports-chevron" style="transition:transform .2s;color:var(--text3)"></i>
+            <i class="ti ti-chevron-down dash-chev" id="reports-chevron" style="transform:rotate(-90deg)"></i>
           </div>
           <div id="reports-body" style="display:none">
             <div style="padding:.85rem 1rem 0">
@@ -4660,7 +4660,7 @@ function toggleReports() {
   const chev = document.getElementById('reports-chevron');
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : 'block';
-  if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+  if (chev) chev.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
   if (!open) renderReport(currentReport); // render fresh when opening
 }
 
@@ -4669,7 +4669,7 @@ function toggleCalendar() {
   const chev = document.getElementById('calendar-chevron');
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : 'block';
-  if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+  if (chev) chev.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
   if (!open) renderCalendar();
 }
 
