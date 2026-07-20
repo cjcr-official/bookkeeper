@@ -94,8 +94,9 @@ out; hit `/run` again after the trigger; the phone should buzz.
 - **Per fire:** query `jobs?done=eq.false&remind_minutes=not.is.null&reminded_at=is.null`.
   For each job, compute `triggerAt = jobLocalDateTime - remind_minutes` in
   `America/Denver`. If `now >= triggerAt` AND `now < triggerAt + 30 min`,
-  send a payload-less Web Push (`POST` to the subscription endpoint with a
-  VAPID-signed `Authorization` header) and stamp `reminded_at = now()`.
+  send a detailed Web Push (`POST` to the subscription endpoint with a
+  VAPID-signed `Authorization` header and an RFC 8291 encrypted body naming the
+  item) and stamp `reminded_at = now()`.
 - If the window has blown past (now > triggerAt + 30 min), stamp
   `reminded_at = triggerAt` anyway so the row stops matching the query.
 - If the push returns 404 / 410, the subscription is dead; clear it from the
@@ -104,8 +105,10 @@ out; hit `/run` again after the trigger; the phone should buzz.
 ## Notes
 
 - iOS 16.4+ required; Bookkeeper must be installed to Home Screen.
-- Payload-less push — `sw.js` shows a static notification. Adding payload
-  encryption (RFC 8291) is doable but not worth the ~150 lines for one user.
+- Detailed push — the body is RFC 8291 (aes128gcm) encrypted with the
+  subscription's `p256dh`/`auth` keys so the notification names the item.
+  `sendWebPush` falls back to a payload-less push if encryption fails or the
+  push service rejects the encrypted body, so a reminder always lands.
 - VAPID JWT is signed with Web Crypto using the keypair imported as a JWK
   (no PKCS#8 wrapping needed — see `makeVapidJwt` in `push-cron.js`).
 - The Worker no longer calls any Google APIs. Mileage is user-typed; the
