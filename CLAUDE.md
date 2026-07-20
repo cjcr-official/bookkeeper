@@ -443,9 +443,13 @@ minute until the cache refreshes.
   and the next open recomputes the exact count. `openNotifPane()` renders the
   `#modal-notifications` pane and marks all shown as seen (clearing the badge);
   a row tap dispatches to `editInvoice`/`editJob`/`openRecurringManager`.
-  `initNotifications()` runs after `renderDashboard()` in all three login paths
-  and auto-pops the pane once when anything is new — but never over the app-lock
-  screen or another open modal.
+  `initNotifications()` runs after `renderDashboard()` in all three login paths;
+  it and the foreground/`pageshow` listeners call `showNotificationsOnOpen()`,
+  which **auto-opens the pane whenever the app is opened/resumed and anything is
+  current** (new or not) — once per foreground (`_notifFgShown`, reset when
+  backgrounded), only after a genuine absence (>20s, via `_notifBgAt`, so a quick
+  Control-Center peek doesn't re-pop), and never over the app-lock screen or
+  another open modal.
 - **Invoices:** status tabs (All/Draft/Sent/Paid/Overdue) + search; pro PDF/print
   modeled on the business Word template; numbers auto-generate **YYNN** (2-digit
   year + sequence, editable). Share builds a real PDF via an off-screen 780px
