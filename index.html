@@ -815,6 +815,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
 .card.collapsed>.card-header .dash-chev{transform:rotate(-90deg)}
 .card.collapsed>.card-header{border-bottom:none}
 .card.collapsed>:not(.card-header){display:none!important}
+/* Collapsed: strip the header down to just its title + chevron so every folded
+   widget is the same height (the legend / totals / pills / action buttons all
+   act on the expanded body, so there's nothing to show while it's closed). */
+.card.collapsed>.card-header>*:not(h3):not(.dash-chev){display:none!important}
 
 /* ── Desktop dashboard grid (Origin-style filled layout) ──
    On wide screens the dashboard stops being one skinny full-width stack and
@@ -836,6 +840,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
   #dash-card-cal{grid-area:cal;align-self:start}
   #dash-card-recents{grid-area:rec}
   #dash-card-reports{grid-area:rep}
+  /* A collapsed card sits at its natural header height at the top of its track
+     instead of stretching to fill it — so a folded Category card doesn't balloon
+     across the two rows it spans, and collapsed widgets stay visually uniform. */
+  #page-dashboard .card.collapsed{align-self:start}
 }
 /* The category card reflows by ITS OWN width (it's a narrow rail on desktop but
    full-width on tablets): donut stacks on top when the card is narrow, sits

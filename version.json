@@ -1,1 +1,1 @@
-{"version":330,"note":"v330: Dashboard widgets now start collapsed by default — the page opens as a tidy list of titles, and any card you expand stays open across launches. Tap a header to unfold it."}
+{"version":331,"note":"v331: Collapsed dashboard widgets are now uniform — a folded card shows just its title and chevron (the legend, totals, pills and buttons only appear when it's open), so every collapsed widget is the same tidy height. On desktop a collapsed card no longer stretches to fill its grid track."}
