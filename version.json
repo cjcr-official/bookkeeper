@@ -1,1 +1,1 @@
-{"version":327,"note":"v327: Reordered the Home page into a logical flow — the numbers up top, then the money analytics grouped together (Cash Flow, Spend This Month, Spending by Category), then what's coming (Upcoming, Calendar), then recent activity and Reports. No more charts split apart by the schedule cards."}
+{"version":328,"note":"v328: Tap any category in Spending by Category to expand it — each one now unfolds to show the individual expenses (date, vendor, amount) that make up that slice. 'Everything else' expands to the full folded-in list too."}
