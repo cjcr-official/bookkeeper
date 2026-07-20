@@ -1942,6 +1942,7 @@ async function doResetPassword() {
 
 async function doLogout() {
   await sb.auth.signOut();
+  setIconBadge(0);
   currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[],store_credits:[]};
   document.getElementById('app').style.display = 'none';
   resetAuthView();
@@ -2698,6 +2699,16 @@ function buildNotifications() {
 function getNotifSeen() { try { return JSON.parse(lsGet('bk-notif-seen','[]'))||[]; } catch(e){ return []; } }
 function setNotifSeen(ids) { lsSet('bk-notif-seen', JSON.stringify(ids)); }
 
+// Home Screen app-icon badge (Web Badging API). Mirrors the in-app unread count
+// so the installed PWA shows a red badge like a native app. No-ops where the API
+// isn't supported (older iOS, in-browser tab).
+function setIconBadge(n) {
+  try {
+    if (!('setAppBadge' in navigator)) return;
+    (n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
+  } catch (e) {}
+}
+
 // Badge = count of notifications the user hasn't opened the pane on yet.
 function refreshNotifBadge() {
   const badge = document.getElementById('notif-badge');
@@ -2707,6 +2718,7 @@ function refreshNotifBadge() {
   const unseen = _notifCache.filter(n => !seen.includes(n.id)).length;
   if (unseen > 0) { badge.textContent = unseen > 9 ? '9+' : unseen; badge.style.display = 'flex'; }
   else badge.style.display = 'none';
+  setIconBadge(unseen);
 }
 
 // Mark everything currently shown as seen (clears the badge) and prune the seen

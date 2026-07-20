@@ -435,7 +435,12 @@ minute until the cache refreshes.
   overdue/due-soon invoices, jobs today or missed, recurring items coming due
   (`NOTIF_SOON_DAYS = 3` horizon). Each has a **stable id**; seen ids live in
   localStorage `bk-notif-seen`. `refreshNotifBadge()` (called from `showPage()`
-  and on load) sets the badge to the unseen count; `openNotifPane()` renders the
+  and on load) sets the badge to the unseen count **and mirrors it to the Home
+  Screen app-icon badge via the Web Badging API** (`setIconBadge()` →
+  `navigator.setAppBadge`/`clearAppBadge`, no-op where unsupported); the `sw.js`
+  push handler also raises the icon badge (`self.navigator.setAppBadge`, count
+  from `data.badge` or 1) so a reminder badges the icon while the app is closed,
+  and the next open recomputes the exact count. `openNotifPane()` renders the
   `#modal-notifications` pane and marks all shown as seen (clearing the badge);
   a row tap dispatches to `editInvoice`/`editJob`/`openRecurringManager`.
   `initNotifications()` runs after `renderDashboard()` in all three login paths
