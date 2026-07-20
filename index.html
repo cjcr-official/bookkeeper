@@ -716,6 +716,13 @@ input,select,textarea{border-radius:var(--radius-sm)}
 @media(max-width:768px){
   /* bottom sheets slide up from the bottom edge; the overlay fade carries the backdrop */
   .modal-overlay.open .modal{animation:bkSheet .32s cubic-bezier(.22,1,.36,1)}
+  /* Notifications is a centered dialog on phones too — not a bottom sheet. */
+  #modal-notifications{align-items:center;justify-content:center;
+    padding:calc(env(safe-area-inset-top,0px) + 1.1rem) 1.1rem calc(env(safe-area-inset-bottom,0px) + 1.1rem)}
+  #modal-notifications .modal{align-self:center;width:100%;max-width:440px;
+    border-radius:20px;max-height:78vh;height:auto;padding-bottom:0}
+  #modal-notifications .modal::before{display:none}   /* no drag handle on a centered window */
+  #modal-notifications.open .modal{animation:bkPop .25s cubic-bezier(.22,1,.36,1)}
 }
 
 /* ── TOUCH DEVICES (any width) — iPads and touch laptops are served the desktop

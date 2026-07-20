@@ -1,1 +1,1 @@
-{"version":339,"note":"v339: Fixed the notifications sheet — it now hugs its content instead of stretching into a big empty panel. And it only auto-opens after an actual push reminder you haven't seen yet, not every time you open the app."}
+{"version":340,"note":"v340: The notifications pane now opens as a centered window in the middle of the screen instead of sliding up from the bottom as a sheet."}
