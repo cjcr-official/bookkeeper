@@ -444,12 +444,15 @@ minute until the cache refreshes.
   `#modal-notifications` pane and marks all shown as seen (clearing the badge);
   a row tap dispatches to `editInvoice`/`editJob`/`openRecurringManager`.
   `initNotifications()` runs after `renderDashboard()` in all three login paths;
-  it and the foreground/`pageshow` listeners call `showNotificationsOnOpen()`,
-  which **auto-opens the pane whenever the app is opened/resumed and anything is
-  current** (new or not) — once per foreground (`_notifFgShown`, reset when
-  backgrounded), only after a genuine absence (>20s, via `_notifBgAt`, so a quick
-  Control-Center peek doesn't re-pop), and never over the app-lock screen or
-  another open modal.
+  it and the foreground/`pageshow`/SW-message listeners call
+  `showNotificationsOnOpen()`, which **auto-opens the pane only after an actual
+  push reminder the user hasn't been shown yet** — the `sw.js` push handler
+  stamps a timestamp into the `bk-flags` Cache (`markPush()`) and pings open
+  windows (`notifyClients()` → `postMessage {type:'bk-push'}`); the client reads
+  it via `getLastPushTs()` and pops once when it exceeds `bk-push-seen-ts`
+  (localStorage), then advances that marker. Fires once per foreground
+  (`_notifFgShown`), and never over the app-lock screen or another open modal.
+  (It no longer pops on every open — only when a reminder actually fired.)
 - **Invoices:** status tabs (All/Draft/Sent/Paid/Overdue) + search; pro PDF/print
   modeled on the business Word template; numbers auto-generate **YYNN** (2-digit
   year + sequence, editable). Share builds a real PDF via an off-screen 780px

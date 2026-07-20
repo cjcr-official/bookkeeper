@@ -22,9 +22,26 @@ self.addEventListener('push', event => {
     }),
     (self.navigator && self.navigator.setAppBadge)
       ? self.navigator.setAppBadge(badgeCount).catch(() => {})
-      : Promise.resolve()
+      : Promise.resolve(),
+    // Record that a push arrived, so the app only auto-opens its notifications
+    // pane after a real reminder (read on next open) — and nudge any open client.
+    markPush(),
+    notifyClients()
   ]));
 });
+
+// Persist a "a push just arrived" timestamp the page can read on its next open,
+// and a live message for any already-open window.
+function markPush() {
+  return caches.open('bk-flags')
+    .then(c => c.put('push', new Response(String(Date.now()))))
+    .catch(() => {});
+}
+function notifyClients() {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    .then(cs => cs.forEach(c => { try { c.postMessage({ type: 'bk-push' }); } catch (_) {} }))
+    .catch(() => {});
+}
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();

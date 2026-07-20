@@ -1,1 +1,1 @@
-{"version":338,"note":"v338: Opening the app now shows your notifications automatically — the alerts pane pops up when you open or return to the app and anything is due (overdue invoices, jobs today, recurring items), not just the first time. It shows once per open and won't interrupt the lock screen or a quick Control-Center peek."}
+{"version":339,"note":"v339: Fixed the notifications sheet — it now hugs its content instead of stretching into a big empty panel. And it only auto-opens after an actual push reminder you haven't seen yet, not every time you open the app."}
