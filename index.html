@@ -92,7 +92,8 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .theme-toggle:hover{color:var(--text);background:var(--surface);border-color:var(--accent)}
 .notif-bell{position:relative;overflow:visible}
 .notif-badge{position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--red);color:#fff;font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 0 0 2px var(--bg2);pointer-events:none}
-.notif-row{display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 1rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+.notif-row{display:flex;align-items:center;gap:.8rem;padding:.85rem 1.15rem;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+.notif-row:last-child{border-bottom:none}
 .notif-row:hover{background:var(--surface2)}
 .notif-row.unseen{background:var(--accent-bg)}
 .notif-row.unseen:hover{background:var(--accent-bg)}
@@ -532,7 +533,11 @@ body.modal-open .main{overflow:hidden}
   .modal{
     width:100%;max-width:100%;
     border-radius:20px 20px 0 0;
-    /* leave a buffer below the status bar / notch so content never touches the top */
+    /* Hug the content and sit at the bottom edge. align-self beats the overlay's
+       align-items so a sparse sheet (e.g. one notification) can't stretch to full
+       height with its content pinned to the top, leaving a big empty gap below. */
+    align-self:flex-end;
+    height:auto;
     max-height:100%;
     overflow-y:auto;overflow-x:hidden;
     touch-action:pan-y;
@@ -2642,7 +2647,6 @@ function renderUpcoming() {
 const NOTIF_SOON_DAYS = 3;               // "coming up" horizon for due/scheduled items
 let _notifCache = [];                    // last-built list, indexed by openNotifPane()
 let _notifFgShown = false;               // did we already auto-open the pane this foreground?
-let _notifBgAt = 0;                       // when the app was last backgrounded (ms)
 
 function _daysAhead(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 
@@ -2776,19 +2780,31 @@ function notifOpen(idx) {
   else if (action==='recurring') openRecurringManager(ref);
 }
 
-// Auto-open the notifications pane when the app is opened/brought to the
-// foreground, so the day's alerts are shown without tapping the bell. Fires once
-// per foreground (reset when the app is backgrounded), shows whenever there's
-// anything current — new or not — and never pops over the lock screen or another
-// open modal.
+// Timestamp of the most recent push the service worker recorded (Cache API flag).
+async function getLastPushTs() {
+  try {
+    if (!('caches' in window)) return 0;
+    const c = await caches.open('bk-flags');
+    const r = await c.match('push');
+    return r ? (parseInt(await r.text(), 10) || 0) : 0;
+  } catch (e) { return 0; }
+}
+
+// Auto-open the notifications pane — but ONLY after an actual push reminder the
+// user hasn't been shown yet (not on every open). Fires once per foreground,
+// never over the lock screen or another open modal.
 function showNotificationsOnOpen(delay) {
-  setTimeout(() => {
+  setTimeout(async () => {
     if (_notifFgShown || !currentUser) return;
+    const ts = await getLastPushTs();
+    const seenTs = parseInt(lsGet('bk-push-seen-ts', '0'), 10) || 0;
+    if (!ts || ts <= seenTs) return;           // no new push since we last popped
     refreshNotifBadge();                       // rebuild _notifCache + badges
-    if (!_notifCache.length) return;           // nothing due — stay quiet
+    if (!_notifCache.length) return;
     const ls = document.getElementById('lock-screen');
     if ((ls && ls.style.display === 'flex') || document.querySelector('.modal-overlay.open')) return;
     _notifFgShown = true;
+    lsSet('bk-push-seen-ts', String(ts));      // don't re-pop for this push
     openNotifPane();
   }, delay || 0);
 }
@@ -7388,12 +7404,17 @@ setInterval(checkForUpdate, 120000);
 // Re-check when the app is brought back to the foreground (common on phones),
 // and re-show the day's notifications on each foreground / bfcache restore.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { _notifBgAt = Date.now(); _notifFgShown = false; return; }  // arm for the next open
+  if (document.hidden) { _notifFgShown = false; return; }   // re-arm for the next open
   checkForUpdate();
-  // Re-surface only after a genuine absence, not a quick Control-Center peek.
-  if (!_notifBgAt || Date.now() - _notifBgAt > 20000) showNotificationsOnOpen(300);
+  showNotificationsOnOpen(300);   // self-gates: only pops if a new push arrived
 });
 window.addEventListener('pageshow', (e) => { if (e.persisted) { _notifFgShown = false; showNotificationsOnOpen(300); } });
+// A push that lands while the app is open: the service worker pings us to pop the pane.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e && e.data && e.data.type === 'bk-push') { _notifFgShown = false; showNotificationsOnOpen(200); }
+  });
+}
 
 boot();
 </script>
