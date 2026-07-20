@@ -423,7 +423,12 @@ async function runReminders(env) {
     const sub = subByUser[j.user_id];
     if (!sub || !sub.endpoint) continue;
     try {
-      await sendWebPush(sub, env);
+      const when = fmtClock(j.time);
+      await sendWebPush(sub, env, {
+        title: 'Upcoming job',
+        body: (j.title || 'Job') + (when ? ' · ' + when : ''),
+        url: '/', tag: 'job-' + j.id
+      });
       await supaPatch(env, `jobs?id=eq.${j.id}`, { reminded_at: new Date().toISOString() });
       fired++;
     } catch (e) {
@@ -442,7 +447,7 @@ async function runReminders(env) {
 async function runRecurringReminders(env) {
   const { dateStr: todayDen, hour } = denverParts();
   if (hour < 6) return { checked: 0, fired: 0 };          // earliest selectable ping hour
-  const rows = await supaGet(env, 'recurring?active=eq.true&notify=eq.true&select=id,user_id,next_date,reminded_date');
+  const rows = await supaGet(env, 'recurring?active=eq.true&notify=eq.true&select=id,user_id,next_date,reminded_date,label,data,kind');
   const due = rows.filter(r => r.next_date && r.next_date <= todayDen && r.reminded_date !== r.next_date);
   if (!due.length) return { checked: rows.length, fired: 0 };
   const userIds = [...new Set(due.map(r => r.user_id))];
@@ -461,7 +466,14 @@ async function runRecurringReminders(env) {
     const sub = subByUser[r.user_id];
     if (!sub || !sub.endpoint) continue;                  // no device yet — try again next run
     try {
-      await sendWebPush(sub, env);
+      const d = r.data || {};
+      const label = r.label || (r.kind === 'invoice' ? 'Invoice' : 'Expense');
+      const amt = fmtMoney(d.amount != null ? d.amount : d.total);
+      await sendWebPush(sub, env, {
+        title: r.kind === 'invoice' ? 'Invoice due today' : 'Payment due today',
+        body: label + (amt ? ' (' + amt + ')' : '') + ' is due today',
+        url: '/', tag: 'recur-' + r.id
+      });
       await supaPatch(env, `recurring?id=eq.${r.id}`, { reminded_date: r.next_date });
       fired++;
     } catch (e) {
@@ -509,12 +521,93 @@ async function supaPatch(env, path, body) {
   });
 }
 
-async function sendWebPush(sub, env) {
+// Send a Web Push. When `message` is given (and the subscription carries the
+// p256dh/auth keys), the JSON is encrypted per RFC 8291 (aes128gcm) so the
+// service worker can render a detailed notification. Any failure to encrypt —
+// or a push service that rejects the encrypted body — falls back to a plain
+// payload-less push, so a reminder always lands (with the SW's generic text).
+async function sendWebPush(sub, env, message) {
   const url = new URL(sub.endpoint);
   const audience = `${url.protocol}//${url.host}`;
   const jwt = await makeVapidJwt(audience, env.VAPID_SUBJECT, env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY);
-  const r = await fetch(sub.endpoint, { method: 'POST', headers: { TTL: '3600', Authorization: `vapid t=${jwt}, k=${env.VAPID_PUBLIC_KEY}` } });
-  if (!r.ok) throw new Error(`push status ${r.status} ${await r.text().catch(()=>'')}`);
+  const auth = { TTL: '3600', Authorization: `vapid t=${jwt}, k=${env.VAPID_PUBLIC_KEY}` };
+  let body;
+  if (message && sub.keys && sub.keys.p256dh && sub.keys.auth) {
+    try {
+      body = await encryptPayload(sub, JSON.stringify(message));
+    } catch (e) {
+      console.error('push encrypt failed, sending plain', String(e && e.message || e));
+      body = undefined;
+    }
+  }
+  const headers = body ? { ...auth, 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream' } : auth;
+  const r = await fetch(sub.endpoint, { method: 'POST', headers, body });
+  if (!r.ok) {
+    // A rejected detailed payload shouldn't cost the reminder — retry payload-less.
+    if (body && !/\b(404|410)\b/.test(String(r.status))) {
+      const r2 = await fetch(sub.endpoint, { method: 'POST', headers: auth });
+      if (r2.ok) return;
+    }
+    throw new Error(`push status ${r.status} ${await r.text().catch(()=>'')}`);
+  }
+}
+
+// RFC 8291 aes128gcm Web Push encryption. The 16-byte salt and the ephemeral
+// public key are embedded in the aes128gcm header, so no extra request headers
+// are needed beyond Content-Encoding: aes128gcm.
+async function encryptPayload(sub, plaintext) {
+  const uaPublic = urlB64ToBytes(sub.keys.p256dh);   // subscriber key, 65 bytes
+  const authSecret = urlB64ToBytes(sub.keys.auth);   // auth secret, 16 bytes
+  if (uaPublic.length !== 65 || uaPublic[0] !== 0x04) throw new Error('bad p256dh');
+  const enc = new TextEncoder();
+
+  // Ephemeral application-server ECDH key pair + shared secret with the browser.
+  const asKeys = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const asPublic = new Uint8Array(await crypto.subtle.exportKey('raw', asKeys.publicKey)); // 65 bytes
+  const uaKey = await crypto.subtle.importKey('raw', uaPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const ecdh = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, asKeys.privateKey, 256));
+
+  // Combine step: IKM = HKDF(salt=auth, ikm=ecdh, info="WebPush: info\0"||ua||as).
+  const ecdhKey = await crypto.subtle.importKey('raw', ecdh, 'HKDF', false, ['deriveBits']);
+  const keyInfo = concatBytes(enc.encode('WebPush: info\0'), uaPublic, asPublic);
+  const ikm = new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: authSecret, info: keyInfo }, ecdhKey, 256));
+
+  // Content encryption key + nonce (RFC 8188), keyed off a random salt.
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const ikmKey = await crypto.subtle.importKey('raw', ikm, 'HKDF', false, ['deriveBits']);
+  const cek = new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: enc.encode('Content-Encoding: aes128gcm\0') }, ikmKey, 128));
+  const nonce = new Uint8Array(await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt, info: enc.encode('Content-Encoding: nonce\0') }, ikmKey, 96));
+
+  // Single record: plaintext + 0x02 delimiter, AES-128-GCM (16-byte tag appended).
+  const aesKey = await crypto.subtle.importKey('raw', cek, { name: 'AES-GCM' }, false, ['encrypt']);
+  const record = concatBytes(enc.encode(plaintext), new Uint8Array([0x02]));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, tagLength: 128 }, aesKey, record));
+
+  // aes128gcm header: salt(16) || record_size(4 BE) || idlen(1) || keyid(as pub).
+  const header = new Uint8Array(21 + asPublic.length);
+  header.set(salt, 0);
+  new DataView(header.buffer).setUint32(16, 4096, false);
+  header[20] = asPublic.length;
+  header.set(asPublic, 21);
+  return concatBytes(header, ct);
+}
+function concatBytes(...arrs) {
+  const out = new Uint8Array(arrs.reduce((n, a) => n + a.length, 0));
+  let o = 0;
+  for (const a of arrs) { out.set(a, o); o += a.length; }
+  return out;
+}
+// "HH:MM[:SS]" (24h) → "h:MM AM/PM"; empty for anything unparseable.
+function fmtClock(t) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(t || '');
+  if (!m) return '';
+  let h = +m[1]; const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+  return `${h}:${m[2]} ${ap}`;
+}
+function fmtMoney(n) {
+  const v = Number(n);
+  if (!isFinite(v)) return '';
+  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 async function makeVapidJwt(audience, subject, pubB64, privB64) {
   const header = { alg: 'ES256', typ: 'JWT' };

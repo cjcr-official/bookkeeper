@@ -13,7 +13,7 @@ self.addEventListener('push', event => {
     body,
     icon: 'icon.png',
     badge: 'icon-180.png',
-    tag: 'bookkeeper-daily',
+    tag: data.tag || 'bookkeeper-daily',
     data: { url: data.url || '/' }
   }));
 });

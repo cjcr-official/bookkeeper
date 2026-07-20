@@ -408,17 +408,23 @@ minute until the cache refreshes.
   wall-clock time in America/Denver. Worker cron runs every minute; query
   predicate `done=false AND remind_minutes IS NOT NULL AND reminded_at IS NULL`;
   for each match, computes `triggerAt = jobUtc - remind_minutes*60_000`; if
-  `now >= triggerAt` and `now < triggerAt + 30 min`, sends a payload-less Web
-  Push and stamps `reminded_at`. If `now > triggerAt + 30 min` (window blown),
-  stamps `reminded_at = triggerAt` so the row stops matching the predicate.
-  `sw.js` shows a generic "Bookkeeper · upcoming job — tap to open"
-  notification because we don't ship encrypted payloads (RFC 8291 is
-  heavyweight). User enables via Settings → Notifications → Enable on this
-  device; chatty debug pane surfaces each step's outcome.
+  `now >= triggerAt` and `now < triggerAt + 30 min`, sends a Web Push and stamps
+  `reminded_at`. If `now > triggerAt + 30 min` (window blown), stamps
+  `reminded_at = triggerAt` so the row stops matching the predicate.
+  **Detailed payloads (v335+):** `sendWebPush(sub, env, message)` encrypts the
+  `{title, body, url, tag}` JSON per RFC 8291 (aes128gcm) using the stored
+  subscription's `keys.p256dh`/`keys.auth` (from `sub.toJSON()`), so the push
+  names the item (job title + time, recurring label + amount). `sw.js` renders
+  `data.title`/`data.body` and uses a per-item `data.tag` so multiple reminders
+  don't collapse into one. If encryption throws or the push service rejects the
+  encrypted body, `sendWebPush` retries **payload-less** (same generic
+  "items due today" fallback) so a reminder always lands — never a regression.
+  User enables via Settings → Notifications → Enable on this device; chatty debug
+  pane surfaces each step's outcome.
 - **Recurring reminders:** in addition to jobs, the Worker cron sends one
   morning push (>= 8am Denver) on the day a recurring item comes due.
   `runRecurringReminders()` matches `active AND notify AND next_date <= today
-  (Denver) AND reminded_date <> next_date`, sends the same payload-less push,
+  (Denver) AND reminded_date <> next_date`, sends the same (detailed) push,
   and stamps `reminded_date = next_date` to dedupe per occurrence (the client
   advancing `next_date` in `processRecurring()` re-arms the next one). Toggled
   per item by the "Push reminder on the due date" checkbox in the recurring
