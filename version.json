@@ -1,1 +1,1 @@
-{"version":333,"note":"v333: Consistent collapse chevrons — every dashboard widget (including Calendar and Reports) now uses the same 18px chevron that points right when collapsed and rotates down when open. No more mismatched sizes or directions."}
+{"version":334,"note":"v334: Dashboard widgets are now organized into labeled sections — Expenses (Cash Flow, Spend This Month, Spending by Category), Calendar (Upcoming, Calendar), and Recents & Reports — each with a mono section header, on both phone and desktop."}
