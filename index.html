@@ -824,6 +824,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
    there and let the shared 1rem card margin set the rhythm, matching every other
    widget in the collapsed stack. */
 @media(max-width:768px){#dash-card-recents{gap:0}}
+/* Dashboard section groupings: a mono micro-label with a trailing hairline rule,
+   matching the app's uppercase-label signature. Splits the widget stack into
+   Expenses / Calendar / Recents & Reports. */
+.dash-group{display:flex;align-items:center;gap:.75rem;margin:1.15rem .3rem .5rem;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3)}
+.dash-group::after{content:'';flex:1;height:1px;background:var(--border)}
 
 /* ── Desktop dashboard grid (Origin-style filled layout) ──
    On wide screens the dashboard stops being one skinny full-width stack and
@@ -834,8 +839,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
 @media(min-width:1100px){
   /* .active keeps this ID rule from beating .page{display:none} on other pages. */
   #page-dashboard.active{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);column-gap:1rem;align-items:stretch;
-    grid-template-areas:"hero hero" "flow cat" "spend cat" "up cal" "rec rec" "rep rep"}
+    grid-template-areas:"hero hero" "g1 g1" "flow cat" "spend cat" "g2 g2" "up cal" "g3 g3" "rec rec" "rep rep"}
   #page-dashboard .overview{grid-area:hero}
+  #dash-grp-exp{grid-area:g1}
+  #dash-grp-cal{grid-area:g2}
+  #dash-grp-rep{grid-area:g3}
   #dash-card-spend{grid-area:spend;display:flex;flex-direction:column}
   #dash-card-flow{grid-area:flow;display:flex;flex-direction:column}
   /* center the chart in whatever height the row gives the card */
@@ -1024,6 +1032,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </div>
           </div>
         </div>
+        <div class="dash-group" id="dash-grp-exp">Expenses</div>
         <div class="card collapsible collapsed" id="dash-card-flow">
           <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-wave-sine" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Cash Flow</h3>
@@ -1057,6 +1066,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
           <div id="cat-breakdown"></div>
         </div>
+        <div class="dash-group" id="dash-grp-cal">Calendar</div>
         <div class="card collapsible collapsed" id="dash-card-up">
           <div class="card-header" onclick="toggleDashCard(this)"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button><i class="ti ti-chevron-down dash-chev"></i></div>
           <div id="upcoming-list"></div>
@@ -1080,6 +1090,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div id="cal-day-jobs" style="padding:.75rem 1rem"></div>
           </div>
         </div>
+        <div class="dash-group" id="dash-grp-rep">Recents &amp; Reports</div>
         <div class="two-col" id="dash-card-recents">
           <div class="card collapsible collapsed" id="dash-card-inv">
             <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Invoices</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('invoices',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
