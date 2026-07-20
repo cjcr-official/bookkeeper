@@ -1011,7 +1011,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </div>
           </div>
         </div>
-        <div class="card collapsible" id="dash-card-flow">
+        <div class="card collapsible collapsed" id="dash-card-flow">
           <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-wave-sine" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Cash Flow</h3>
             <div class="ac-legend">
@@ -1025,7 +1025,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div class="ac-tip" id="cashflow-tip"></div>
           </div>
         </div>
-        <div class="card collapsible" id="dash-card-spend">
+        <div class="card collapsible collapsed" id="dash-card-spend">
           <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-calendar-dollar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spend This Month</h3>
             <div class="spend-total" id="spend-cal-total">$0.00</div>
@@ -1033,7 +1033,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
           <div id="spend-cal" class="spend-cal"></div>
         </div>
-        <div class="card collapsible" id="dash-card-cat">
+        <div class="card collapsible collapsed" id="dash-card-cat">
           <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-chart-donut-3" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spending by Category</h3>
             <div class="seg" id="cat-period">
@@ -1044,7 +1044,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
           <div id="cat-breakdown"></div>
         </div>
-        <div class="card collapsible" id="dash-card-up">
+        <div class="card collapsible collapsed" id="dash-card-up">
           <div class="card-header" onclick="toggleDashCard(this)"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button><i class="ti ti-chevron-down dash-chev"></i></div>
           <div id="upcoming-list"></div>
         </div>
@@ -1068,11 +1068,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
         </div>
         <div class="two-col" id="dash-card-recents">
-          <div class="card collapsible" id="dash-card-inv">
+          <div class="card collapsible collapsed" id="dash-card-inv">
             <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Invoices</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('invoices',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
             <div id="dash-invoices"></div>
           </div>
-          <div class="card collapsible" id="dash-card-exp">
+          <div class="card collapsible collapsed" id="dash-card-exp">
             <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Expenses</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('expenses',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
             <div id="dash-expenses"></div>
           </div>
@@ -4636,7 +4636,9 @@ function toggleDashCard(header){
 function applyDashCollapsed(){
   let st = {}; try { st = JSON.parse(lsGet('bk-dash-collapsed')||'{}'); } catch(e){}
   document.querySelectorAll('#page-dashboard .card.collapsible').forEach(card=>{
-    card.classList.toggle('collapsed', !!(card.id && st[card.id]));
+    // Widgets start collapsed by default; a card is only open when the user has
+    // explicitly expanded it (saved state === false).
+    card.classList.toggle('collapsed', !(card.id && st[card.id] === false));
   });
 }
 
