@@ -804,7 +804,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 @media(min-width:1100px){
   /* .active keeps this ID rule from beating .page{display:none} on other pages. */
   #page-dashboard.active{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);column-gap:1rem;align-items:stretch;
-    grid-template-areas:"hero hero" "spend cat" "flow cat" "up cal" "rec rec" "rep rep"}
+    grid-template-areas:"hero hero" "flow cat" "spend cat" "up cal" "rec rec" "rep rep"}
   #page-dashboard .overview{grid-area:hero}
   #dash-card-spend{grid-area:spend;display:flex;flex-direction:column}
   #dash-card-flow{grid-area:flow;display:flex;flex-direction:column}
@@ -990,12 +990,35 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </div>
           </div>
         </div>
+        <div class="card" id="dash-card-flow">
+          <div class="card-header">
+            <h3><i class="ti ti-wave-sine" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Cash Flow</h3>
+            <div class="ac-legend">
+              <span><i style="background:var(--green)"></i>Income</span>
+              <span><i style="background:var(--red)"></i>Expenses</span>
+            </div>
+          </div>
+          <div class="ac-wrap">
+            <div id="cashflow-chart"></div>
+            <div class="ac-tip" id="cashflow-tip"></div>
+          </div>
+        </div>
         <div class="card" id="dash-card-spend">
           <div class="card-header">
             <h3><i class="ti ti-calendar-dollar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spend This Month</h3>
             <div class="spend-total" id="spend-cal-total">$0.00</div>
           </div>
           <div id="spend-cal" class="spend-cal"></div>
+        </div>
+        <div class="card" id="dash-card-cat">
+          <div class="card-header">
+            <h3><i class="ti ti-chart-donut-3" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spending by Category</h3>
+            <div class="seg" id="cat-period">
+              <button class="active" onclick="setCatPeriod('month',this)">Month</button>
+              <button onclick="setCatPeriod('year',this)">Year</button>
+            </div>
+          </div>
+          <div id="cat-breakdown"></div>
         </div>
         <div class="card" id="dash-card-up">
           <div class="card-header"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button></div>
@@ -1019,29 +1042,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div id="cal-grid" class="cal-grid"></div>
             <div id="cal-day-jobs" style="padding:.75rem 1rem"></div>
           </div>
-        </div>
-        <div class="card" id="dash-card-flow">
-          <div class="card-header">
-            <h3><i class="ti ti-wave-sine" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Cash Flow</h3>
-            <div class="ac-legend">
-              <span><i style="background:var(--green)"></i>Income</span>
-              <span><i style="background:var(--red)"></i>Expenses</span>
-            </div>
-          </div>
-          <div class="ac-wrap">
-            <div id="cashflow-chart"></div>
-            <div class="ac-tip" id="cashflow-tip"></div>
-          </div>
-        </div>
-        <div class="card" id="dash-card-cat">
-          <div class="card-header">
-            <h3><i class="ti ti-chart-donut-3" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spending by Category</h3>
-            <div class="seg" id="cat-period">
-              <button class="active" onclick="setCatPeriod('month',this)">Month</button>
-              <button onclick="setCatPeriod('year',this)">Year</button>
-            </div>
-          </div>
-          <div id="cat-breakdown"></div>
         </div>
         <div class="two-col" id="dash-card-recents">
           <div class="card">
