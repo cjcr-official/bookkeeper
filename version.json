@@ -1,1 +1,1 @@
-{"version":325,"note":"v325: Desktop dashboard now fills the screen like a real finance app — Cash Flow and Upcoming on the left, the Spending donut and Calendar in a right rail, recents spanning below. No more skinny full-width stack on big screens. Phone layout unchanged."}
+{"version":326,"note":"v326: New 'Spend This Month' heat calendar on the dashboard — an Origin-style month grid where each day is tinted red by that day's spend, with today ringed and the month's total up top. Sits high on phone, top-left of the desktop grid."}

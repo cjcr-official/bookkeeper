@@ -778,6 +778,23 @@ input,select,textarea{border-radius:var(--radius-sm)}
   .cat-bars{width:100%}
 }
 
+/* ── Spend-this-month heat calendar ──
+   A month grid where each day cell is tinted RED by that day's total expense
+   (house rule: spend is always red). Today is ringed with the accent; days
+   still to come are dimmed. Dependency-free CSS grid, theme-aware. */
+.spend-total{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:17px;letter-spacing:-.3px;color:var(--red);font-variant-numeric:tabular-nums}
+.spend-cal{padding:.35rem 1rem 1.1rem}
+.spend-cal-head{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-bottom:6px}
+.spend-cal-head span{font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.5px;color:var(--text3);text-align:center;text-transform:uppercase}
+.spend-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.sc-cell{position:relative;aspect-ratio:1;border-radius:9px;background:var(--bg2);padding:5px 6px;display:flex;flex-direction:column;justify-content:space-between;overflow:hidden;transition:background .3s}
+.sc-cell.empty{background:transparent}
+.sc-day{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--text3);line-height:1}
+.sc-cell.spent .sc-day{color:var(--text2)}
+.sc-amt{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--text);line-height:1;align-self:flex-start;letter-spacing:-.2px}
+.sc-cell.today{outline:2px solid var(--accent);outline-offset:-2px}
+.sc-cell.future{opacity:.45}
+
 /* ── Desktop dashboard grid (Origin-style filled layout) ──
    On wide screens the dashboard stops being one skinny full-width stack and
    becomes a two-column grid: cash flow + upcoming fill the left, the category
@@ -787,8 +804,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
 @media(min-width:1100px){
   /* .active keeps this ID rule from beating .page{display:none} on other pages. */
   #page-dashboard.active{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);column-gap:1rem;align-items:stretch;
-    grid-template-areas:"hero hero" "flow cat" "up cat" "up cal" "rec rec" "rep rep"}
+    grid-template-areas:"hero hero" "spend cat" "flow cat" "up cal" "rec rec" "rep rep"}
   #page-dashboard .overview{grid-area:hero}
+  #dash-card-spend{grid-area:spend;display:flex;flex-direction:column}
   #dash-card-flow{grid-area:flow;display:flex;flex-direction:column}
   /* center the chart in whatever height the row gives the card */
   #dash-card-flow .ac-wrap{flex:1;display:flex;flex-direction:column;justify-content:center}
@@ -971,6 +989,13 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">25%</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--accent)">$0.00</div></div>
             </div>
           </div>
+        </div>
+        <div class="card" id="dash-card-spend">
+          <div class="card-header">
+            <h3><i class="ti ti-calendar-dollar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spend This Month</h3>
+            <div class="spend-total" id="spend-cal-total">$0.00</div>
+          </div>
+          <div id="spend-cal" class="spend-cal"></div>
         </div>
         <div class="card" id="dash-card-up">
           <div class="card-header"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button></div>
@@ -2192,6 +2217,7 @@ function renderDashboard() {
   renderTaxCard(profit);
 
   drawCashFlow();
+  renderSpendMonth();
   renderCategoryBreakdown();
 
   const esc = escHtml;
@@ -2316,6 +2342,48 @@ function drawCashFlow(){
     r.addEventListener('touchstart', (e)=>{ e.preventDefault(); show(i); }, {passive:false});
   });
   svg.addEventListener('mouseleave', hide);
+}
+
+// Spend-this-month heat calendar. Each day cell is tinted red in proportion to
+// that day's total expense (spend is always red); today is ringed, future days
+// dimmed. Excludes reimbursed expenses to match the "Spending by Category" card.
+function renderSpendMonth(){
+  const host = document.getElementById('spend-cal');
+  if (!host) return;
+  const now = new Date();
+  const yr = now.getFullYear(), mo = now.getMonth();
+  const daysInMonth = new Date(yr, mo+1, 0).getDate();
+  const firstDow = new Date(yr, mo, 1).getDay(); // 0 = Sunday
+  const byDay = {};
+  cache.expenses.forEach(e=>{
+    if (e.reimbursed) return;
+    const d = parseDate(e.date);
+    if (d.getFullYear()===yr && d.getMonth()===mo){
+      const day = d.getDate();
+      byDay[day] = (byDay[day]||0) + parseFloat(e.amount||0);
+    }
+  });
+  const total = Object.values(byDay).reduce((s,v)=>s+v,0);
+  const maxDay = Math.max(1, ...Object.values(byDay));
+  const todayD = now.getDate();
+
+  const totalEl = document.getElementById('spend-cal-total');
+  if (totalEl) totalEl.textContent = fmt(total);
+
+  let cells = '';
+  for (let i=0;i<firstDow;i++) cells += `<div class="sc-cell empty"></div>`;
+  for (let day=1; day<=daysInMonth; day++){
+    const amt = byDay[day]||0;
+    const cls = ['sc-cell'];
+    if (amt>0) cls.push('spent');
+    if (day===todayD) cls.push('today');
+    if (day>todayD) cls.push('future');
+    // Red heat: alpha ramps 0.12 → 0.62 by share of the busiest day.
+    const bg = amt>0 ? ` style="background:rgba(239,68,68,${(0.12 + 0.5*(amt/maxDay)).toFixed(3)})"` : '';
+    cells += `<div class="${cls.join(' ')}"${bg}><span class="sc-day">${day}</span>${amt>0?`<span class="sc-amt">${fmtAxis(amt)}</span>`:''}</div>`;
+  }
+  host.innerHTML = `<div class="spend-cal-head">${['S','M','T','W','T','F','S'].map(d=>`<span>${d}</span>`).join('')}</div>`
+    + `<div class="spend-grid">${cells}</div>`;
 }
 
 // Category color palette (distinct hues; avoids pure income-green / expense-red so
