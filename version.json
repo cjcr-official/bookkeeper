@@ -1,1 +1,1 @@
-{"version":329,"note":"v329: Every dashboard widget now collapses — tap a card's header (Cash Flow, Spend This Month, Spending by Category, Upcoming, Recent Invoices/Expenses) to fold it down to just its title, with a chevron that remembers each card's state across launches."}
+{"version":330,"note":"v330: Dashboard widgets now start collapsed by default — the page opens as a tidy list of titles, and any card you expand stays open across launches. Tap a header to unfold it."}
