@@ -417,10 +417,15 @@ body.modal-open .main{overflow:hidden}
     height:62px;
     padding-bottom:0;
     flex-direction:row;align-items:flex-start;
-    border-right:none;border-top:1px solid var(--border);
-    background:var(--bg);   /* match page bg so there's no color seam */
+    border-right:none;border-top:none;
+    /* Solid, not glass: translucent let scrolled content bleed through and tint
+       the tabs. Lift it off the page with an upward shadow + a branded top line. */
+    background:var(--bg);
+    box-shadow:0 -8px 24px rgba(0,0,0,.18);
     z-index:500;overflow:hidden;
   }
+  .sidebar::before{content:'';position:absolute;top:0;left:0;right:0;height:1.5px;
+    background:linear-gradient(90deg,transparent 8%,var(--accent),var(--accent2),transparent 92%);opacity:.6}
   .sidebar-logo,.nav-section{display:none}
   .sidebar-nav-scroll{
     display:flex;flex-direction:row;width:100%;
@@ -430,9 +435,9 @@ body.modal-open .main{overflow:hidden}
   .sidebar-bottom{display:none}
   .nav-item{
     flex-direction:column;align-items:center;justify-content:center;
-    gap:2px;padding:.35rem .1rem .45rem;height:62px;
+    gap:3px;padding:.3rem .1rem .4rem;height:62px;
     border-radius:0;margin:0;min-width:0;flex:1;
-    font-size:9.5px;border-left:none;border-top:2px solid transparent;
+    font-size:9.5px;font-weight:600;color:var(--text3);border-left:none;border-top:2px solid transparent;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   }
   .nav-item span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -671,9 +676,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
   /* opaque bar (see .sidebar above) — translucent glass let scrolled content
      bleed through and tint individual tabs, so keep it solid */
   .nav-item{border-top:none!important}
-  .nav-item.active{border-top:none!important;background:transparent;color:var(--accent-text);box-shadow:none}
-  .nav-item.active i{background:var(--accent-bg);border-radius:var(--radius-pill);padding:3px 15px;color:var(--accent-text)}
-  .nav-item i{display:inline-flex;align-items:center;justify-content:center}
+  .nav-item.active{border-top:none!important;background:transparent;color:var(--accent);box-shadow:none;font-weight:700}
+  /* Active tab: a vivid gradient lozenge with an accent glow behind the icon */
+  .nav-item.active i{background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:15px;padding:5px 14px;color:#fff;box-shadow:0 5px 14px var(--accent-glow)}
+  /* Inactive icons reserve the same footprint so switching tabs doesn't shift layout */
+  .nav-item i{display:inline-flex;align-items:center;justify-content:center;padding:5px 14px;border-radius:15px;transition:background .2s,color .2s,box-shadow .2s,transform .12s}
+  .nav-item:active i{transform:scale(.88)}
   .card,.stat-card{border-radius:18px}
   /* Bottom sheets: rounded top, flush square bottom. The global
      `.modal{border-radius:var(--radius-lg)}` above (desktop) otherwise rounds the
