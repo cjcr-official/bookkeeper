@@ -764,14 +764,25 @@ input,select,textarea{border-radius:var(--radius-sm)}
 .donut-total{font-size:23px;font-weight:800;letter-spacing:-.6px;font-variant-numeric:tabular-nums;line-height:1.05}
 .donut-cap{font-size:8.5px;font-family:'JetBrains Mono',monospace;letter-spacing:.7px;text-transform:uppercase;color:var(--text3);margin-top:3px}
 .cat-bars{flex:1;min-width:0;display:flex;flex-direction:column;gap:.85rem}
-.cat-row{display:flex;flex-direction:column;gap:.4rem;cursor:default}
+.cat-row{display:flex;flex-direction:column;gap:.4rem;cursor:pointer;-webkit-tap-highlight-color:transparent}
 .cat-row-top{display:flex;align-items:center;gap:.55rem;font-size:12.5px}
 .cat-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .cat-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .cat-amt{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;flex-shrink:0}
 .cat-pct{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);flex-shrink:0;width:34px;text-align:right}
+.cat-chev{font-size:14px;color:var(--text3);flex-shrink:0;transition:transform .2s}
+.cat-row.open .cat-chev{transform:rotate(180deg)}
 .cat-track{height:7px;border-radius:var(--radius-pill);background:var(--bg2);overflow:hidden}
 .cat-fill{height:100%;border-radius:var(--radius-pill);transition:width .5s cubic-bezier(.4,0,.2,1)}
+/* Expandable per-category expense list (0fr→1fr grid trick animates height) */
+.cat-detail{display:grid;grid-template-rows:0fr;transition:grid-template-rows .25s ease}
+.cat-row.open .cat-detail{grid-template-rows:1fr}
+.cat-detail-inner{overflow:hidden;min-height:0;display:flex;flex-direction:column;gap:.3rem;padding-left:1.55rem}
+.cat-row.open .cat-detail-inner{padding-top:.5rem;padding-bottom:.15rem}
+.cat-detail-row{display:flex;align-items:center;gap:.6rem;font-size:11.5px}
+.cdr-date{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);white-space:nowrap;flex-shrink:0}
+.cdr-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)}
+.cdr-amt{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:var(--red);flex-shrink:0;font-variant-numeric:tabular-nums}
 @media(max-width:640px){
   .cat-wrap{flex-direction:column;gap:1.1rem}
   .donut{width:150px;height:150px}
@@ -2397,6 +2408,8 @@ function setCatPeriod(p, el){
   renderCategoryBreakdown();
 }
 // Colorful donut ring + per-category spend bars (the "where the money goes" card).
+// Expand/collapse a single category to reveal the expenses that make it up.
+function toggleCatRow(el){ el.classList.toggle('open'); }
 function renderCategoryBreakdown(){
   const host = document.getElementById('cat-breakdown');
   if (!host) return;
@@ -2406,25 +2419,35 @@ function renderCategoryBreakdown(){
     if (_catPeriod==='year') return d.getFullYear()===now.getFullYear();
     return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
   };
-  const cats = {};
+  // Keep each category's own expenses so a row can expand to show what's in it.
+  const catItems = {};
   cache.expenses.filter(e=>!e.reimbursed && inPeriod(e)).forEach(e=>{
     const k = e.category || 'Uncategorized';
-    cats[k] = (cats[k]||0) + parseFloat(e.amount||0);
+    (catItems[k] = catItems[k] || []).push(e);
   });
-  let sorted = Object.entries(cats).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
-  const total = sorted.reduce((s,[,v])=>s+v,0);
+  let entries = Object.keys(catItems).map(k=>({
+    name: k,
+    items: catItems[k],
+    val: catItems[k].reduce((s,e)=>s+parseFloat(e.amount||0),0)
+  })).filter(e=>e.val>0).sort((a,b)=>b.val-a.val);
+  const total = entries.reduce((s,e)=>s+e.val,0);
 
   if (!total){
     host.innerHTML = `<div class="empty" style="padding:2.25rem 1rem"><i class="ti ti-chart-donut-3"></i><p>No spending ${_catPeriod==='year'?'this year':'this month'} yet</p></div>`;
     return;
   }
-  // Collapse a long tail into "Everything else" so the donut/legend stay legible.
-  if (sorted.length > 7){
-    const head = sorted.slice(0,6);
-    const rest = sorted.slice(6).reduce((s,[,v])=>s+v,0);
-    sorted = head.concat([['Everything else', rest]]);
+  // Collapse a long tail into "Everything else" so the donut/legend stay legible;
+  // its expanded detail still lists every expense from the folded-in categories.
+  if (entries.length > 7){
+    const head = entries.slice(0,6);
+    const rest = entries.slice(6);
+    entries = head.concat([{
+      name: 'Everything else',
+      items: rest.flatMap(e=>e.items),
+      val: rest.reduce((s,e)=>s+e.val,0)
+    }]);
   }
-  const colored = sorted.map(([k,v],i)=>({name:k, val:v, color:CAT_COLORS[i%CAT_COLORS.length]}));
+  const colored = entries.map((e,i)=>({name:e.name, val:e.val, items:e.items, color:CAT_COLORS[i%CAT_COLORS.length]}));
 
   // Donut: stroke-dasharray arcs on a single circle. r/C fixed to the viewBox.
   const R=54, C=2*Math.PI*R, GAP=2;
@@ -2450,14 +2473,22 @@ function renderCategoryBreakdown(){
   const esc = escHtml;
   const bars = colored.map(c=>{
     const pct = Math.round((c.val/total)*100);
-    return `<div class="cat-row">
+    const rows = c.items.slice().sort((a,b)=>parseFloat(b.amount||0)-parseFloat(a.amount||0)).map(e=>
+      `<div class="cat-detail-row">
+        <span class="cdr-date">${fmtDate(e.date)}</span>
+        <span class="cdr-name">${esc(e.vendor||e.note||'—')}</span>
+        <span class="cdr-amt">${fmt(e.amount)}</span>
+      </div>`).join('');
+    return `<div class="cat-row" onclick="toggleCatRow(this)">
       <div class="cat-row-top">
         <span class="cat-dot" style="background:${c.color}"></span>
         <span class="cat-name">${esc(c.name)}</span>
         <span class="cat-amt">${fmt(c.val)}</span>
         <span class="cat-pct">${pct}%</span>
+        <i class="ti ti-chevron-down cat-chev"></i>
       </div>
       <div class="cat-track"><div class="cat-fill" style="width:${Math.max(2,(c.val/total)*100)}%;background:${c.color}"></div></div>
+      <div class="cat-detail"><div class="cat-detail-inner">${rows}</div></div>
     </div>`;
   }).join('');
 
