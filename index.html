@@ -1608,7 +1608,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal">
     <div class="modal-header"><h2>Tax set-aside</h2><button class="btn btn-sm" aria-label="Close" onclick="closeTaxModal()"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
-      <p style="font-size:12.5px;color:var(--text3);margin:0 0 1rem">Estimate what to set aside from your net profit for taxes. The bracket method figures self-employment tax, federal income tax, and your state's income tax for the 2025 tax year — an estimate, not tax advice.</p>
+      <p style="font-size:12.5px;color:var(--text3);margin:0 0 1rem">Estimate what to set aside from your net profit for taxes. The bracket method uses a live tax engine (PolicyEngine) for self-employment tax, federal income tax, and your state's income tax — falling back to built-in 2025 brackets if it can't be reached. An estimate, not tax advice.</p>
       <div class="form-group">
         <label>Method</label>
         <div style="display:flex;gap:1.25rem;font-size:13px">
@@ -2902,14 +2902,65 @@ function computeTax(profit) {
   const total = se + fed + state;
   return { se, fed, state, total, rate: P>0 ? total/P : 0 };
 }
-let _taxProfit = 0; // last YTD net profit, so the modal can recompute live
+// The number shown comes from the live PolicyEngine estimate when available
+// (accurate per-state, incl. deductions/credits); computeTax() above is the
+// instant offline fallback used until it returns, or if the engine is unreachable.
+let _taxProfit = 0;            // last YTD net profit
+let _liveTax = null;          // { key, r } cached live engine result
+let _taxFetchKey = null;      // key of an in-flight /tax-estimate call
+let _taxDebounce = null;      // debounce timer for modal-driven refetches
+// Cache key: the inputs that change the engine's answer.
+function taxKey(profit, s) { return [Math.round(Math.max(0, profit||0)), s.filing, s.state, s.other].join('|'); }
+// The cached live result iff it matches the current bracket-mode inputs.
+function liveTaxFor(s) { return (s.mode==='brackets' && _liveTax && _liveTax.key===taxKey(_taxProfit, s)) ? _liveTax.r : null; }
+function taxModalOpen() { const m = document.getElementById('modal-tax'); return m && m.classList.contains('open'); }
+
 function renderTaxCard(profit) {
   _taxProfit = profit;
   const el = document.getElementById('tax-setaside'); if (!el) return;
-  const r = computeTax(profit);
+  const s = taxSettings();
+  const r = liveTaxFor(s) || computeTax(profit);   // live if we have it, else offline
   el.textContent = fmt(r.total);
   const badge = document.getElementById('tax-rate-badge');
   if (badge) badge.textContent = Math.round(r.rate*100) + '%';
+  ensureLiveTax();   // refresh from the engine in the background (brackets mode)
+}
+// Fetch a live estimate for the current inputs unless it's already cached/in-flight.
+async function ensureLiveTax() {
+  const s = taxSettings();
+  if (s.mode !== 'brackets') return;
+  const key = taxKey(_taxProfit, s);
+  if ((_liveTax && _liveTax.key===key) || _taxFetchKey===key) return;
+  _taxFetchKey = key;
+  if (taxModalOpen()) renderTaxBreakdown();   // show "calculating…"
+  const r = await fetchLiveTax(_taxProfit, s);
+  if (_taxFetchKey !== key) return;           // a newer request superseded this one
+  _taxFetchKey = null;
+  if (r) _liveTax = { key, r };
+  const el = document.getElementById('tax-setaside');
+  if (el) {
+    const cur = liveTaxFor(s) || computeTax(_taxProfit);
+    el.textContent = fmt(cur.total);
+    const badge = document.getElementById('tax-rate-badge');
+    if (badge) badge.textContent = Math.round(cur.rate*100) + '%';
+  }
+  if (taxModalOpen()) renderTaxBreakdown();
+}
+// POST the inputs to the Worker, which proxies PolicyEngine. Null on any failure.
+async function fetchLiveTax(profit, s) {
+  try {
+    const { data: sess } = await sb.auth.getSession();
+    const token = sess && sess.session && sess.session.access_token;
+    if (!token) return null;
+    const res = await fetch('/tax-estimate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ profit: Math.max(0, profit||0), filing: s.filing, state: s.state, other: s.other }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.ok) return null;
+    return { se: d.se, fed: d.fed, state: d.state, total: d.total, rate: d.rate, live: true };
+  } catch (e) { return null; }
 }
 // Next federal estimated-tax (1040-ES) due date on/after today.
 function nextEstTaxDate() {
@@ -2950,10 +3001,16 @@ function taxApply() {
   document.getElementById('tax-brackets-section').style.display = mode==='brackets' ? '' : 'none';
   document.getElementById('tax-flat-section').style.display = mode==='flat' ? '' : 'none';
   renderTaxBreakdown();
+  // Refetch the live estimate, debounced so typing "other income" doesn't spam it.
+  clearTimeout(_taxDebounce);
+  _taxDebounce = setTimeout(ensureLiveTax, 500);
 }
 function renderTaxBreakdown() {
   const box = document.getElementById('tax-breakdown'); if (!box) return;
-  const s = taxSettings(), r = computeTax(_taxProfit), P = Math.max(0, _taxProfit || 0);
+  const s = taxSettings(), P = Math.max(0, _taxProfit || 0);
+  const live = liveTaxFor(s);
+  const r = live || computeTax(_taxProfit);
+  const fetching = _taxFetchKey === taxKey(_taxProfit, s);
   const row = (label,val)=>`<div style="display:flex;justify-content:space-between;padding:.28rem 0"><span style="color:var(--text2)">${label}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(val)}</span></div>`;
   let h = `<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.35rem">On YTD net profit of ${fmt(P)}</div>`;
   if (r.flat) {
@@ -2965,7 +3022,13 @@ function renderTaxBreakdown() {
     h += `<div style="border-top:1px solid var(--border);margin:.3rem 0"></div>`;
     h += `<div style="display:flex;justify-content:space-between;padding:.28rem 0;font-weight:700"><span>Set aside</span><span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">${fmt(r.total)} · ${Math.round(r.rate*100)}%</span></div>`;
   }
-  h += `<div style="font-size:11.5px;color:var(--text3);margin-top:.55rem">Next estimated-tax payment due <b>${nextEstTaxDate()}</b>.</div>`;
+  // Source line: which engine produced these numbers.
+  let src;
+  if (r.flat) src = '';
+  else if (live) src = `<span style="color:var(--green)">✓ Live estimate via PolicyEngine</span> — figures federal &amp; state deductions and credits automatically. `;
+  else if (fetching) src = `Calculating a live estimate… `;
+  else src = `Offline estimate (couldn’t reach the tax engine) — built-in 2025 brackets. `;
+  h += `<div style="font-size:11.5px;color:var(--text3);margin-top:.55rem">${src}Next estimated-tax payment due <b>${nextEstTaxDate()}</b>.</div>`;
   box.innerHTML = h;
 }
 function closeTaxModal() { closeModal('modal-tax'); renderDashboard(); }
