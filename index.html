@@ -1179,6 +1179,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- EXPENSES -->
       <div id="page-expenses" class="page">
+        <div style="display:flex;gap:.4rem;margin-bottom:.6rem">
+          <button type="button" id="exp-scope-year" class="btn btn-sm" onclick="setExpScope('year')" style="flex:1">This year</button>
+          <button type="button" id="exp-scope-all" class="btn btn-sm" onclick="setExpScope('all')" style="flex:1">All time</button>
+        </div>
         <div id="exp-summary" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.85rem 1rem;margin-bottom:.75rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)"></div>
         <div style="margin-bottom:.75rem">
           <div class="form-group" style="margin:0"><label>Search</label><input id="exp-search" type="text" placeholder="vendor, note, category…" oninput="renderExpenses()"></div>
@@ -4571,8 +4575,16 @@ function getFilteredExpenses() {
   if (cat) list = list.filter(e => (e.category||'') === cat);
   if (from) list = list.filter(e => (e.date||'') >= from);
   if (to) list = list.filter(e => (e.date||'') <= to);
+  // Scope: default to the current year so the total matches the Home card; an
+  // explicit From/To range overrides it. "All time" shows every year.
+  const scope = lsGet('bk-exp-scope','year');
+  if (scope === 'year' && !from && !to) {
+    const y = new Date().getFullYear();
+    list = list.filter(e => parseDate(e.date).getFullYear() === y);
+  }
   return list;
 }
+function setExpScope(s) { lsSet('bk-exp-scope', s); renderExpenses(); }
 
 function renderExpenses() {
   const el = document.getElementById('expenses-table');
@@ -4583,11 +4595,19 @@ function renderExpenses() {
     const cats = [...new Set((cache.expenses||[]).map(e=>e.category).filter(Boolean))].sort();
     catSel.innerHTML = '<option value="">All</option>' + cats.map(c=>`<option value="${escHtml(c)}"${c===current?' selected':''}>${escHtml(c)}</option>`).join('');
   }
-  // Top summary bar (reflects the current filters): count + total spent, with a
-  // reimbursed note. Set in every branch so it clears on empty/no-match states.
+  // Scope toggle: "This year" (matches the Home card) vs "All time". Reflect the
+  // active button, and label the summary with the scope in effect.
+  const scope = lsGet('bk-exp-scope','year');
+  const yb = document.getElementById('exp-scope-year'), ab = document.getElementById('exp-scope-all');
+  if (yb) yb.className = 'btn btn-sm' + (scope==='year' ? ' btn-primary' : '');
+  if (ab) ab.className = 'btn btn-sm' + (scope==='all' ? ' btn-primary' : '');
+  const fromV = document.getElementById('exp-from')?.value || '', toV = document.getElementById('exp-to')?.value || '';
+  const scopeLabel = (fromV || toV) ? 'Filtered' : (scope==='year' ? String(new Date().getFullYear()) : 'All time');
+  // Top summary bar (reflects the current scope/filters): count + total spent, with
+  // a reimbursed note. Set in every branch so it clears on empty/no-match states.
   const setExpSummary = (n, tot, reimb) => {
     const s = document.getElementById('exp-summary'); if (!s) return;
-    s.innerHTML = `<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace">Total spent</div><div style="font-size:12px;color:var(--text3)">${n} expense${n===1?'':'s'}${reimb>0?` · excl. ${fmt(reimb)} reimbursed`:''}</div></div><div class="red" style="font-weight:800;font-size:1.35rem;font-family:'JetBrains Mono',monospace">${fmt(tot)}</div>`;
+    s.innerHTML = `<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace">Total spent · ${scopeLabel}</div><div style="font-size:12px;color:var(--text3)">${n} expense${n===1?'':'s'}${reimb>0?` · excl. ${fmt(reimb)} reimbursed`:''}</div></div><div class="red" style="font-weight:800;font-size:1.35rem;font-family:'JetBrains Mono',monospace">${fmt(tot)}</div>`;
   };
   if (!cache.expenses.length) { setExpSummary(0,0,0); el.innerHTML = `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`; return; }
   const list = getFilteredExpenses();
