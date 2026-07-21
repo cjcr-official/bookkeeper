@@ -1,1 +1,1 @@
-{"version":341,"note":"v341: New account creation now supports Safari/iOS auto-generated strong passwords (real signup form + new-password autofill hints), and first-time users are welcomed with a prompt to set up their Business Profile (company, contact info, logo)."}
+{"version":342,"note":"v342: Fix iOS/Safari strong-password autofill on Create Account — the inactive Sign-In form is now disabled so a generated password fills the visible signup field instead of the hidden login field."}
