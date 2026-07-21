@@ -2886,19 +2886,19 @@ function renderTaxBreakdown() {
   const live = liveTaxFor(s);
   const key = taxKey(_taxProfit, s);
   const failed = _taxFailedKey === key;
-  const row = (label,val)=>`<div style="display:flex;justify-content:space-between;padding:.28rem 0"><span style="color:var(--text2)">${label}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(val)}</span></div>`;
-  let h = `<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.35rem">On YTD net profit of ${fmt(P)}</div>`;
+  const row = (label,sub,val)=>`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">${label}${sub?`<div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.3px">${sub}</div>`:''}</span><span style="font-family:'JetBrains Mono',monospace;white-space:nowrap">${fmt(val)}</span></div>`;
+  let h = '';
   if (live) {
-    h += row('Self-employment tax <span style="color:var(--text3);font-size:10.5px">Social Security + Medicare</span>', live.se);
-    h += row('Federal income tax', live.fed);
-    h += row((STATE_TAX[s.state]||'State') + ' income tax', live.state);
-    h += `<div style="border-top:1px solid var(--border);margin:.3rem 0"></div>`;
-    h += `<div style="display:flex;justify-content:space-between;padding:.28rem 0;font-weight:700"><span>Set aside</span><span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">${fmt(live.total)} · ${Math.round(live.rate*100)}%</span></div>`;
-    h += `<div style="font-size:11.5px;color:var(--text3);margin-top:.55rem"><span style="color:var(--green)">✓ Live estimate via PolicyEngine</span>${live.year?(' · '+live.year+' tax year'):''} — includes federal &amp; state deductions and credits. Next estimated-tax payment due <b>${nextEstTaxDate()}</b>.</div>`;
+    h += `<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem">On YTD net profit of <b style="color:var(--text2)">${fmt(P)}</b></div>`;
+    h += row('Self-employment tax', 'Social Security + Medicare', live.se);
+    h += row('Federal income tax', '', live.fed);
+    h += row((STATE_TAX[s.state]||'State') + ' income tax', '', live.state);
+    h += `<div style="display:flex;justify-content:space-between;align-items:center;gap:.75rem;margin-top:.85rem;padding:.75rem .9rem;background:var(--accent-soft,rgba(124,92,252,.1));border-radius:var(--radius-sm)"><span style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--text2);font-weight:700">Set aside</span><span style="font-family:'JetBrains Mono',monospace;color:var(--accent);font-weight:800;font-size:1.25rem">${fmt(live.total)}<span style="font-size:.8rem;opacity:.7"> · ${Math.round(live.rate*100)}%</span></span></div>`;
+    h += `<div style="font-size:11px;color:var(--text3);margin-top:.7rem;line-height:1.5"><span style="color:var(--green);font-weight:600">✓ Live via PolicyEngine</span>${live.year?(' · '+live.year+' tax year'):''}<br>Includes federal &amp; state deductions and credits. Next payment due <b>${nextEstTaxDate()}</b>.</div>`;
   } else if (failed) {
-    h += `<div style="padding:.4rem 0;color:var(--text2)">Couldn’t reach the tax engine. <a onclick="taxRetry()" style="color:var(--accent);cursor:pointer;font-weight:600">Retry</a></div>`;
+    h += `<div style="padding:.5rem 0;color:var(--text2)">Couldn’t reach the tax engine. <a onclick="taxRetry()" style="color:var(--accent);cursor:pointer;font-weight:600">Retry</a></div>`;
   } else {
-    h += `<div style="padding:.4rem 0;color:var(--text3)">Calculating a live estimate…</div>`;
+    h += `<div style="padding:.5rem 0;color:var(--text3)">Calculating a live estimate…</div>`;
   }
   box.innerHTML = h;
 }
