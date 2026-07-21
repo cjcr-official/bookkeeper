@@ -1,1 +1,1 @@
-{"version":357,"note":"v357: Tax breakdown clarity — the self-employment tax line now notes it IS your Social Security + Medicare (there's no separate Social Security line for a sole proprietor), and the state income tax line always shows (even at $0) so it's consistent with the federal line."}
+{"version":358,"note":"v358: Expenses have a Duplicate button (copy icon) next to Edit — it opens a new expense pre-filled from that one with the date reset to today, so you can quickly log the same expense for a different date. The receipt and invoice link aren't carried over."}
