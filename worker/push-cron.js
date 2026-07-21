@@ -160,8 +160,12 @@ async function taxEstimate(req, env) {
     const tu  = root && root.tax_units && root.tax_units.unit;
     const per = root && root.people && root.people.you;
     const numAt = (obj, v) => { const x = obj && obj[v] && obj[v][year]; return typeof x === 'number' ? x : null; };
-    const fed = numAt(tu, 'income_tax'), st = numAt(tu, 'state_income_tax'), se = numAt(per, 'self_employment_tax');
+    let fed = numAt(tu, 'income_tax'), st = numAt(tu, 'state_income_tax'), se = numAt(per, 'self_employment_tax');
     if (fed != null && se != null && st != null) {
+      // Refundable credits (e.g. EITC) can push income tax below zero — that's a
+      // net refund, not something to "set aside". Floor each component at 0 so the
+      // set-aside is conservative and never shows a negative line.
+      se = Math.max(0, se); fed = Math.max(0, fed); st = Math.max(0, st);
       const total = fed + se + st;
       return jsonResp({ ok: true, engine: 'policyengine', year: Number(year), se, fed, state: st, total, rate: profit > 0 ? total / profit : 0 });
     }
