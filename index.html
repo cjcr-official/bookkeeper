@@ -1394,6 +1394,24 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
+<!-- APP ICON UPDATE INSTRUCTIONS -->
+<div class="modal-overlay" id="modal-appicon">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header"><h2>Use logo as app icon</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-appicon')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <p style="color:var(--text2);line-height:1.6;margin:0 0 1rem">Your logo is now the browser tab / bookmark icon. Reload the page once if the tab icon hasn't changed yet.</p>
+      <p style="color:var(--text2);line-height:1.6;margin:0 0 .5rem"><b>To update the iPhone Home Screen icon:</b> iOS locks the icon in when you add the app, so an app that's already on your Home Screen keeps the old icon until you re-add it:</p>
+      <ol style="color:var(--text2);line-height:1.7;margin:0 0 1rem;padding-left:1.2rem">
+        <li>Touch and hold the Bookkeeper icon → <b>Remove App</b> → <b>Delete from Home Screen</b>.</li>
+        <li>Open the app's web address in <b>Safari</b>.</li>
+        <li>Tap <b>Share</b> → <b>Add to Home Screen</b>.</li>
+      </ol>
+      <p style="color:var(--text3);font-size:12px;line-height:1.5;margin:0 0 1.25rem">The re-added icon will use your logo. (Your data stays safe — it lives in your account, not on the Home Screen.)</p>
+      <button class="btn btn-primary btn-full" onclick="closeModal('modal-appicon')">Got it</button>
+    </div>
+  </div>
+</div>
+
 <!-- INVOICE MODAL -->
 <div class="modal-overlay" id="modal-invoice" data-keep-open>
   <div class="modal">
@@ -2353,12 +2371,50 @@ function updateTopbarLogo() {
   });
   // Browser tab favicon + Add-to-Home-Screen icon: use the uploaded logo when set.
   // iOS caches the home-screen icon at install time — existing installs need a remove + re-add.
-  const src = profile.logo || 'icon.png';
-  ['icon','apple-touch-icon'].forEach(rel => {
-    let l = document.querySelector(`link[rel="${rel}"]`);
-    if (!l) { l = document.createElement('link'); l.rel = rel; document.head.appendChild(l); }
-    l.href = src;
-  });
+  applyIconLinks();
+  refreshAppIcon();   // async; rebuilds the square Home-Screen icon only if the logo changed
+}
+
+// The favicon can take the raw logo (browsers scale it fine), but the iOS
+// apple-touch-icon looks bad if it's transparent or non-square (black fill /
+// distortion), so we render a proper opaque 180×180 square for it.
+let _appIconUrl = null, _appIconFor = null;
+function applyIconLinks() {
+  const fav = profile.logo || 'icon.png';
+  let l = document.querySelector('link[rel="icon"]');
+  if (!l) { l = document.createElement('link'); l.rel = 'icon'; document.head.appendChild(l); }
+  l.href = fav;
+  let a = document.querySelector('link[rel="apple-touch-icon"]');
+  if (!a) { a = document.createElement('link'); a.rel = 'apple-touch-icon'; document.head.appendChild(a); }
+  a.setAttribute('sizes', '180x180');
+  a.href = _appIconUrl || (profile.logo || 'icon.png');
+}
+async function buildAppIcon(dataUrl) {
+  const size = 180, pad = 16;
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = dataUrl; });
+  const cv = document.createElement('canvas'); cv.width = size; cv.height = size;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, size, size);   // opaque bg (iOS ignores alpha)
+  const box = size - pad * 2, s = Math.min(box / img.width, box / img.height);
+  const w = img.width * s, h = img.height * s;
+  ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);    // contain, centered
+  return cv.toDataURL('image/png');
+}
+async function refreshAppIcon(force) {
+  const logo = profile.logo || null;
+  if (!logo) { _appIconUrl = null; _appIconFor = null; applyIconLinks(); return; }
+  if (!force && _appIconFor === logo && _appIconUrl) return;   // already built for this logo
+  try { _appIconUrl = await buildAppIcon(logo); } catch(_) { _appIconUrl = logo; }
+  _appIconFor = logo;
+  applyIconLinks();
+}
+// Force the logo onto the browser favicon/bookmark + iOS Home-Screen icon, then
+// explain the iOS remove/re-add step (iOS locks the icon in at add-to-Home-Screen
+// time, so an already-installed app keeps the old icon until re-added).
+async function forceUpdateAppIcon() {
+  if (!profile.logo) { showToast('Add a logo first', 'error'); return; }
+  await refreshAppIcon(true);
+  openModal('modal-appicon');
 }
 
 function renderDashboard() {
@@ -6812,6 +6868,7 @@ function renderLogoState() {
           <span class="logo-slot-name">Current logo</span>
           <div class="logo-slot-actions">
             <button class="btn btn-sm" type="button" onclick="document.getElementById('s-logo-file').click()"><i class="ti ti-refresh"></i> Change</button>
+            <button class="btn btn-sm" type="button" onclick="forceUpdateAppIcon()"><i class="ti ti-device-mobile"></i> Use as app icon</button>
             <button class="btn btn-sm btn-danger" type="button" onclick="removeLogo()"><i class="ti ti-trash"></i> Remove</button>
           </div>
         </div>
