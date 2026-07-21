@@ -1,1 +1,1 @@
-{"version":343,"note":"v343: Add an in-app \"Suggest strong password\" button on Create Account (with Show/Hide) that generates a strong password client-side — reliable everywhere, since iOS \"Fill Strong Password\" doesn't work in installed PWAs or Private Browsing."}
+{"version":344,"note":"v344: After creating an account you're taken straight to the Sign In tab with your email pre-filled, so you just enter your password to log in."}
