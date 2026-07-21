@@ -1,1 +1,1 @@
-{"version":360,"note":"v360: The Expenses page now shows a Total spent summary bar at the top (count + total, excluding reimbursed pass-throughs) that updates live with the search and filters — mirroring the total at the bottom."}
+{"version":361,"note":"v361: The Expenses page now defaults to This year, so its total matches the Home dashboard's Expenses card (which is year-to-date). A This year / All time toggle at the top lets you switch, and the summary shows which scope is in effect; setting an explicit From/To date range overrides the scope."}
