@@ -1608,7 +1608,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal">
     <div class="modal-header"><h2>Tax set-aside</h2><button class="btn btn-sm" aria-label="Close" onclick="closeTaxModal()"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
-      <p style="font-size:12.5px;color:var(--text3);margin:0 0 1rem">Estimate what to set aside from your net profit for taxes. The bracket method figures self-employment tax, federal income tax, and Montana income tax for the 2025 tax year — an estimate, not tax advice.</p>
+      <p style="font-size:12.5px;color:var(--text3);margin:0 0 1rem">Estimate what to set aside from your net profit for taxes. The bracket method figures self-employment tax, federal income tax, and your state's income tax for the 2025 tax year — an estimate, not tax advice.</p>
       <div class="form-group">
         <label>Method</label>
         <div style="display:flex;gap:1.25rem;font-size:13px">
@@ -1629,8 +1629,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <input id="tax-other" type="number" min="0" step="1" inputmode="decimal" placeholder="0" oninput="taxApply()">
           <span style="font-size:11.5px;color:var(--text3)">Wages, spouse's income, etc. — stacks on top of your business profit.</span>
         </div>
-        <label style="display:flex;align-items:center;gap:.5rem;margin:.35rem 0;font-size:13px;cursor:pointer"><input type="checkbox" id="tax-qbi" onchange="taxApply()" style="width:auto"> Take the 20% QBI deduction (most sole proprietors qualify)</label>
-        <label style="display:flex;align-items:center;gap:.5rem;margin:.35rem 0 .25rem;font-size:13px;cursor:pointer"><input type="checkbox" id="tax-mt" onchange="taxApply()" style="width:auto"> Include Montana state income tax</label>
+        <div class="form-group"><label>State</label>
+          <select id="tax-state" onchange="taxApply()"></select>
+        </div>
+        <label style="display:flex;align-items:center;gap:.5rem;margin:.35rem 0 .25rem;font-size:13px;cursor:pointer"><input type="checkbox" id="tax-qbi" onchange="taxApply()" style="width:auto"> Take the 20% QBI deduction (most sole proprietors qualify)</label>
       </div>
       <div id="tax-flat-section" style="display:none">
         <div class="form-group"><label>Set aside this % of net profit</label>
@@ -2764,9 +2766,9 @@ function renderCategoryBreakdown(){
 // Turns YTD net profit into a realistic amount to set aside for taxes. The default
 // "brackets" method estimates the three taxes a single-member LLC / sole proprietor
 // actually owes for the 2025 tax year: self-employment tax (Schedule SE) + federal
-// income tax + Montana income tax, applying the standard deduction, the deductible
-// half of SE tax, and (optionally) the 20% QBI deduction. A flat-percent method is
-// still available. All settings are on-device (localStorage) — no DB, no migration.
+// income tax + the selected state's income tax, applying the standard deduction, the
+// deductible half of SE tax, and (optionally) the 20% QBI deduction. A flat-percent
+// method is still available. All settings are on-device (localStorage) — no DB.
 //
 // 2025 tax-year constants — IRS Rev. Proc. 2024-40 (federal) and MT DOR 2025 tables.
 const TAX_SE_WAGE_BASE = 176100, TAX_SE_SS_RATE = 0.124, TAX_SE_MED_RATE = 0.029, TAX_SE_FACTOR = 0.9235;
@@ -2778,19 +2780,94 @@ const TAX_FED_BRACKETS = {
   mfs:   [[0,.10],[11925,.12],[48475,.22],[103350,.24],[197300,.32],[250525,.35],[375800,.37]],
   hoh:   [[0,.10],[17000,.12],[64850,.22],[103350,.24],[197300,.32],[250500,.35],[626350,.37]],
 };
-const TAX_MT_BRACKETS = { // Montana 2025: 4.7% up to threshold, 5.9% above.
-  single:[[0,.047],[21100,.059]], mfj:[[0,.047],[42200,.059]],
-  mfs:   [[0,.047],[21100,.059]], hoh:[[0,.047],[31700,.059]],
+// State income tax, 2025 tax year. Each entry: {name, ...}. Shape options:
+//   none:true            → no state income tax (0)
+//   flat:rate            → single flat rate for all filers
+//   single:[[lo,rate]..] → progressive single-filer brackets; optional mfj:[...]
+//                          gives the joint brackets, mfjDouble:true means the
+//                          joint thresholds are 2× single (same rates). MFS/HOH
+//                          use the single brackets. Applied to federal taxable
+//                          income — a set-aside estimate, not each state's exact
+//                          starting point. Home state (MT) verified; others are
+//                          reasonable 2025 approximations. NONE = user opt-out.
+const STATE_TAX = {
+  NONE:{name:'No state income tax', none:true},
+  AL:{name:'Alabama', single:[[0,.02],[500,.04],[3000,.05]], mfj:[[0,.02],[1000,.04],[6000,.05]]},
+  AK:{name:'Alaska', none:true},
+  AZ:{name:'Arizona', flat:.025},
+  AR:{name:'Arkansas', single:[[0,0],[4400,.02],[8800,.03],[13000,.039]]},
+  CA:{name:'California', single:[[0,.01],[10756,.02],[25499,.04],[40245,.06],[55866,.08],[70606,.093],[360659,.103],[432787,.113],[721314,.123],[1000000,.133]], mfjDouble:true},
+  CO:{name:'Colorado', flat:.044},
+  CT:{name:'Connecticut', single:[[0,.02],[10000,.045],[50000,.055],[100000,.06],[200000,.065],[250000,.069],[500000,.0699]], mfjDouble:true},
+  DE:{name:'Delaware', single:[[0,0],[2000,.022],[5000,.039],[10000,.048],[20000,.052],[25000,.0555],[60000,.066]]},
+  DC:{name:'District of Columbia', single:[[0,.04],[10000,.06],[40000,.065],[60000,.085],[250000,.0925],[500000,.0975],[1000000,.1075]]},
+  FL:{name:'Florida', none:true},
+  GA:{name:'Georgia', flat:.0539},
+  HI:{name:'Hawaii', single:[[0,.014],[2400,.032],[4800,.055],[9600,.064],[14400,.068],[19200,.072],[24000,.076],[36000,.079],[48000,.0825],[150000,.09],[175000,.10],[200000,.11]], mfjDouble:true},
+  ID:{name:'Idaho', flat:.05695},
+  IL:{name:'Illinois', flat:.0495},
+  IN:{name:'Indiana', flat:.03},
+  IA:{name:'Iowa', flat:.038},
+  KS:{name:'Kansas', single:[[0,.052],[23000,.0558]], mfj:[[0,.052],[46000,.0558]]},
+  KY:{name:'Kentucky', flat:.04},
+  LA:{name:'Louisiana', flat:.03},
+  ME:{name:'Maine', single:[[0,.058],[26800,.0675],[63450,.0715]], mfjDouble:true},
+  MD:{name:'Maryland', single:[[0,.02],[1000,.03],[2000,.04],[3000,.0475],[100000,.05],[125000,.0525],[150000,.055],[250000,.0575]]},
+  MA:{name:'Massachusetts', single:[[0,.05],[1000000,.09]]},
+  MI:{name:'Michigan', flat:.0425},
+  MN:{name:'Minnesota', single:[[0,.0535],[31690,.068],[104090,.0785],[193240,.0985]], mfj:[[0,.0535],[46330,.068],[184040,.0785],[321450,.0985]]},
+  MS:{name:'Mississippi', single:[[0,0],[10000,.044]]},
+  MO:{name:'Missouri', single:[[0,0],[1273,.02],[2546,.025],[3819,.03],[5092,.035],[6365,.04],[7638,.045],[8911,.047]]},
+  MT:{name:'Montana', single:[[0,.047],[21100,.059]], mfjDouble:true},
+  NE:{name:'Nebraska', single:[[0,.0246],[3900,.0351],[23370,.0501],[37670,.052]], mfj:[[0,.0246],[7780,.0351],[46760,.0501],[75340,.052]]},
+  NV:{name:'Nevada', none:true},
+  NH:{name:'New Hampshire', none:true},
+  NJ:{name:'New Jersey', single:[[0,.014],[20000,.0175],[35000,.035],[40000,.05525],[75000,.0637],[500000,.0897],[1000000,.1075]], mfj:[[0,.014],[20000,.0175],[50000,.0245],[70000,.035],[80000,.05525],[150000,.0637],[500000,.0897],[1000000,.1075]]},
+  NM:{name:'New Mexico', single:[[0,.015],[5500,.032],[16500,.043],[33500,.047],[66500,.049],[210000,.059]]},
+  NY:{name:'New York', single:[[0,.04],[8500,.045],[11700,.0525],[13900,.055],[80650,.06],[215400,.0685],[1077550,.0965],[5000000,.103],[25000000,.109]], mfj:[[0,.04],[17150,.045],[23600,.0525],[27900,.055],[161550,.06],[323200,.0685],[2155350,.0965],[5000000,.103],[25000000,.109]]},
+  NC:{name:'North Carolina', flat:.0425},
+  ND:{name:'North Dakota', single:[[0,0],[47150,.0195],[238200,.025]], mfj:[[0,0],[78775,.0195],[289975,.025]]},
+  OH:{name:'Ohio', single:[[0,0],[26050,.0275],[100000,.035]]},
+  OK:{name:'Oklahoma', single:[[0,.0025],[1000,.0075],[2500,.0175],[3750,.0275],[4900,.0375],[7200,.0475]]},
+  OR:{name:'Oregon', single:[[0,.0475],[4300,.0675],[10750,.0875],[125000,.099]], mfj:[[0,.0475],[8600,.0675],[21500,.0875],[250000,.099]]},
+  PA:{name:'Pennsylvania', flat:.0307},
+  RI:{name:'Rhode Island', single:[[0,.0375],[77450,.0475],[176050,.0599]]},
+  SC:{name:'South Carolina', single:[[0,0],[3460,.03],[17330,.062]]},
+  SD:{name:'South Dakota', none:true},
+  TN:{name:'Tennessee', none:true},
+  TX:{name:'Texas', none:true},
+  UT:{name:'Utah', flat:.0455},
+  VT:{name:'Vermont', single:[[0,.0335],[45400,.066],[110050,.076],[229550,.0875]], mfj:[[0,.0335],[75850,.066],[183400,.076],[279450,.0875]]},
+  VA:{name:'Virginia', single:[[0,.02],[3000,.03],[5000,.05],[17000,.0575]]},
+  WA:{name:'Washington', none:true},
+  WV:{name:'West Virginia', single:[[0,.0222],[10000,.0296],[25000,.0333],[40000,.0444],[60000,.0482]]},
+  WI:{name:'Wisconsin', single:[[0,.035],[14680,.044],[29370,.053],[323290,.0765]], mfj:[[0,.035],[19580,.044],[39150,.053],[431060,.0765]]},
+  WY:{name:'Wyoming', none:true},
 };
+// Resolve a state's [[lo,rate]..] table for a filing status ([] = no state tax).
+function stateBrackets(code, filing) {
+  const s = STATE_TAX[code] || STATE_TAX.MT;
+  if (s.none) return [];
+  if (s.flat != null) return [[0, s.flat]];
+  if (filing === 'mfj') {
+    if (s.mfj) return s.mfj;
+    if (s.mfjDouble) return s.single.map(r => [r[0]*2, r[1]]);
+  }
+  return s.single; // single, mfs, hoh, or mfj with no marriage adjustment
+}
 function taxSettings() {
   const f = lsGet('bk-tax-filing','single');
   const flat = parseFloat(lsGet('bk-tax-setaside-pct'));
+  // State default: honor a saved choice; else migrate the old MT on/off toggle
+  // (off → no state tax); else default to Montana (the business's home state).
+  let st = lsGet('bk-tax-state', null);
+  if (!st || !STATE_TAX[st]) st = (lsGet('bk-tax-mt','1') === '0') ? 'NONE' : 'MT';
   return {
     mode: lsGet('bk-tax-mode','brackets') === 'flat' ? 'flat' : 'brackets',
     filing: TAX_STD_DED[f] ? f : 'single',
     other: Math.max(0, parseFloat(lsGet('bk-tax-other','0')) || 0),
     qbi: lsGet('bk-tax-qbi','1') !== '0',
-    mt: lsGet('bk-tax-mt','1') !== '0',
+    state: st,
     flatPct: (isFinite(flat) && flat>0 && flat<100) ? flat : 25,
   };
 }
@@ -2819,10 +2896,11 @@ function computeTax(profit) {
   const qbiDed = s.qbi ? Math.min(0.20 * Math.max(0, P - halfSE), 0.20 * preQbi) : 0;
   const taxable = Math.max(0, preQbi - qbiDed);
   const fed = taxApplyBrackets(taxable, TAX_FED_BRACKETS[s.filing]);
-  // Montana conforms to federal taxable income, so it runs on the same base.
-  const mt = s.mt ? taxApplyBrackets(taxable, TAX_MT_BRACKETS[s.filing]) : 0;
-  const total = se + fed + mt;
-  return { se, fed, mt, total, rate: P>0 ? total/P : 0 };
+  // State income tax runs on the same federal taxable-income base (an estimate;
+  // states vary in their exact starting point).
+  const state = taxApplyBrackets(taxable, stateBrackets(s.state, s.filing));
+  const total = se + fed + state;
+  return { se, fed, state, total, rate: P>0 ? total/P : 0 };
 }
 let _taxProfit = 0; // last YTD net profit, so the modal can recompute live
 function renderTaxCard(profit) {
@@ -2843,11 +2921,16 @@ function nextEstTaxDate() {
 }
 function openTaxModal() {
   const s = taxSettings();
+  const sel = document.getElementById('tax-state');
+  if (sel && !sel.options.length) { // populate state list once (NONE first, then A–Z)
+    const codes = Object.keys(STATE_TAX).filter(c=>c!=='NONE').sort((a,b)=>STATE_TAX[a].name.localeCompare(STATE_TAX[b].name));
+    sel.innerHTML = ['NONE',...codes].map(c=>`<option value="${c}">${STATE_TAX[c].name}</option>`).join('');
+  }
   document.querySelector(`input[name="tax-mode"][value="${s.mode}"]`).checked = true;
   document.getElementById('tax-filing').value = s.filing;
   document.getElementById('tax-other').value = s.other || '';
   document.getElementById('tax-qbi').checked = s.qbi;
-  document.getElementById('tax-mt').checked = s.mt;
+  document.getElementById('tax-state').value = s.state;
   document.getElementById('tax-flat-pct').value = s.flatPct;
   document.getElementById('tax-brackets-section').style.display = s.mode==='flat' ? 'none' : '';
   document.getElementById('tax-flat-section').style.display = s.mode==='flat' ? '' : 'none';
@@ -2861,7 +2944,7 @@ function taxApply() {
   lsSet('bk-tax-filing', document.getElementById('tax-filing').value);
   lsSet('bk-tax-other', String(Math.max(0, parseFloat(document.getElementById('tax-other').value) || 0)));
   lsSet('bk-tax-qbi', document.getElementById('tax-qbi').checked ? '1' : '0');
-  lsSet('bk-tax-mt', document.getElementById('tax-mt').checked ? '1' : '0');
+  lsSet('bk-tax-state', document.getElementById('tax-state').value);
   const pct = parseFloat(document.getElementById('tax-flat-pct').value);
   if (isFinite(pct) && pct>0 && pct<100) lsSet('bk-tax-setaside-pct', String(pct));
   document.getElementById('tax-brackets-section').style.display = mode==='brackets' ? '' : 'none';
@@ -2878,7 +2961,7 @@ function renderTaxBreakdown() {
   } else {
     h += row('Self-employment tax', r.se);
     h += row('Federal income tax', r.fed);
-    if (s.mt) h += row('Montana income tax', r.mt);
+    if (r.state > 0) h += row((STATE_TAX[s.state]||STATE_TAX.MT).name + ' income tax', r.state);
     h += `<div style="border-top:1px solid var(--border);margin:.3rem 0"></div>`;
     h += `<div style="display:flex;justify-content:space-between;padding:.28rem 0;font-weight:700"><span>Set aside</span><span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">${fmt(r.total)} · ${Math.round(r.rate*100)}%</span></div>`;
   }
