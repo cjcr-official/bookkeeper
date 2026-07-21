@@ -19,11 +19,14 @@
   th, td{ text-align:left; border:1px solid #ccc; padding:.5rem .6rem; font-size:.85rem; vertical-align:top; }
   th{ background:#f2f3f5; }
   a{ color:#1a1d24; }
-  @media print{ .wrap{ padding:0 .25in; } body{ font-size:11pt; } }
+  .back-btn{ display:inline-flex; align-items:center; gap:.3rem; margin-bottom:1.5rem; padding:.5rem .95rem; border:1px solid #ccc; border-radius:999px; background:#f2f3f5; color:#1a1d24; font-size:.9rem; font-weight:600; text-decoration:none; cursor:pointer; }
+  .back-btn:active{ transform:scale(.97); }
+  @media print{ .wrap{ padding:0 .25in; } body{ font-size:11pt; } .back-btn{ display:none; } }
 </style>
 </head>
 <body>
 <div class="wrap">
+  <a href="index.html" class="back-btn" onclick="if(history.length>1){history.back();return false}">‹ Back to Bookkeeper</a>
   <header>
     <h1>Data Retention and Disposal Policy</h1>
     <div class="meta">

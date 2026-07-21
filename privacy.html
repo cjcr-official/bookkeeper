@@ -21,10 +21,13 @@
   ul{ padding-left:1.2rem; }
   .card{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:1rem 1.25rem; margin-top:1rem; }
   code{ font-size:.85rem; }
+  .back-btn{ display:inline-flex; align-items:center; gap:.3rem; margin-bottom:1.5rem; padding:.5rem .95rem; border:1px solid var(--border); border-radius:999px; background:var(--card); color:var(--accent); font-size:.9rem; font-weight:600; text-decoration:none; cursor:pointer; }
+  .back-btn:active{ transform:scale(.97); }
 </style>
 </head>
 <body>
 <div class="wrap">
+  <a href="index.html" class="back-btn" onclick="if(history.length>1){history.back();return false}">‹ Back to Bookkeeper</a>
   <header>
     <h1>Privacy Policy</h1>
     <div class="sub">Bookkeeper — operated by Case Johnston Computer Repair, LLC<br>Effective July 10, 2026</div>
