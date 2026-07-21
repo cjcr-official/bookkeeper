@@ -1,1 +1,1 @@
-{"version":361,"note":"v361: The Expenses page now defaults to This year, so its total matches the Home dashboard's Expenses card (which is year-to-date). A This year / All time toggle at the top lets you switch, and the summary shows which scope is in effect; setting an explicit From/To date range overrides the scope."}
+{"version":362,"note":"v362: Polished the tax set-aside breakdown — cleaner rows with divider lines, a highlighted Set aside band, and a tidier source line."}
