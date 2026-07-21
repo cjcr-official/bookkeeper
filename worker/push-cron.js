@@ -118,8 +118,8 @@ const PE_FILING = { single: 'SINGLE', mfj: 'JOINT', mfs: 'SEPARATE', hoh: 'HEAD_
 function peSampleHousehold(year) {
   const m = ['you'];
   return {
-    people: { you: { age: { [year]: 40 }, self_employment_income: { [year]: 60000 }, employment_income: { [year]: 0 } } },
-    tax_units: { unit: { members: m, filing_status: { [year]: 'SINGLE' }, income_tax: { [year]: null }, self_employment_tax: { [year]: null }, state_income_tax: { [year]: null } } },
+    people: { you: { age: { [year]: 40 }, self_employment_income: { [year]: 60000 }, employment_income: { [year]: 0 }, self_employment_tax: { [year]: null } } },
+    tax_units: { unit: { members: m, filing_status: { [year]: 'SINGLE' }, income_tax: { [year]: null }, state_income_tax: { [year]: null } } },
     families: { fam: { members: m } }, marital_units: { mu: { members: m } },
     spm_units: { spm: { members: m } }, households: { hh: { members: m, state_name: { [year]: 'MT' } } },
   };
@@ -159,56 +159,63 @@ async function taxEstimate(req, env) {
   let body = {};
   if (req.method === 'POST') { try { body = await req.json(); } catch (e) { body = {}; } }
   else if (debug) { body = { profit: 60000, filing: 'single', state: 'MT', other: 0 }; }
-  const year = String(new Date().getUTCFullYear());
   const profit = Math.max(0, Math.round(Number(body.profit) || 0));
   const other  = Math.max(0, Math.round(Number(body.other)  || 0));
   const filing = PE_FILING[body.filing] || 'SINGLE';
   const state  = String(body.state || 'MT').toUpperCase().slice(0, 2);
   const joint  = filing === 'JOINT' || filing === 'SEPARATE';
 
-  // Business net profit → self-employment income (drives SE tax + QBI). Any other
-  // household income → wages. A zero-income spouse is added for joint/separate so
-  // the engine applies the correct standard deduction and brackets.
-  const people = { you: { age: { [year]: 40 }, self_employment_income: { [year]: profit }, employment_income: { [year]: other } } };
-  const members = ['you'];
-  if (joint) { people.spouse = { age: { [year]: 40 }, self_employment_income: { [year]: 0 }, employment_income: { [year]: 0 } }; members.push('spouse'); }
-  const want = { income_tax: { [year]: null }, self_employment_tax: { [year]: null }, state_income_tax: { [year]: null } };
-  const household = {
-    people,
-    tax_units:     { unit: { members, filing_status: { [year]: filing }, ...want } },
-    families:      { fam:  { members } },
-    marital_units: { mu:   { members: joint ? ['you', 'spouse'] : ['you'] } },
-    spm_units:     { spm:  { members } },
-    households:    { hh:   { members, state_name: { [year]: state } } },
-  };
-  const reqBody = JSON.stringify({ household });
+  // Try the current tax year first, then fall back to 2025 if PolicyEngine
+  // doesn't yet model it. First success wins.
+  const curYear = String(new Date().getUTCFullYear());
+  const years = [...new Set([curYear, '2025'])];
+  let lastDetail = null;
+  for (const year of years) {
+    // Business net profit → self-employment income (drives SE tax + QBI). Other
+    // household income → wages. self_employment_tax is a PERSON-level variable
+    // (per PolicyEngine); income_tax and state_income_tax live on the tax unit.
+    // A zero-income spouse is added for joint/separate so the engine applies the
+    // right standard deduction and brackets.
+    const people = { you: { age: { [year]: 40 }, self_employment_income: { [year]: profit }, employment_income: { [year]: other }, self_employment_tax: { [year]: null } } };
+    const members = ['you'];
+    if (joint) { people.spouse = { age: { [year]: 40 }, self_employment_income: { [year]: 0 }, employment_income: { [year]: 0 } }; members.push('spouse'); }
+    const household = {
+      people,
+      tax_units:     { unit: { members, filing_status: { [year]: filing }, income_tax: { [year]: null }, state_income_tax: { [year]: null } } },
+      families:      { fam:  { members } },
+      marital_units: { mu:   { members: joint ? ['you', 'spouse'] : ['you'] } },
+      spm_units:     { spm:  { members } },
+      households:    { hh:   { members, state_name: { [year]: state } } },
+    };
 
-  let status = 0, text = '', raw = null, fetchError = '';
-  try {
-    const r = await fetch(PE_API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: reqBody });
-    status = r.status;
-    text = await r.text();
-    try { raw = JSON.parse(text); } catch (e) { raw = null; }
-    if (!r.ok) {
-      if (debug) return jsonResp({ calledUrl: PE_API, status, ok: false, requestSent: household, responseText: text.slice(0, 2000) });
-      return jsonResp({ error: 'The tax engine is unavailable right now.' }, 502);
+    // One transient retry (PolicyEngine occasionally 503s "no healthy upstream").
+    let r = null, text = '', raw = null, fetchError = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        r = await fetch(PE_API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ household }) });
+        text = await r.text();
+        try { raw = JSON.parse(text); } catch (e) { raw = null; }
+        if (r.status < 500) break;         // 2xx/4xx are final; only retry 5xx
+      } catch (e) { fetchError = String((e && e.message) || e); r = null; }
     }
-  } catch (e) {
-    fetchError = String((e && e.message) || e);
-    if (debug) return jsonResp({ calledUrl: PE_API, fetchError, requestSent: household });
-    return jsonResp({ error: 'Could not reach the tax engine.' }, 502);
-  }
 
-  // PolicyEngine echoes the household with the requested nulls filled in (under
-  // `result` on newer deployments, or at the root on older ones).
-  const root = (raw && raw.result) ? raw.result : raw;
-  const tu = root && root.tax_units && root.tax_units.unit;
-  const pick = (v) => { const x = tu && tu[v] && tu[v][year]; return typeof x === 'number' ? x : null; };
-  const fed = pick('income_tax'), se = pick('self_employment_tax'), st = pick('state_income_tax');
-  if (debug) return jsonResp({ calledUrl: PE_API, status, parsed: { fed, se, state: st }, taxUnitKeys: tu ? Object.keys(tu) : null, raw });
-  if (fed == null || se == null || st == null) return jsonResp({ error: 'The tax engine returned an unexpected response.' }, 502);
-  const total = fed + se + st;
-  return jsonResp({ ok: true, engine: 'policyengine', year: Number(year), se, fed, state: st, total, rate: profit > 0 ? total / profit : 0 });
+    if (!r) { lastDetail = { year, fetchError }; continue; }
+    // PolicyEngine echoes the household with the requested nulls filled in
+    // (under `result` on newer deployments, or at the root on older ones).
+    const root = (raw && raw.result) ? raw.result : raw;
+    const tu  = root && root.tax_units && root.tax_units.unit;
+    const per = root && root.people && root.people.you;
+    const numAt = (obj, v) => { const x = obj && obj[v] && obj[v][year]; return typeof x === 'number' ? x : null; };
+    const fed = numAt(tu, 'income_tax'), st = numAt(tu, 'state_income_tax'), se = numAt(per, 'self_employment_tax');
+    if (debug) return jsonResp({ calledUrl: PE_API, year, status: r.status, parsed: { fed, se, state: st }, taxUnitKeys: tu ? Object.keys(tu) : null, personKeys: per ? Object.keys(per) : null, raw });
+    if (fed != null && se != null && st != null) {
+      const total = fed + se + st;
+      return jsonResp({ ok: true, engine: 'policyengine', year: Number(year), se, fed, state: st, total, rate: profit > 0 ? total / profit : 0 });
+    }
+    lastDetail = { year, status: r.status, snippet: text.slice(0, 500) };
+  }
+  if (debug) return jsonResp({ calledUrl: PE_API, failed: lastDetail });
+  return jsonResp({ error: 'The tax engine returned an unexpected response.' }, 502);
 }
 
 // ──────────────────────────────────────────────────────────────────────
