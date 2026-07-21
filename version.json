@@ -1,1 +1,1 @@
-{"version":342,"note":"v342: Fix iOS/Safari strong-password autofill on Create Account — the inactive Sign-In form is now disabled so a generated password fills the visible signup field instead of the hidden login field."}
+{"version":343,"note":"v343: Add an in-app \"Suggest strong password\" button on Create Account (with Show/Hide) that generates a strong password client-side — reliable everywhere, since iOS \"Fill Strong Password\" doesn't work in installed PWAs or Private Browsing."}
