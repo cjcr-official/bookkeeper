@@ -33,6 +33,7 @@ export default {
     if (url.pathname === '/plaid/transactions' && req.method === 'POST') return plaidTransactions(req, env);
     if (url.pathname === '/plaid/refresh' && req.method === 'POST') return plaidRefresh(req, env);
     if (url.pathname === '/plaid/disconnect' && req.method === 'POST') return plaidDisconnect(req, env);
+    if (url.pathname === '/tax-estimate' && req.method === 'POST') return taxEstimate(req, env);
     if (url.pathname === '/delete-account' && req.method === 'POST') return deleteAccount(req, env);
     if (env.ASSETS) return withSecurityHeaders(await env.ASSETS.fetch(req), env);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
@@ -96,6 +97,71 @@ async function authUser(req, env) {
   if (!r.ok) return null;
   const u = await r.json();
   return u && u.id ? u : null;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Live tax estimate via PolicyEngine — a free, open-source engine that computes
+// federal + every state's income tax (with each state's own deductions/credits,
+// which hand-coded brackets can't capture). The browser can't call it directly
+// (not in the CSP connect-src), so the Worker proxies: it builds an OpenFisca-US
+// household from {profit, filing, state, other}, asks for federal income tax,
+// self-employment tax, and state income tax, and returns them. The client falls
+// back to its built-in bracket estimate whenever this returns anything but ok.
+//
+// NOTE: the exact variable names below follow PolicyEngine's documented schema
+// but could not be verified from the build sandbox (its API is egress-blocked
+// here). GET/POST /tax-estimate?debug=1 returns PolicyEngine's raw response so
+// the field mapping can be confirmed against the deployed Worker.
+const PE_API = 'https://api.policyengine.org/us/calculate';
+const PE_FILING = { single: 'SINGLE', mfj: 'JOINT', mfs: 'SEPARATE', hoh: 'HEAD_OF_HOUSEHOLD' };
+async function taxEstimate(req, env) {
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Please sign in again.' }, 401);
+  let body; try { body = await req.json(); } catch (e) { body = {}; }
+  const debug = new URL(req.url).searchParams.get('debug') === '1';
+  const year = String(new Date().getUTCFullYear());
+  const profit = Math.max(0, Math.round(Number(body.profit) || 0));
+  const other  = Math.max(0, Math.round(Number(body.other)  || 0));
+  const filing = PE_FILING[body.filing] || 'SINGLE';
+  const state  = String(body.state || 'MT').toUpperCase().slice(0, 2);
+  const joint  = filing === 'JOINT' || filing === 'SEPARATE';
+
+  // Business net profit → self-employment income (drives SE tax + QBI). Any other
+  // household income → wages. A zero-income spouse is added for joint/separate so
+  // the engine applies the correct standard deduction and brackets.
+  const people = { you: { age: { [year]: 40 }, self_employment_income: { [year]: profit }, employment_income: { [year]: other } } };
+  const members = ['you'];
+  if (joint) { people.spouse = { age: { [year]: 40 }, self_employment_income: { [year]: 0 }, employment_income: { [year]: 0 } }; members.push('spouse'); }
+  const want = { income_tax: { [year]: null }, self_employment_tax: { [year]: null }, state_income_tax: { [year]: null } };
+  const household = {
+    people,
+    tax_units:     { unit: { members, filing_status: { [year]: filing }, ...want } },
+    families:      { fam:  { members } },
+    marital_units: { mu:   { members: joint ? ['you', 'spouse'] : ['you'] } },
+    spm_units:     { spm:  { members } },
+    households:    { hh:   { members, state_name: { [year]: state } } },
+  };
+
+  let raw;
+  try {
+    const r = await fetch(PE_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ household }) });
+    raw = await r.json().catch(() => null);
+    if (debug) return jsonResp({ status: r.status, ok: r.ok, raw });
+    if (!r.ok) return jsonResp({ error: 'The tax engine is unavailable right now.' }, 502);
+  } catch (e) {
+    if (debug) return jsonResp({ error: String((e && e.message) || e) }, 502);
+    return jsonResp({ error: 'Could not reach the tax engine.' }, 502);
+  }
+
+  // PolicyEngine echoes the household with the requested nulls filled in (under
+  // `result` on newer deployments, or at the root on older ones).
+  const root = (raw && raw.result) ? raw.result : raw;
+  const tu = root && root.tax_units && root.tax_units.unit;
+  const pick = (v) => { const x = tu && tu[v] && tu[v][year]; return typeof x === 'number' ? x : null; };
+  const fed = pick('income_tax'), se = pick('self_employment_tax'), st = pick('state_income_tax');
+  if (fed == null || se == null || st == null) return jsonResp({ error: 'The tax engine returned an unexpected response.' }, 502);
+  const total = fed + se + st;
+  return jsonResp({ ok: true, engine: 'policyengine', year: Number(year), se, fed, state: st, total, rate: profit > 0 ? total / profit : 0 });
 }
 
 // ──────────────────────────────────────────────────────────────────────
