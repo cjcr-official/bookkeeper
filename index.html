@@ -965,7 +965,14 @@ input,select,textarea{border-radius:var(--radius-sm)}
     </form>
     <form id="signup-form" onsubmit="doSignup();return false" style="display:none">
       <div class="form-group"><label>Email</label><input id="signup-email" type="email" name="username" autocomplete="username" placeholder="you@example.com" disabled></div>
-      <div class="form-group"><label>Password</label><input id="signup-password" type="password" autocomplete="new-password" placeholder="Minimum 8 characters" disabled></div>
+      <div class="form-group"><label>Password</label>
+        <input id="signup-password" type="password" autocomplete="new-password" placeholder="Minimum 8 characters" disabled>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-top:.45rem">
+          <button type="button" onclick="suggestStrongPassword()" style="background:none;border:none;padding:0;color:var(--accent);font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif"><i class="ti ti-key"></i> Suggest strong password</button>
+          <button type="button" id="signup-pw-toggle" onclick="toggleSignupPw()" style="background:none;border:none;padding:0;color:var(--text3);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif">Show</button>
+        </div>
+        <div id="signup-pw-hint" style="display:none;font-size:11px;color:var(--text3);margin-top:.4rem;line-height:1.4">Save this password in your notes or password manager — you'll need it to sign in.</div>
+      </div>
       <div class="form-group"><label>Company Name</label><input id="signup-company" type="text" autocomplete="organization" placeholder="Acme Inc." disabled></div>
       <button class="btn btn-primary btn-full" type="submit" id="signup-btn"><i class="ti ti-user-plus"></i> Create Account</button>
     </form>
@@ -1929,6 +1936,37 @@ function switchAuthTab(tab, el) {
 function setActiveAuthForm(tab) {
   document.querySelectorAll('#login-form input').forEach(i=>i.disabled = tab!=='login');
   document.querySelectorAll('#signup-form input').forEach(i=>i.disabled = tab!=='signup');
+}
+
+// In-app strong-password generator. iOS "Fill Strong Password" is unreliable in
+// standalone PWAs and Private Browsing (a WebKit limitation), so this guarantees
+// the user can always get a strong, unique password regardless of context. Uses
+// crypto.getRandomValues; guarantees at least one of each character class and
+// skips visually ambiguous characters (0/O, 1/l/I).
+function genPassword(len) {
+  const groups = ['abcdefghijkmnpqrstuvwxyz','ABCDEFGHJKLMNPQRSTUVWXYZ','23456789','!@#$%^&*-_+'];
+  const all = groups.join('');
+  const rnd = n => { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; };
+  const chars = groups.map(g => g[rnd(g.length)]);        // one from every class
+  while (chars.length < len) chars.push(all[rnd(all.length)]);
+  for (let i = chars.length - 1; i > 0; i--) { const j = rnd(i + 1); [chars[i], chars[j]] = [chars[j], chars[i]]; }
+  return chars.join('');
+}
+function suggestStrongPassword() {
+  const inp = document.getElementById('signup-password');
+  inp.value = genPassword(16);
+  inp.type = 'text';                                       // reveal so it can be saved
+  const t = document.getElementById('signup-pw-toggle'); if (t) t.textContent = 'Hide';
+  const hint = document.getElementById('signup-pw-hint'); if (hint) hint.style.display = 'block';
+  inp.dispatchEvent(new Event('input', {bubbles:true}));
+  showAuthSuccess('Strong password generated — save it before you create the account.');
+}
+function toggleSignupPw() {
+  const inp = document.getElementById('signup-password');
+  const t = document.getElementById('signup-pw-toggle');
+  const hidden = inp.type === 'password';
+  inp.type = hidden ? 'text' : 'password';
+  if (t) t.textContent = hidden ? 'Hide' : 'Show';
 }
 
 function showAuthError(msg) {
