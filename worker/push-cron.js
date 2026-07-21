@@ -33,7 +33,7 @@ export default {
     if (url.pathname === '/plaid/transactions' && req.method === 'POST') return plaidTransactions(req, env);
     if (url.pathname === '/plaid/refresh' && req.method === 'POST') return plaidRefresh(req, env);
     if (url.pathname === '/plaid/disconnect' && req.method === 'POST') return plaidDisconnect(req, env);
-    if (url.pathname === '/tax-estimate' && (req.method === 'POST' || req.method === 'GET')) return taxEstimate(req, env);
+    if (url.pathname === '/tax-estimate' && req.method === 'POST') return taxEstimate(req, env);
     if (url.pathname === '/delete-account' && req.method === 'POST') return deleteAccount(req, env);
     if (env.ASSETS) return withSecurityHeaders(await env.ASSETS.fetch(req), env);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
@@ -104,61 +104,16 @@ async function authUser(req, env) {
 // federal + every state's income tax (with each state's own deductions/credits,
 // which hand-coded brackets can't capture). The browser can't call it directly
 // (not in the CSP connect-src), so the Worker proxies: it builds an OpenFisca-US
-// household from {profit, filing, state, other}, asks for federal income tax,
-// self-employment tax, and state income tax, and returns them. The client falls
-// back to its built-in bracket estimate whenever this returns anything but ok.
-//
-// NOTE: the exact variable names below follow PolicyEngine's documented schema
-// but could not be verified from the build sandbox (its API is egress-blocked
-// here). GET/POST /tax-estimate?debug=1 returns PolicyEngine's raw response so
-// the field mapping can be confirmed against the deployed Worker.
+// household from {profit, filing, state, other}, asks for federal income tax
+// (tax unit), self-employment tax (person), and state income tax (tax unit), and
+// returns them. This is the client's only source — there is no offline fallback.
 const PE_API = 'https://api.policyengine.org/us/calculate';
 const PE_FILING = { single: 'SINGLE', mfj: 'JOINT', mfs: 'SEPARATE', hoh: 'HEAD_OF_HOUSEHOLD' };
-// Build a minimal single-filer OpenFisca-US household for a probe.
-function peSampleHousehold(year) {
-  const m = ['you'];
-  return {
-    people: { you: { age: { [year]: 40 }, self_employment_income: { [year]: 60000 }, employment_income: { [year]: 0 }, self_employment_tax: { [year]: null } } },
-    tax_units: { unit: { members: m, filing_status: { [year]: 'SINGLE' }, income_tax: { [year]: null }, state_income_tax: { [year]: null } } },
-    families: { fam: { members: m } }, marital_units: { mu: { members: m } },
-    spm_units: { spm: { members: m } }, households: { hh: { members: m, state_name: { [year]: 'MT' } } },
-  };
-}
 async function taxEstimate(req, env) {
-  const url = new URL(req.url);
-  const debug = url.searchParams.get('debug') === '1';
-  const probe = url.searchParams.get('probe') === '1';
-  // Debug/probe modes are no-auth GETs so they can be opened straight in a browser.
-  if (!debug && !probe) {
-    const user = await authUser(req, env);
-    if (!user) return jsonResp({ error: 'Please sign in again.' }, 401);
-  }
-  // Probe: try several candidate PolicyEngine hosts/endpoints/years and report
-  // each one's status + response snippet, so the working combination is found in
-  // a single request rather than guessed.
-  if (probe) {
-    const attempts = [
-      { m: 'GET',  u: 'https://api.policyengine.org/us/metadata' },
-      { m: 'GET',  u: 'https://household.api.policyengine.org/us/metadata' },
-      { m: 'POST', u: 'https://api.policyengine.org/us/calculate',           y: '2025' },
-      { m: 'POST', u: 'https://household.api.policyengine.org/us/calculate', y: '2025' },
-      { m: 'POST', u: 'https://household.api.policyengine.org/us/calculate', y: '2026' },
-    ];
-    const out = [];
-    for (const a of attempts) {
-      try {
-        const opt = { method: a.m, headers: { 'Accept': 'application/json' } };
-        if (a.m === 'POST') { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify({ household: peSampleHousehold(a.y) }); }
-        const r = await fetch(a.u, opt);
-        const t = await r.text();
-        out.push({ url: a.u, method: a.m, year: a.y, status: r.status, snippet: t.slice(0, 300) });
-      } catch (e) { out.push({ url: a.u, method: a.m, year: a.y, error: String((e && e.message) || e) }); }
-    }
-    return jsonResp({ probe: out }, 200);
-  }
+  const user = await authUser(req, env);
+  if (!user) return jsonResp({ error: 'Please sign in again.' }, 401);
   let body = {};
-  if (req.method === 'POST') { try { body = await req.json(); } catch (e) { body = {}; } }
-  else if (debug) { body = { profit: 60000, filing: 'single', state: 'MT', other: 0 }; }
+  try { body = await req.json(); } catch (e) { body = {}; }
   const profit = Math.max(0, Math.round(Number(body.profit) || 0));
   const other  = Math.max(0, Math.round(Number(body.other)  || 0));
   const filing = PE_FILING[body.filing] || 'SINGLE';
@@ -169,7 +124,6 @@ async function taxEstimate(req, env) {
   // doesn't yet model it. First success wins.
   const curYear = String(new Date().getUTCFullYear());
   const years = [...new Set([curYear, '2025'])];
-  let lastDetail = null;
   for (const year of years) {
     // Business net profit → self-employment income (drives SE tax + QBI). Other
     // household income → wages. self_employment_tax is a PERSON-level variable
@@ -189,17 +143,17 @@ async function taxEstimate(req, env) {
     };
 
     // One transient retry (PolicyEngine occasionally 503s "no healthy upstream").
-    let r = null, text = '', raw = null, fetchError = '';
+    let r = null, raw = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         r = await fetch(PE_API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ household }) });
-        text = await r.text();
+        const text = await r.text();
         try { raw = JSON.parse(text); } catch (e) { raw = null; }
         if (r.status < 500) break;         // 2xx/4xx are final; only retry 5xx
-      } catch (e) { fetchError = String((e && e.message) || e); r = null; }
+      } catch (e) { r = null; }
     }
 
-    if (!r) { lastDetail = { year, fetchError }; continue; }
+    if (!r) continue;
     // PolicyEngine echoes the household with the requested nulls filled in
     // (under `result` on newer deployments, or at the root on older ones).
     const root = (raw && raw.result) ? raw.result : raw;
@@ -207,14 +161,11 @@ async function taxEstimate(req, env) {
     const per = root && root.people && root.people.you;
     const numAt = (obj, v) => { const x = obj && obj[v] && obj[v][year]; return typeof x === 'number' ? x : null; };
     const fed = numAt(tu, 'income_tax'), st = numAt(tu, 'state_income_tax'), se = numAt(per, 'self_employment_tax');
-    if (debug) return jsonResp({ calledUrl: PE_API, year, status: r.status, parsed: { fed, se, state: st }, taxUnitKeys: tu ? Object.keys(tu) : null, personKeys: per ? Object.keys(per) : null, raw });
     if (fed != null && se != null && st != null) {
       const total = fed + se + st;
       return jsonResp({ ok: true, engine: 'policyengine', year: Number(year), se, fed, state: st, total, rate: profit > 0 ? total / profit : 0 });
     }
-    lastDetail = { year, status: r.status, snippet: text.slice(0, 500) };
   }
-  if (debug) return jsonResp({ calledUrl: PE_API, failed: lastDetail });
   return jsonResp({ error: 'The tax engine returned an unexpected response.' }, 502);
 }
 

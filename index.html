@@ -1057,7 +1057,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </div>
             <div class="ov-item" onclick="openTaxModal()" style="cursor:pointer" title="Tap to set up your tax estimate">
               <div class="ov-icon accent"><i class="ti ti-receipt-tax"></i></div>
-              <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">25%</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--accent)">$0.00</div></div>
+              <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">…</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--accent)">—</div></div>
             </div>
           </div>
         </div>
@@ -1608,36 +1608,21 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal">
     <div class="modal-header"><h2>Tax set-aside</h2><button class="btn btn-sm" aria-label="Close" onclick="closeTaxModal()"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
-      <p style="font-size:12.5px;color:var(--text3);margin:0 0 1rem">Estimate what to set aside from your net profit for taxes. The bracket method uses a live tax engine (PolicyEngine) for self-employment tax, federal income tax, and your state's income tax — falling back to built-in 2025 brackets if it can't be reached. An estimate, not tax advice.</p>
-      <div class="form-group">
-        <label>Method</label>
-        <div style="display:flex;gap:1.25rem;font-size:13px">
-          <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="radio" name="tax-mode" value="brackets" onchange="taxApply()" style="width:auto"> Tax brackets</label>
-          <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="radio" name="tax-mode" value="flat" onchange="taxApply()" style="width:auto"> Flat percent</label>
-        </div>
+      <p style="font-size:12.5px;color:var(--text3);margin:0 0 1rem">Estimate what to set aside from your net profit for taxes. A live tax engine (PolicyEngine) figures self-employment tax, federal income tax, and your state's income tax — including each state's own deductions and credits. An estimate, not tax advice.</p>
+      <div class="form-group"><label>Filing status</label>
+        <select id="tax-filing" onchange="taxApply()">
+          <option value="single">Single</option>
+          <option value="mfj">Married filing jointly</option>
+          <option value="mfs">Married filing separately</option>
+          <option value="hoh">Head of household</option>
+        </select>
       </div>
-      <div id="tax-brackets-section">
-        <div class="form-group"><label>Filing status</label>
-          <select id="tax-filing" onchange="taxApply()">
-            <option value="single">Single</option>
-            <option value="mfj">Married filing jointly</option>
-            <option value="mfs">Married filing separately</option>
-            <option value="hoh">Head of household</option>
-          </select>
-        </div>
-        <div class="form-group"><label>Other taxable income (optional)</label>
-          <input id="tax-other" type="number" min="0" step="1" inputmode="decimal" placeholder="0" oninput="taxApply()">
-          <span style="font-size:11.5px;color:var(--text3)">Wages, spouse's income, etc. — stacks on top of your business profit.</span>
-        </div>
-        <div class="form-group"><label>State</label>
-          <select id="tax-state" onchange="taxApply()"></select>
-        </div>
-        <label style="display:flex;align-items:center;gap:.5rem;margin:.35rem 0 .25rem;font-size:13px;cursor:pointer"><input type="checkbox" id="tax-qbi" onchange="taxApply()" style="width:auto"> Take the 20% QBI deduction (most sole proprietors qualify)</label>
+      <div class="form-group"><label>State</label>
+        <select id="tax-state" onchange="taxApply()"></select>
       </div>
-      <div id="tax-flat-section" style="display:none">
-        <div class="form-group"><label>Set aside this % of net profit</label>
-          <input id="tax-flat-pct" type="number" min="1" max="99" step="1" inputmode="decimal" oninput="taxApply()">
-        </div>
+      <div class="form-group"><label>Other taxable income (optional)</label>
+        <input id="tax-other" type="number" min="0" step="1" inputmode="decimal" placeholder="0" oninput="taxApply()">
+        <span style="font-size:11.5px;color:var(--text3)">Wages, spouse's income, etc. — stacks on top of your business profit.</span>
       </div>
       <div id="tax-breakdown" style="margin-top:1rem;padding:.85rem 1rem;background:var(--surface2);border-radius:var(--radius);border:1px solid var(--border)"></div>
     </div>
@@ -2763,187 +2748,80 @@ function renderCategoryBreakdown(){
 }
 
 // ── Estimated-tax set-aside (top of Home) ──
-// Turns YTD net profit into a realistic amount to set aside for taxes. The default
-// "brackets" method estimates the three taxes a single-member LLC / sole proprietor
-// actually owes for the 2025 tax year: self-employment tax (Schedule SE) + federal
-// income tax + the selected state's income tax, applying the standard deduction, the
-// deductible half of SE tax, and (optionally) the 20% QBI deduction. A flat-percent
-// method is still available. All settings are on-device (localStorage) — no DB.
-//
-// 2025 tax-year constants — IRS Rev. Proc. 2024-40 (federal) and MT DOR 2025 tables.
-const TAX_SE_WAGE_BASE = 176100, TAX_SE_SS_RATE = 0.124, TAX_SE_MED_RATE = 0.029, TAX_SE_FACTOR = 0.9235;
-const TAX_STD_DED = { single:15750, mfj:31500, mfs:15750, hoh:23625 };
-// Each table: [lowerBound, marginalRate] rows, ascending. Rate applies to income above lowerBound.
-const TAX_FED_BRACKETS = {
-  single:[[0,.10],[11925,.12],[48475,.22],[103350,.24],[197300,.32],[250525,.35],[626350,.37]],
-  mfj:   [[0,.10],[23850,.12],[96950,.22],[206700,.24],[394600,.32],[501050,.35],[751600,.37]],
-  mfs:   [[0,.10],[11925,.12],[48475,.22],[103350,.24],[197300,.32],[250525,.35],[375800,.37]],
-  hoh:   [[0,.10],[17000,.12],[64850,.22],[103350,.24],[197300,.32],[250500,.35],[626350,.37]],
-};
-// State income tax, 2025 tax year. Each entry: {name, ...}. Shape options:
-//   none:true            → no state income tax (0)
-//   flat:rate            → single flat rate for all filers
-//   single:[[lo,rate]..] → progressive single-filer brackets; optional mfj:[...]
-//                          gives the joint brackets, mfjDouble:true means the
-//                          joint thresholds are 2× single (same rates). MFS/HOH
-//                          use the single brackets. Applied to federal taxable
-//                          income — a set-aside estimate, not each state's exact
-//                          starting point. Home state (MT) verified; others are
-//                          reasonable 2025 approximations. NONE = user opt-out.
+// Turns YTD net profit into what to set aside for taxes using a live tax engine
+// (PolicyEngine, proxied by the Worker): self-employment tax + federal income tax
+// + the selected state's income tax, with each state's own deductions and credits.
+// The engine is the ONLY source — there is no offline fallback. Settings are
+// on-device (localStorage); no DB.
+
+// State code → display name (50 states + DC). Used for the picker and the
+// breakdown label; the engine does the actual state math from the code.
 const STATE_TAX = {
-  NONE:{name:'No state income tax', none:true},
-  AL:{name:'Alabama', single:[[0,.02],[500,.04],[3000,.05]], mfj:[[0,.02],[1000,.04],[6000,.05]]},
-  AK:{name:'Alaska', none:true},
-  AZ:{name:'Arizona', flat:.025},
-  AR:{name:'Arkansas', single:[[0,0],[4400,.02],[8800,.03],[13000,.039]]},
-  CA:{name:'California', single:[[0,.01],[10756,.02],[25499,.04],[40245,.06],[55866,.08],[70606,.093],[360659,.103],[432787,.113],[721314,.123],[1000000,.133]], mfjDouble:true},
-  CO:{name:'Colorado', flat:.044},
-  CT:{name:'Connecticut', single:[[0,.02],[10000,.045],[50000,.055],[100000,.06],[200000,.065],[250000,.069],[500000,.0699]], mfjDouble:true},
-  DE:{name:'Delaware', single:[[0,0],[2000,.022],[5000,.039],[10000,.048],[20000,.052],[25000,.0555],[60000,.066]]},
-  DC:{name:'District of Columbia', single:[[0,.04],[10000,.06],[40000,.065],[60000,.085],[250000,.0925],[500000,.0975],[1000000,.1075]]},
-  FL:{name:'Florida', none:true},
-  GA:{name:'Georgia', flat:.0539},
-  HI:{name:'Hawaii', single:[[0,.014],[2400,.032],[4800,.055],[9600,.064],[14400,.068],[19200,.072],[24000,.076],[36000,.079],[48000,.0825],[150000,.09],[175000,.10],[200000,.11]], mfjDouble:true},
-  ID:{name:'Idaho', flat:.05695},
-  IL:{name:'Illinois', flat:.0495},
-  IN:{name:'Indiana', flat:.03},
-  IA:{name:'Iowa', flat:.038},
-  KS:{name:'Kansas', single:[[0,.052],[23000,.0558]], mfj:[[0,.052],[46000,.0558]]},
-  KY:{name:'Kentucky', flat:.04},
-  LA:{name:'Louisiana', flat:.03},
-  ME:{name:'Maine', single:[[0,.058],[26800,.0675],[63450,.0715]], mfjDouble:true},
-  MD:{name:'Maryland', single:[[0,.02],[1000,.03],[2000,.04],[3000,.0475],[100000,.05],[125000,.0525],[150000,.055],[250000,.0575]]},
-  MA:{name:'Massachusetts', single:[[0,.05],[1000000,.09]]},
-  MI:{name:'Michigan', flat:.0425},
-  MN:{name:'Minnesota', single:[[0,.0535],[31690,.068],[104090,.0785],[193240,.0985]], mfj:[[0,.0535],[46330,.068],[184040,.0785],[321450,.0985]]},
-  MS:{name:'Mississippi', single:[[0,0],[10000,.044]]},
-  MO:{name:'Missouri', single:[[0,0],[1273,.02],[2546,.025],[3819,.03],[5092,.035],[6365,.04],[7638,.045],[8911,.047]]},
-  MT:{name:'Montana', single:[[0,.047],[21100,.059]], mfjDouble:true},
-  NE:{name:'Nebraska', single:[[0,.0246],[3900,.0351],[23370,.0501],[37670,.052]], mfj:[[0,.0246],[7780,.0351],[46760,.0501],[75340,.052]]},
-  NV:{name:'Nevada', none:true},
-  NH:{name:'New Hampshire', none:true},
-  NJ:{name:'New Jersey', single:[[0,.014],[20000,.0175],[35000,.035],[40000,.05525],[75000,.0637],[500000,.0897],[1000000,.1075]], mfj:[[0,.014],[20000,.0175],[50000,.0245],[70000,.035],[80000,.05525],[150000,.0637],[500000,.0897],[1000000,.1075]]},
-  NM:{name:'New Mexico', single:[[0,.015],[5500,.032],[16500,.043],[33500,.047],[66500,.049],[210000,.059]]},
-  NY:{name:'New York', single:[[0,.04],[8500,.045],[11700,.0525],[13900,.055],[80650,.06],[215400,.0685],[1077550,.0965],[5000000,.103],[25000000,.109]], mfj:[[0,.04],[17150,.045],[23600,.0525],[27900,.055],[161550,.06],[323200,.0685],[2155350,.0965],[5000000,.103],[25000000,.109]]},
-  NC:{name:'North Carolina', flat:.0425},
-  ND:{name:'North Dakota', single:[[0,0],[47150,.0195],[238200,.025]], mfj:[[0,0],[78775,.0195],[289975,.025]]},
-  OH:{name:'Ohio', single:[[0,0],[26050,.0275],[100000,.035]]},
-  OK:{name:'Oklahoma', single:[[0,.0025],[1000,.0075],[2500,.0175],[3750,.0275],[4900,.0375],[7200,.0475]]},
-  OR:{name:'Oregon', single:[[0,.0475],[4300,.0675],[10750,.0875],[125000,.099]], mfj:[[0,.0475],[8600,.0675],[21500,.0875],[250000,.099]]},
-  PA:{name:'Pennsylvania', flat:.0307},
-  RI:{name:'Rhode Island', single:[[0,.0375],[77450,.0475],[176050,.0599]]},
-  SC:{name:'South Carolina', single:[[0,0],[3460,.03],[17330,.062]]},
-  SD:{name:'South Dakota', none:true},
-  TN:{name:'Tennessee', none:true},
-  TX:{name:'Texas', none:true},
-  UT:{name:'Utah', flat:.0455},
-  VT:{name:'Vermont', single:[[0,.0335],[45400,.066],[110050,.076],[229550,.0875]], mfj:[[0,.0335],[75850,.066],[183400,.076],[279450,.0875]]},
-  VA:{name:'Virginia', single:[[0,.02],[3000,.03],[5000,.05],[17000,.0575]]},
-  WA:{name:'Washington', none:true},
-  WV:{name:'West Virginia', single:[[0,.0222],[10000,.0296],[25000,.0333],[40000,.0444],[60000,.0482]]},
-  WI:{name:'Wisconsin', single:[[0,.035],[14680,.044],[29370,.053],[323290,.0765]], mfj:[[0,.035],[19580,.044],[39150,.053],[431060,.0765]]},
-  WY:{name:'Wyoming', none:true},
+  AL:'Alabama', AK:'Alaska', AZ:'Arizona', AR:'Arkansas', CA:'California',
+  CO:'Colorado', CT:'Connecticut', DE:'Delaware', DC:'District of Columbia',
+  FL:'Florida', GA:'Georgia', HI:'Hawaii', ID:'Idaho', IL:'Illinois',
+  IN:'Indiana', IA:'Iowa', KS:'Kansas', KY:'Kentucky', LA:'Louisiana',
+  ME:'Maine', MD:'Maryland', MA:'Massachusetts', MI:'Michigan', MN:'Minnesota',
+  MS:'Mississippi', MO:'Missouri', MT:'Montana', NE:'Nebraska', NV:'Nevada',
+  NH:'New Hampshire', NJ:'New Jersey', NM:'New Mexico', NY:'New York',
+  NC:'North Carolina', ND:'North Dakota', OH:'Ohio', OK:'Oklahoma', OR:'Oregon',
+  PA:'Pennsylvania', RI:'Rhode Island', SC:'South Carolina', SD:'South Dakota',
+  TN:'Tennessee', TX:'Texas', UT:'Utah', VT:'Vermont', VA:'Virginia',
+  WA:'Washington', WV:'West Virginia', WI:'Wisconsin', WY:'Wyoming',
 };
-// Resolve a state's [[lo,rate]..] table for a filing status ([] = no state tax).
-function stateBrackets(code, filing) {
-  const s = STATE_TAX[code] || STATE_TAX.MT;
-  if (s.none) return [];
-  if (s.flat != null) return [[0, s.flat]];
-  if (filing === 'mfj') {
-    if (s.mfj) return s.mfj;
-    if (s.mfjDouble) return s.single.map(r => [r[0]*2, r[1]]);
-  }
-  return s.single; // single, mfs, hoh, or mfj with no marriage adjustment
-}
 function taxSettings() {
   const f = lsGet('bk-tax-filing','single');
-  const flat = parseFloat(lsGet('bk-tax-setaside-pct'));
-  // State default: honor a saved choice; else migrate the old MT on/off toggle
-  // (off → no state tax); else default to Montana (the business's home state).
+  const validFiling = { single:1, mfj:1, mfs:1, hoh:1 };
   let st = lsGet('bk-tax-state', null);
-  if (!st || !STATE_TAX[st]) st = (lsGet('bk-tax-mt','1') === '0') ? 'NONE' : 'MT';
+  if (!st || !STATE_TAX[st]) st = 'MT'; // default to the business's home state
   return {
-    mode: lsGet('bk-tax-mode','brackets') === 'flat' ? 'flat' : 'brackets',
-    filing: TAX_STD_DED[f] ? f : 'single',
+    filing: validFiling[f] ? f : 'single',
     other: Math.max(0, parseFloat(lsGet('bk-tax-other','0')) || 0),
-    qbi: lsGet('bk-tax-qbi','1') !== '0',
     state: st,
-    flatPct: (isFinite(flat) && flat>0 && flat<100) ? flat : 25,
   };
 }
-// Progressive tax on `income` through an ascending [lowerBound,rate] table.
-function taxApplyBrackets(income, table) {
-  let tax = 0;
-  for (let i=0;i<table.length;i++){
-    const lo = table[i][0], hi = (i+1<table.length) ? table[i+1][0] : Infinity;
-    if (income > lo) tax += (Math.min(income, hi) - lo) * table[i][1];
-  }
-  return tax;
-}
-// Estimate taxes owed on a YTD net business profit. Returns {se,fed,mt,total,rate}
-// (bracket mode) or {flat:true,total,rate} (flat mode).
-function computeTax(profit) {
-  const s = taxSettings();
-  const P = Math.max(0, profit || 0);
-  if (s.mode === 'flat') return { flat:true, total: P * s.flatPct/100, rate: s.flatPct/100 };
-  // Self-employment tax (Schedule SE): 15.3% on 92.35% of profit, SS capped at the wage base.
-  const netSE = P * TAX_SE_FACTOR;
-  const se = netSE > 0 ? Math.min(netSE, TAX_SE_WAGE_BASE)*TAX_SE_SS_RATE + netSE*TAX_SE_MED_RATE : 0;
-  const halfSE = se / 2; // deductible above the line
-  // Federal income tax on taxable income (business AGI + other income − std ded − QBI).
-  const std = TAX_STD_DED[s.filing];
-  const preQbi = Math.max(0, (P - halfSE) + s.other - std);
-  const qbiDed = s.qbi ? Math.min(0.20 * Math.max(0, P - halfSE), 0.20 * preQbi) : 0;
-  const taxable = Math.max(0, preQbi - qbiDed);
-  const fed = taxApplyBrackets(taxable, TAX_FED_BRACKETS[s.filing]);
-  // State income tax runs on the same federal taxable-income base (an estimate;
-  // states vary in their exact starting point).
-  const state = taxApplyBrackets(taxable, stateBrackets(s.state, s.filing));
-  const total = se + fed + state;
-  return { se, fed, state, total, rate: P>0 ? total/P : 0 };
-}
-// The number shown comes from the live PolicyEngine estimate when available
-// (accurate per-state, incl. deductions/credits); computeTax() above is the
-// instant offline fallback used until it returns, or if the engine is unreachable.
+
+// The live PolicyEngine estimate is the only source. Cached per input set and
+// re-fetched in the background when inputs change.
 let _taxProfit = 0;            // last YTD net profit
 let _liveTax = null;          // { key, r } cached live engine result
 let _taxFetchKey = null;      // key of an in-flight /tax-estimate call
+let _taxFailedKey = null;     // key whose last fetch failed (blocks auto-retry loops)
 let _taxDebounce = null;      // debounce timer for modal-driven refetches
-// Cache key: the inputs that change the engine's answer.
 function taxKey(profit, s) { return [Math.round(Math.max(0, profit||0)), s.filing, s.state, s.other].join('|'); }
-// The cached live result iff it matches the current bracket-mode inputs.
-function liveTaxFor(s) { return (s.mode==='brackets' && _liveTax && _liveTax.key===taxKey(_taxProfit, s)) ? _liveTax.r : null; }
+function liveTaxFor(s) { return (_liveTax && _liveTax.key === taxKey(_taxProfit, s)) ? _liveTax.r : null; }
 function taxModalOpen() { const m = document.getElementById('modal-tax'); return m && m.classList.contains('open'); }
 
-function renderTaxCard(profit) {
-  _taxProfit = profit;
+// Paint the card from the cached engine result, or a placeholder while it loads
+// (…) or if it's unreachable (!). Never shows a hand-computed number.
+function paintTaxCard() {
   const el = document.getElementById('tax-setaside'); if (!el) return;
   const s = taxSettings();
-  const r = liveTaxFor(s) || computeTax(profit);   // live if we have it, else offline
-  el.textContent = fmt(r.total);
+  const live = liveTaxFor(s);
   const badge = document.getElementById('tax-rate-badge');
-  if (badge) badge.textContent = Math.round(r.rate*100) + '%';
-  ensureLiveTax();   // refresh from the engine in the background (brackets mode)
+  if (live) { el.textContent = fmt(live.total); if (badge) badge.textContent = Math.round(live.rate*100)+'%'; }
+  else { el.textContent = '—'; if (badge) badge.textContent = (_taxFailedKey===taxKey(_taxProfit,s)) ? '!' : '…'; }
 }
-// Fetch a live estimate for the current inputs unless it's already cached/in-flight.
+function renderTaxCard(profit) {
+  _taxProfit = profit;
+  if (!document.getElementById('tax-setaside')) return;
+  paintTaxCard();
+  ensureLiveTax();
+}
+// Fetch a live estimate for the current inputs unless it's cached, in-flight, or
+// already failed for this exact input set (cleared on modal open / explicit retry).
 async function ensureLiveTax() {
   const s = taxSettings();
-  if (s.mode !== 'brackets') return;
   const key = taxKey(_taxProfit, s);
-  if ((_liveTax && _liveTax.key===key) || _taxFetchKey===key) return;
+  if ((_liveTax && _liveTax.key===key) || _taxFetchKey===key || _taxFailedKey===key) return;
   _taxFetchKey = key;
   if (taxModalOpen()) renderTaxBreakdown();   // show "calculating…"
   const r = await fetchLiveTax(_taxProfit, s);
   if (_taxFetchKey !== key) return;           // a newer request superseded this one
   _taxFetchKey = null;
-  if (r) _liveTax = { key, r };
-  const el = document.getElementById('tax-setaside');
-  if (el) {
-    const cur = liveTaxFor(s) || computeTax(_taxProfit);
-    el.textContent = fmt(cur.total);
-    const badge = document.getElementById('tax-rate-badge');
-    if (badge) badge.textContent = Math.round(cur.rate*100) + '%';
-  }
+  if (r) { _liveTax = { key, r }; _taxFailedKey = null; }
+  else { _taxFailedKey = key; }
+  paintTaxCard();
   if (taxModalOpen()) renderTaxBreakdown();
 }
 // POST the inputs to the Worker, which proxies PolicyEngine. Null on any failure.
@@ -2959,9 +2837,11 @@ async function fetchLiveTax(profit, s) {
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.ok) return null;
-    return { se: d.se, fed: d.fed, state: d.state, total: d.total, rate: d.rate, live: true };
+    return { se: d.se, fed: d.fed, state: d.state, total: d.total, rate: d.rate, year: d.year };
   } catch (e) { return null; }
 }
+// User-initiated retry after a failure.
+function taxRetry() { _taxFailedKey = null; if (taxModalOpen()) renderTaxBreakdown(); ensureLiveTax(); }
 // Next federal estimated-tax (1040-ES) due date on/after today.
 function nextEstTaxDate() {
   const now = new Date(), y = now.getFullYear();
@@ -2973,35 +2853,25 @@ function nextEstTaxDate() {
 function openTaxModal() {
   const s = taxSettings();
   const sel = document.getElementById('tax-state');
-  if (sel && !sel.options.length) { // populate state list once (NONE first, then A–Z)
-    const codes = Object.keys(STATE_TAX).filter(c=>c!=='NONE').sort((a,b)=>STATE_TAX[a].name.localeCompare(STATE_TAX[b].name));
-    sel.innerHTML = ['NONE',...codes].map(c=>`<option value="${c}">${STATE_TAX[c].name}</option>`).join('');
+  if (sel && !sel.options.length) {
+    const codes = Object.keys(STATE_TAX).sort((a,b)=>STATE_TAX[a].localeCompare(STATE_TAX[b]));
+    sel.innerHTML = codes.map(c=>`<option value="${c}">${STATE_TAX[c]}</option>`).join('');
   }
-  document.querySelector(`input[name="tax-mode"][value="${s.mode}"]`).checked = true;
   document.getElementById('tax-filing').value = s.filing;
   document.getElementById('tax-other').value = s.other || '';
-  document.getElementById('tax-qbi').checked = s.qbi;
   document.getElementById('tax-state').value = s.state;
-  document.getElementById('tax-flat-pct').value = s.flatPct;
-  document.getElementById('tax-brackets-section').style.display = s.mode==='flat' ? 'none' : '';
-  document.getElementById('tax-flat-section').style.display = s.mode==='flat' ? '' : 'none';
+  _taxFailedKey = null; // let reopening retry a previously-failed fetch
   renderTaxBreakdown();
   openModal('modal-tax');
 }
-// Persist form → localStorage, toggle sections, and refresh the live breakdown.
+// Persist form → localStorage, then refresh the live breakdown (debounced so
+// typing "other income" doesn't spam the engine).
 function taxApply() {
-  const mode = document.querySelector('input[name="tax-mode"]:checked').value;
-  lsSet('bk-tax-mode', mode);
   lsSet('bk-tax-filing', document.getElementById('tax-filing').value);
   lsSet('bk-tax-other', String(Math.max(0, parseFloat(document.getElementById('tax-other').value) || 0)));
-  lsSet('bk-tax-qbi', document.getElementById('tax-qbi').checked ? '1' : '0');
   lsSet('bk-tax-state', document.getElementById('tax-state').value);
-  const pct = parseFloat(document.getElementById('tax-flat-pct').value);
-  if (isFinite(pct) && pct>0 && pct<100) lsSet('bk-tax-setaside-pct', String(pct));
-  document.getElementById('tax-brackets-section').style.display = mode==='brackets' ? '' : 'none';
-  document.getElementById('tax-flat-section').style.display = mode==='flat' ? '' : 'none';
+  _taxFailedKey = null;
   renderTaxBreakdown();
-  // Refetch the live estimate, debounced so typing "other income" doesn't spam it.
   clearTimeout(_taxDebounce);
   _taxDebounce = setTimeout(ensureLiveTax, 500);
 }
@@ -3009,26 +2879,22 @@ function renderTaxBreakdown() {
   const box = document.getElementById('tax-breakdown'); if (!box) return;
   const s = taxSettings(), P = Math.max(0, _taxProfit || 0);
   const live = liveTaxFor(s);
-  const r = live || computeTax(_taxProfit);
-  const fetching = _taxFetchKey === taxKey(_taxProfit, s);
+  const key = taxKey(_taxProfit, s);
+  const failed = _taxFailedKey === key;
   const row = (label,val)=>`<div style="display:flex;justify-content:space-between;padding:.28rem 0"><span style="color:var(--text2)">${label}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(val)}</span></div>`;
   let h = `<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.35rem">On YTD net profit of ${fmt(P)}</div>`;
-  if (r.flat) {
-    h += row('Set aside ('+s.flatPct+'%)', r.total);
-  } else {
-    h += row('Self-employment tax', r.se);
-    h += row('Federal income tax', r.fed);
-    if (r.state > 0) h += row((STATE_TAX[s.state]||STATE_TAX.MT).name + ' income tax', r.state);
+  if (live) {
+    h += row('Self-employment tax', live.se);
+    h += row('Federal income tax', live.fed);
+    if (live.state > 0) h += row((STATE_TAX[s.state]||'State') + ' income tax', live.state);
     h += `<div style="border-top:1px solid var(--border);margin:.3rem 0"></div>`;
-    h += `<div style="display:flex;justify-content:space-between;padding:.28rem 0;font-weight:700"><span>Set aside</span><span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">${fmt(r.total)} · ${Math.round(r.rate*100)}%</span></div>`;
+    h += `<div style="display:flex;justify-content:space-between;padding:.28rem 0;font-weight:700"><span>Set aside</span><span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">${fmt(live.total)} · ${Math.round(live.rate*100)}%</span></div>`;
+    h += `<div style="font-size:11.5px;color:var(--text3);margin-top:.55rem"><span style="color:var(--green)">✓ Live estimate via PolicyEngine</span>${live.year?(' · '+live.year+' tax year'):''} — includes federal &amp; state deductions and credits. Next estimated-tax payment due <b>${nextEstTaxDate()}</b>.</div>`;
+  } else if (failed) {
+    h += `<div style="padding:.4rem 0;color:var(--text2)">Couldn’t reach the tax engine. <a onclick="taxRetry()" style="color:var(--accent);cursor:pointer;font-weight:600">Retry</a></div>`;
+  } else {
+    h += `<div style="padding:.4rem 0;color:var(--text3)">Calculating a live estimate…</div>`;
   }
-  // Source line: which engine produced these numbers.
-  let src;
-  if (r.flat) src = '';
-  else if (live) src = `<span style="color:var(--green)">✓ Live estimate via PolicyEngine</span> — figures federal &amp; state deductions and credits automatically. `;
-  else if (fetching) src = `Calculating a live estimate… `;
-  else src = `Offline estimate (couldn’t reach the tax engine) — built-in 2025 brackets. `;
-  h += `<div style="font-size:11.5px;color:var(--text3);margin-top:.55rem">${src}Next estimated-tax payment due <b>${nextEstTaxDate()}</b>.</div>`;
   box.innerHTML = h;
 }
 function closeTaxModal() { closeModal('modal-tax'); renderDashboard(); }
