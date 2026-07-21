@@ -33,7 +33,7 @@ export default {
     if (url.pathname === '/plaid/transactions' && req.method === 'POST') return plaidTransactions(req, env);
     if (url.pathname === '/plaid/refresh' && req.method === 'POST') return plaidRefresh(req, env);
     if (url.pathname === '/plaid/disconnect' && req.method === 'POST') return plaidDisconnect(req, env);
-    if (url.pathname === '/tax-estimate' && req.method === 'POST') return taxEstimate(req, env);
+    if (url.pathname === '/tax-estimate' && (req.method === 'POST' || req.method === 'GET')) return taxEstimate(req, env);
     if (url.pathname === '/delete-account' && req.method === 'POST') return deleteAccount(req, env);
     if (env.ASSETS) return withSecurityHeaders(await env.ASSETS.fetch(req), env);
     return new Response('Bookkeeper. Static assets binding missing.', { status: 500 });
@@ -115,10 +115,18 @@ async function authUser(req, env) {
 const PE_API = 'https://api.policyengine.org/us/calculate';
 const PE_FILING = { single: 'SINGLE', mfj: 'JOINT', mfs: 'SEPARATE', hoh: 'HEAD_OF_HOUSEHOLD' };
 async function taxEstimate(req, env) {
-  const user = await authUser(req, env);
-  if (!user) return jsonResp({ error: 'Please sign in again.' }, 401);
-  let body; try { body = await req.json(); } catch (e) { body = {}; }
-  const debug = new URL(req.url).searchParams.get('debug') === '1';
+  const url = new URL(req.url);
+  const debug = url.searchParams.get('debug') === '1';
+  // Debug mode is a no-auth GET so it can be opened straight in a browser to
+  // diagnose the PolicyEngine call (it only runs a fixed sample household —
+  // single filer, Montana, $60k profit — and echoes exactly what came back).
+  if (!debug) {
+    const user = await authUser(req, env);
+    if (!user) return jsonResp({ error: 'Please sign in again.' }, 401);
+  }
+  let body = {};
+  if (req.method === 'POST') { try { body = await req.json(); } catch (e) { body = {}; } }
+  else if (debug) { body = { profit: 60000, filing: 'single', state: 'MT', other: 0 }; }
   const year = String(new Date().getUTCFullYear());
   const profit = Math.max(0, Math.round(Number(body.profit) || 0));
   const other  = Math.max(0, Math.round(Number(body.other)  || 0));
@@ -141,15 +149,21 @@ async function taxEstimate(req, env) {
     spm_units:     { spm:  { members } },
     households:    { hh:   { members, state_name: { [year]: state } } },
   };
+  const reqBody = JSON.stringify({ household });
 
-  let raw;
+  let status = 0, text = '', raw = null, fetchError = '';
   try {
-    const r = await fetch(PE_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ household }) });
-    raw = await r.json().catch(() => null);
-    if (debug) return jsonResp({ status: r.status, ok: r.ok, raw });
-    if (!r.ok) return jsonResp({ error: 'The tax engine is unavailable right now.' }, 502);
+    const r = await fetch(PE_API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: reqBody });
+    status = r.status;
+    text = await r.text();
+    try { raw = JSON.parse(text); } catch (e) { raw = null; }
+    if (!r.ok) {
+      if (debug) return jsonResp({ calledUrl: PE_API, status, ok: false, requestSent: household, responseText: text.slice(0, 2000) });
+      return jsonResp({ error: 'The tax engine is unavailable right now.' }, 502);
+    }
   } catch (e) {
-    if (debug) return jsonResp({ error: String((e && e.message) || e) }, 502);
+    fetchError = String((e && e.message) || e);
+    if (debug) return jsonResp({ calledUrl: PE_API, fetchError, requestSent: household });
     return jsonResp({ error: 'Could not reach the tax engine.' }, 502);
   }
 
@@ -159,6 +173,7 @@ async function taxEstimate(req, env) {
   const tu = root && root.tax_units && root.tax_units.unit;
   const pick = (v) => { const x = tu && tu[v] && tu[v][year]; return typeof x === 'number' ? x : null; };
   const fed = pick('income_tax'), se = pick('self_employment_tax'), st = pick('state_income_tax');
+  if (debug) return jsonResp({ calledUrl: PE_API, status, parsed: { fed, se, state: st }, taxUnitKeys: tu ? Object.keys(tu) : null, raw });
   if (fed == null || se == null || st == null) return jsonResp({ error: 'The tax engine returned an unexpected response.' }, 502);
   const total = fed + se + st;
   return jsonResp({ ok: true, engine: 'policyengine', year: Number(year), se, fed, state: st, total, rate: profit > 0 ? total / profit : 0 });
