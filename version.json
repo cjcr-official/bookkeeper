@@ -1,1 +1,1 @@
-{"version":347,"note":"v347: The \"Back to Settings\" button on the policy pages now returns you to the Settings page (via index.html#settings deep-link) instead of the dashboard."}
+{"version":348,"note":"v348: Bigger top-bar bell/settings icons, larger bottom-nav icons on mobile, and the business logo now fills its block with less padding."}
