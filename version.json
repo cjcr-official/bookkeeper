@@ -1,1 +1,1 @@
-{"version":340,"note":"v340: The notifications pane now opens as a centered window in the middle of the screen instead of sliding up from the bottom as a sheet."}
+{"version":341,"note":"v341: New account creation now supports Safari/iOS auto-generated strong passwords (real signup form + new-password autofill hints), and first-time users are welcomed with a prompt to set up their Business Profile (company, contact info, logo)."}
