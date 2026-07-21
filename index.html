@@ -2063,6 +2063,15 @@ function onboardDismiss() {
   lsSet('bk-onboard-seen','1');
   closeModal('modal-welcome');
 }
+// Deep-link support: the policy pages link back to index.html#settings so "Back"
+// lands on Settings, not the dashboard. Applied once the app is shown, then the
+// hash is cleared so a later reload doesn't re-trigger it.
+function applyHashDeepLink() {
+  if (location.hash === '#settings') {
+    showPage('settings');
+    try { history.replaceState(null, '', location.pathname + location.search); } catch(_) {}
+  }
+}
 
 async function doLogout() {
   await sb.auth.signOut();
@@ -2158,6 +2167,7 @@ async function doMfaLogin() {
   refreshPushSubscription();
   initNotifications();
   maybeShowOnboarding();
+  applyHashDeepLink();
 }
 async function cancelMfaLogin() {
   await sb.auth.signOut();
@@ -7209,6 +7219,7 @@ async function boot() {
       maybeShowLock();
       initNotifications();
       maybeShowOnboarding();
+      applyHashDeepLink();
     } else {
       hide();
       document.getElementById('auth-wrap').style.display='flex';
@@ -7240,6 +7251,7 @@ async function boot() {
         refreshPushSubscription();
         initNotifications();
         maybeShowOnboarding();
+        applyHashDeepLink();
       }, 0);
     } else if (event==='SIGNED_OUT') {
       document.getElementById('app').style.display='none';

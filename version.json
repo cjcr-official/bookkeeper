@@ -1,1 +1,1 @@
-{"version":346,"note":"v346: Make the \"How to pay\" example text generic ([your business name] instead of a specific company/phone) so it reads correctly for any account."}
+{"version":347,"note":"v347: The \"Back to Settings\" button on the policy pages now returns you to the Settings page (via index.html#settings deep-link) instead of the dashboard."}
