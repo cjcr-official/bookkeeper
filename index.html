@@ -2005,6 +2005,12 @@ async function doSignup() {
   if (company && data.user) {
     await sb.from('profiles').upsert({id: data.user.id, company});
   }
+  // Switch to the Sign In tab, carrying the email over so they just type the
+  // password they just set (or saved) to log in.
+  const signInTab = document.querySelectorAll('.auth-tab')[0];
+  switchAuthTab('login', signInTab);
+  document.getElementById('login-email').value = email;
+  document.getElementById('login-password').value = '';
   showAuthSuccess('Account created! Check your email to confirm, then sign in.');
 }
 
