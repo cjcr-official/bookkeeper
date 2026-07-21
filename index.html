@@ -1179,6 +1179,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- EXPENSES -->
       <div id="page-expenses" class="page">
+        <div id="exp-summary" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.85rem 1rem;margin-bottom:.75rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)"></div>
         <div style="margin-bottom:.75rem">
           <div class="form-group" style="margin:0"><label>Search</label><input id="exp-search" type="text" placeholder="vendor, note, category…" oninput="renderExpenses()"></div>
           <details style="margin-top:.45rem">
@@ -4582,16 +4583,23 @@ function renderExpenses() {
     const cats = [...new Set((cache.expenses||[]).map(e=>e.category).filter(Boolean))].sort();
     catSel.innerHTML = '<option value="">All</option>' + cats.map(c=>`<option value="${escHtml(c)}"${c===current?' selected':''}>${escHtml(c)}</option>`).join('');
   }
-  if (!cache.expenses.length) { el.innerHTML = `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`; return; }
+  // Top summary bar (reflects the current filters): count + total spent, with a
+  // reimbursed note. Set in every branch so it clears on empty/no-match states.
+  const setExpSummary = (n, tot, reimb) => {
+    const s = document.getElementById('exp-summary'); if (!s) return;
+    s.innerHTML = `<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace">Total spent</div><div style="font-size:12px;color:var(--text3)">${n} expense${n===1?'':'s'}${reimb>0?` · excl. ${fmt(reimb)} reimbursed`:''}</div></div><div class="red" style="font-weight:800;font-size:1.35rem;font-family:'JetBrains Mono',monospace">${fmt(tot)}</div>`;
+  };
+  if (!cache.expenses.length) { setExpSummary(0,0,0); el.innerHTML = `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`; return; }
   const list = getFilteredExpenses();
-  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-filter-off"></i><p>No expenses match the filters</p></div>`; return; }
+  if (!list.length) { setExpSummary(0,0,0); el.innerHTML = `<div class="empty"><i class="ti ti-filter-off"></i><p>No expenses match the filters</p></div>`; return; }
   // Newest-dated first, so a freshly added (or back-dated) expense lands in the
   // right spot instead of jumping to the top of the list. Applies after filtering.
   list.sort((a,b)=>(b.date||'').localeCompare(a.date||'') || (b.created_at||'').localeCompare(a.created_at||''));
   // Reimbursed expenses are customer pass-throughs (excluded from net profit / P&L),
-  // so the footer total counts only non-reimbursed spend; the reimbursed sum is noted.
+  // so the total counts only non-reimbursed spend; the reimbursed sum is noted.
   const totalAmt = list.reduce((s,e)=>s+(e.reimbursed?0:parseFloat(e.amount||0)),0);
   const reimbAmt = list.reduce((s,e)=>s+(e.reimbursed?parseFloat(e.amount||0):0),0);
+  setExpSummary(list.length, totalAmt, reimbAmt);
   const esc = escHtml;
   if (window.innerWidth <= 768) {
     el.innerHTML = list.map(e=>`
