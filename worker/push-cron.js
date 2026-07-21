@@ -114,15 +114,47 @@ async function authUser(req, env) {
 // the field mapping can be confirmed against the deployed Worker.
 const PE_API = 'https://api.policyengine.org/us/calculate';
 const PE_FILING = { single: 'SINGLE', mfj: 'JOINT', mfs: 'SEPARATE', hoh: 'HEAD_OF_HOUSEHOLD' };
+// Build a minimal single-filer OpenFisca-US household for a probe.
+function peSampleHousehold(year) {
+  const m = ['you'];
+  return {
+    people: { you: { age: { [year]: 40 }, self_employment_income: { [year]: 60000 }, employment_income: { [year]: 0 } } },
+    tax_units: { unit: { members: m, filing_status: { [year]: 'SINGLE' }, income_tax: { [year]: null }, self_employment_tax: { [year]: null }, state_income_tax: { [year]: null } } },
+    families: { fam: { members: m } }, marital_units: { mu: { members: m } },
+    spm_units: { spm: { members: m } }, households: { hh: { members: m, state_name: { [year]: 'MT' } } },
+  };
+}
 async function taxEstimate(req, env) {
   const url = new URL(req.url);
   const debug = url.searchParams.get('debug') === '1';
-  // Debug mode is a no-auth GET so it can be opened straight in a browser to
-  // diagnose the PolicyEngine call (it only runs a fixed sample household —
-  // single filer, Montana, $60k profit — and echoes exactly what came back).
-  if (!debug) {
+  const probe = url.searchParams.get('probe') === '1';
+  // Debug/probe modes are no-auth GETs so they can be opened straight in a browser.
+  if (!debug && !probe) {
     const user = await authUser(req, env);
     if (!user) return jsonResp({ error: 'Please sign in again.' }, 401);
+  }
+  // Probe: try several candidate PolicyEngine hosts/endpoints/years and report
+  // each one's status + response snippet, so the working combination is found in
+  // a single request rather than guessed.
+  if (probe) {
+    const attempts = [
+      { m: 'GET',  u: 'https://api.policyengine.org/us/metadata' },
+      { m: 'GET',  u: 'https://household.api.policyengine.org/us/metadata' },
+      { m: 'POST', u: 'https://api.policyengine.org/us/calculate',           y: '2025' },
+      { m: 'POST', u: 'https://household.api.policyengine.org/us/calculate', y: '2025' },
+      { m: 'POST', u: 'https://household.api.policyengine.org/us/calculate', y: '2026' },
+    ];
+    const out = [];
+    for (const a of attempts) {
+      try {
+        const opt = { method: a.m, headers: { 'Accept': 'application/json' } };
+        if (a.m === 'POST') { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify({ household: peSampleHousehold(a.y) }); }
+        const r = await fetch(a.u, opt);
+        const t = await r.text();
+        out.push({ url: a.u, method: a.m, year: a.y, status: r.status, snippet: t.slice(0, 300) });
+      } catch (e) { out.push({ url: a.u, method: a.m, year: a.y, error: String((e && e.message) || e) }); }
+    }
+    return jsonResp({ probe: out }, 200);
   }
   let body = {};
   if (req.method === 'POST') { try { body = await req.json(); } catch (e) { body = {}; } }
