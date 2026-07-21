@@ -1,1 +1,1 @@
-{"version":358,"note":"v358: Expenses have a Duplicate button (copy icon) next to Edit — it opens a new expense pre-filled from that one with the date reset to today, so you can quickly log the same expense for a different date. The receipt and invoice link aren't carried over."}
+{"version":359,"note":"v359: The Expenses list total at the bottom now excludes reimbursed expenses (customer pass-throughs, already excluded from net profit / P&L), and shows a small 'excl. $X reimbursed' note when any are present."}
