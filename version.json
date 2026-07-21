@@ -1,1 +1,1 @@
-{"version":352,"note":"v352: The top-bar business logo is larger (46px) so it stands out next to the notification/settings buttons instead of looking smaller than them."}
+{"version":353,"note":"v353: The Home tax card now estimates real taxes — self-employment + federal + Montana income tax on the 2025 brackets (with filing status, standard deduction, the deductible half of SE tax, and an optional 20% QBI deduction), replacing the flat 25% guess. Tap it to set your filing status and see the breakdown; a flat-percent option is still there."}
