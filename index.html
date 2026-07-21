@@ -1055,7 +1055,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="ov-icon amber"><i class="ti ti-hourglass-high"></i></div>
               <div class="ov-item-text"><div class="ov-item-label">Outstanding</div><div class="ov-item-value amber" id="stat-outstanding">$0.00</div></div>
             </div>
-            <div class="ov-item" onclick="editTaxRate()" style="cursor:pointer" title="Tap to change set-aside %">
+            <div class="ov-item" onclick="openTaxModal()" style="cursor:pointer" title="Tap to set up your tax estimate">
               <div class="ov-icon accent"><i class="ti ti-receipt-tax"></i></div>
               <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">25%</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--accent)">$0.00</div></div>
             </div>
@@ -1599,6 +1599,48 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-store-credit')">Cancel</button>
       <button class="btn btn-primary" onclick="withBusy(this,saveStoreCredit)"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- TAX SET-ASIDE MODAL -->
+<div class="modal-overlay" id="modal-tax">
+  <div class="modal">
+    <div class="modal-header"><h2>Tax set-aside</h2><button class="btn btn-sm" aria-label="Close" onclick="closeTaxModal()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <p style="font-size:12.5px;color:var(--text3);margin:0 0 1rem">Estimate what to set aside from your net profit for taxes. The bracket method figures self-employment tax, federal income tax, and Montana income tax for the 2025 tax year — an estimate, not tax advice.</p>
+      <div class="form-group">
+        <label>Method</label>
+        <div style="display:flex;gap:1.25rem;font-size:13px">
+          <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="radio" name="tax-mode" value="brackets" onchange="taxApply()" style="width:auto"> Tax brackets</label>
+          <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="radio" name="tax-mode" value="flat" onchange="taxApply()" style="width:auto"> Flat percent</label>
+        </div>
+      </div>
+      <div id="tax-brackets-section">
+        <div class="form-group"><label>Filing status</label>
+          <select id="tax-filing" onchange="taxApply()">
+            <option value="single">Single</option>
+            <option value="mfj">Married filing jointly</option>
+            <option value="mfs">Married filing separately</option>
+            <option value="hoh">Head of household</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Other taxable income (optional)</label>
+          <input id="tax-other" type="number" min="0" step="1" inputmode="decimal" placeholder="0" oninput="taxApply()">
+          <span style="font-size:11.5px;color:var(--text3)">Wages, spouse's income, etc. — stacks on top of your business profit.</span>
+        </div>
+        <label style="display:flex;align-items:center;gap:.5rem;margin:.35rem 0;font-size:13px;cursor:pointer"><input type="checkbox" id="tax-qbi" onchange="taxApply()" style="width:auto"> Take the 20% QBI deduction (most sole proprietors qualify)</label>
+        <label style="display:flex;align-items:center;gap:.5rem;margin:.35rem 0 .25rem;font-size:13px;cursor:pointer"><input type="checkbox" id="tax-mt" onchange="taxApply()" style="width:auto"> Include Montana state income tax</label>
+      </div>
+      <div id="tax-flat-section" style="display:none">
+        <div class="form-group"><label>Set aside this % of net profit</label>
+          <input id="tax-flat-pct" type="number" min="1" max="99" step="1" inputmode="decimal" oninput="taxApply()">
+        </div>
+      </div>
+      <div id="tax-breakdown" style="margin-top:1rem;padding:.85rem 1rem;background:var(--surface2);border-radius:var(--radius);border:1px solid var(--border)"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="closeTaxModal()"><i class="ti ti-check"></i> Done</button>
     </div>
   </div>
 </div>
@@ -2719,24 +2761,131 @@ function renderCategoryBreakdown(){
 }
 
 // ── Estimated-tax set-aside (top of Home) ──
-// Rule-of-thumb: set aside a % of YTD net profit; show the next IRS quarterly
-// deadline and flag it when it's close. Rate is local-only (no migration).
-function taxRate() { const v = parseFloat(lsGet('bk-tax-setaside-pct')); return (isFinite(v) && v>0 && v<100) ? v : 25; }
+// Turns YTD net profit into a realistic amount to set aside for taxes. The default
+// "brackets" method estimates the three taxes a single-member LLC / sole proprietor
+// actually owes for the 2025 tax year: self-employment tax (Schedule SE) + federal
+// income tax + Montana income tax, applying the standard deduction, the deductible
+// half of SE tax, and (optionally) the 20% QBI deduction. A flat-percent method is
+// still available. All settings are on-device (localStorage) — no DB, no migration.
+//
+// 2025 tax-year constants — IRS Rev. Proc. 2024-40 (federal) and MT DOR 2025 tables.
+const TAX_SE_WAGE_BASE = 176100, TAX_SE_SS_RATE = 0.124, TAX_SE_MED_RATE = 0.029, TAX_SE_FACTOR = 0.9235;
+const TAX_STD_DED = { single:15750, mfj:31500, mfs:15750, hoh:23625 };
+// Each table: [lowerBound, marginalRate] rows, ascending. Rate applies to income above lowerBound.
+const TAX_FED_BRACKETS = {
+  single:[[0,.10],[11925,.12],[48475,.22],[103350,.24],[197300,.32],[250525,.35],[626350,.37]],
+  mfj:   [[0,.10],[23850,.12],[96950,.22],[206700,.24],[394600,.32],[501050,.35],[751600,.37]],
+  mfs:   [[0,.10],[11925,.12],[48475,.22],[103350,.24],[197300,.32],[250525,.35],[375800,.37]],
+  hoh:   [[0,.10],[17000,.12],[64850,.22],[103350,.24],[197300,.32],[250500,.35],[626350,.37]],
+};
+const TAX_MT_BRACKETS = { // Montana 2025: 4.7% up to threshold, 5.9% above.
+  single:[[0,.047],[21100,.059]], mfj:[[0,.047],[42200,.059]],
+  mfs:   [[0,.047],[21100,.059]], hoh:[[0,.047],[31700,.059]],
+};
+function taxSettings() {
+  const f = lsGet('bk-tax-filing','single');
+  const flat = parseFloat(lsGet('bk-tax-setaside-pct'));
+  return {
+    mode: lsGet('bk-tax-mode','brackets') === 'flat' ? 'flat' : 'brackets',
+    filing: TAX_STD_DED[f] ? f : 'single',
+    other: Math.max(0, parseFloat(lsGet('bk-tax-other','0')) || 0),
+    qbi: lsGet('bk-tax-qbi','1') !== '0',
+    mt: lsGet('bk-tax-mt','1') !== '0',
+    flatPct: (isFinite(flat) && flat>0 && flat<100) ? flat : 25,
+  };
+}
+// Progressive tax on `income` through an ascending [lowerBound,rate] table.
+function taxApplyBrackets(income, table) {
+  let tax = 0;
+  for (let i=0;i<table.length;i++){
+    const lo = table[i][0], hi = (i+1<table.length) ? table[i+1][0] : Infinity;
+    if (income > lo) tax += (Math.min(income, hi) - lo) * table[i][1];
+  }
+  return tax;
+}
+// Estimate taxes owed on a YTD net business profit. Returns {se,fed,mt,total,rate}
+// (bracket mode) or {flat:true,total,rate} (flat mode).
+function computeTax(profit) {
+  const s = taxSettings();
+  const P = Math.max(0, profit || 0);
+  if (s.mode === 'flat') return { flat:true, total: P * s.flatPct/100, rate: s.flatPct/100 };
+  // Self-employment tax (Schedule SE): 15.3% on 92.35% of profit, SS capped at the wage base.
+  const netSE = P * TAX_SE_FACTOR;
+  const se = netSE > 0 ? Math.min(netSE, TAX_SE_WAGE_BASE)*TAX_SE_SS_RATE + netSE*TAX_SE_MED_RATE : 0;
+  const halfSE = se / 2; // deductible above the line
+  // Federal income tax on taxable income (business AGI + other income − std ded − QBI).
+  const std = TAX_STD_DED[s.filing];
+  const preQbi = Math.max(0, (P - halfSE) + s.other - std);
+  const qbiDed = s.qbi ? Math.min(0.20 * Math.max(0, P - halfSE), 0.20 * preQbi) : 0;
+  const taxable = Math.max(0, preQbi - qbiDed);
+  const fed = taxApplyBrackets(taxable, TAX_FED_BRACKETS[s.filing]);
+  // Montana conforms to federal taxable income, so it runs on the same base.
+  const mt = s.mt ? taxApplyBrackets(taxable, TAX_MT_BRACKETS[s.filing]) : 0;
+  const total = se + fed + mt;
+  return { se, fed, mt, total, rate: P>0 ? total/P : 0 };
+}
+let _taxProfit = 0; // last YTD net profit, so the modal can recompute live
 function renderTaxCard(profit) {
+  _taxProfit = profit;
   const el = document.getElementById('tax-setaside'); if (!el) return;
-  const rate = taxRate();
-  const setAside = Math.max(0, profit) * rate / 100;
-  el.textContent = fmt(setAside);
-  document.getElementById('tax-rate-badge').textContent = rate + '%';
+  const r = computeTax(profit);
+  el.textContent = fmt(r.total);
+  const badge = document.getElementById('tax-rate-badge');
+  if (badge) badge.textContent = Math.round(r.rate*100) + '%';
 }
-function editTaxRate() {
-  const v = prompt('What % of net profit do you want to set aside for taxes?', String(taxRate()));
-  if (v == null) return;
-  const n = parseFloat(v);
-  if (!isFinite(n) || n <= 0 || n >= 100) { showToast('Enter a percent between 1 and 99', 'error'); return; }
-  lsSet('bk-tax-setaside-pct', String(n));
-  renderDashboard();
+// Next federal estimated-tax (1040-ES) due date on/after today.
+function nextEstTaxDate() {
+  const now = new Date(), y = now.getFullYear();
+  const t = new Date(y, now.getMonth(), now.getDate());
+  const dues = [new Date(y,3,15), new Date(y,5,15), new Date(y,8,15), new Date(y+1,0,15)];
+  const next = dues.find(d => d >= t) || dues[0];
+  return next.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 }
+function openTaxModal() {
+  const s = taxSettings();
+  document.querySelector(`input[name="tax-mode"][value="${s.mode}"]`).checked = true;
+  document.getElementById('tax-filing').value = s.filing;
+  document.getElementById('tax-other').value = s.other || '';
+  document.getElementById('tax-qbi').checked = s.qbi;
+  document.getElementById('tax-mt').checked = s.mt;
+  document.getElementById('tax-flat-pct').value = s.flatPct;
+  document.getElementById('tax-brackets-section').style.display = s.mode==='flat' ? 'none' : '';
+  document.getElementById('tax-flat-section').style.display = s.mode==='flat' ? '' : 'none';
+  renderTaxBreakdown();
+  openModal('modal-tax');
+}
+// Persist form → localStorage, toggle sections, and refresh the live breakdown.
+function taxApply() {
+  const mode = document.querySelector('input[name="tax-mode"]:checked').value;
+  lsSet('bk-tax-mode', mode);
+  lsSet('bk-tax-filing', document.getElementById('tax-filing').value);
+  lsSet('bk-tax-other', String(Math.max(0, parseFloat(document.getElementById('tax-other').value) || 0)));
+  lsSet('bk-tax-qbi', document.getElementById('tax-qbi').checked ? '1' : '0');
+  lsSet('bk-tax-mt', document.getElementById('tax-mt').checked ? '1' : '0');
+  const pct = parseFloat(document.getElementById('tax-flat-pct').value);
+  if (isFinite(pct) && pct>0 && pct<100) lsSet('bk-tax-setaside-pct', String(pct));
+  document.getElementById('tax-brackets-section').style.display = mode==='brackets' ? '' : 'none';
+  document.getElementById('tax-flat-section').style.display = mode==='flat' ? '' : 'none';
+  renderTaxBreakdown();
+}
+function renderTaxBreakdown() {
+  const box = document.getElementById('tax-breakdown'); if (!box) return;
+  const s = taxSettings(), r = computeTax(_taxProfit), P = Math.max(0, _taxProfit || 0);
+  const row = (label,val)=>`<div style="display:flex;justify-content:space-between;padding:.28rem 0"><span style="color:var(--text2)">${label}</span><span style="font-family:'JetBrains Mono',monospace">${fmt(val)}</span></div>`;
+  let h = `<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.35rem">On YTD net profit of ${fmt(P)}</div>`;
+  if (r.flat) {
+    h += row('Set aside ('+s.flatPct+'%)', r.total);
+  } else {
+    h += row('Self-employment tax', r.se);
+    h += row('Federal income tax', r.fed);
+    if (s.mt) h += row('Montana income tax', r.mt);
+    h += `<div style="border-top:1px solid var(--border);margin:.3rem 0"></div>`;
+    h += `<div style="display:flex;justify-content:space-between;padding:.28rem 0;font-weight:700"><span>Set aside</span><span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">${fmt(r.total)} · ${Math.round(r.rate*100)}%</span></div>`;
+  }
+  h += `<div style="font-size:11.5px;color:var(--text3);margin-top:.55rem">Next estimated-tax payment due <b>${nextEstTaxDate()}</b>.</div>`;
+  box.innerHTML = h;
+}
+function closeTaxModal() { closeModal('modal-tax'); renderDashboard(); }
 
 function renderUpcoming() {
   const el = document.getElementById('upcoming-list');
