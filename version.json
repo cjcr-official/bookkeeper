@@ -1,1 +1,1 @@
-{"version":345,"note":"v345: Business Profile logo now renders a proper opaque square iOS Home Screen icon, plus a \"Use as app icon\" button that forces the logo onto the browser bookmark/favicon and explains how to refresh the iPhone Home Screen icon."}
+{"version":346,"note":"v346: Make the \"How to pay\" example text generic ([your business name] instead of a specific company/phone) so it reads correctly for any account."}
