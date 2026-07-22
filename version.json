@@ -1,1 +1,1 @@
-{"version":369,"note":"v369: Expenses summary restacked vertically (label / calmer red total / count on one line) so the number reads as a clean headline instead of a big loud block; Clear is now a subtle 'Clear filters' accent link instead of an awkward floating pill."}
+{"version":370,"note":"v370: Settings → Appearance adds a 24-hour time toggle (military vs 12-hour AM/PM); job & calendar times now render through fmtTime() honoring the choice. New profiles.time_format column (default '12')."}
