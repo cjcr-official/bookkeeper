@@ -1,1 +1,1 @@
-{"version":366,"note":"v366: Expenses top section fixed — reuse the app's shared segmented .seg pill (full-width variant) so the This year/All time toggle matches the dashboard; dropped the poking red hairline on the summary card; grouped search + filters into one tidy panel."}
+{"version":367,"note":"v367: Expenses filters laid out on a clean grid — Category full-width, From/To as equal aligned halves, Clear bottom-right — instead of the flex-wrap that shoved To/From onto a misaligned second row."}
