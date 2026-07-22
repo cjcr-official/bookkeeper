@@ -1,1 +1,1 @@
-{"version":365,"note":"v365: Expenses top section restyled — This year/All time is now a segmented pill control, and the Total Spent summary is a hero card with an accent hairline and larger tabular figure."}
+{"version":366,"note":"v366: Expenses top section fixed — reuse the app's shared segmented .seg pill (full-width variant) so the This year/All time toggle matches the dashboard; dropped the poking red hairline on the summary card; grouped search + filters into one tidy panel."}
