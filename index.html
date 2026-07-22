@@ -368,9 +368,10 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .mod-ico{width:34px;height:34px;flex-shrink:0;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--accent-bg);color:var(--accent);font-size:17px}
 #module-toggles .setting-row{padding:.7rem 0;border-bottom:1px solid var(--border)}
 #module-toggles .setting-row:last-child{border-bottom:none}
-/* Dashboard Mileage summary — one compact card: miles logged this year. */
-.mi-summary{display:flex;align-items:center;gap:.9rem;padding:1rem 1.15rem;cursor:pointer}
-.mi-summary .mi-sum-main{flex:1;min-width:0}
+/* When the Net-Profit hero is hidden (Invoices off) but the grid still shows
+   (e.g. Mileage on), drop the grid's top divider so it doesn't float orphaned. */
+.ov-hero[style*="display: none"] + .ov-grid,
+.ov-hero[style*="display:none"] + .ov-grid{border-top:none;margin-top:0;padding-top:0}
 /* Theme picker: a grid of tappable swatches, each previewing a theme's canvas
    + accent. Active one gets an accent ring + check. */
 .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.7rem;margin-top:.4rem}
@@ -1280,8 +1281,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
-        <div class="overview" data-module="invoicing">
-          <div class="ov-hero">
+        <div class="overview" data-module-all="invoicing expenses mileage">
+          <div class="ov-hero" data-module="invoicing">
             <div>
               <div class="ov-hero-label">Net Profit · This Year</div>
               <div class="ov-hero-value" id="stat-profit">$0.00</div>
@@ -1301,21 +1302,15 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="ov-icon amber"><i class="ti ti-hourglass-high"></i></div>
               <div class="ov-item-text"><div class="ov-item-label">Outstanding</div><div class="ov-item-value amber" id="stat-outstanding">$0.00</div></div>
             </div>
-            <div class="ov-item" onclick="openTaxModal()" style="cursor:pointer" title="Tap to set up your tax estimate">
+            <div class="ov-item" data-module="invoicing" onclick="openTaxModal()" style="cursor:pointer" title="Tap to set up your tax estimate">
               <div class="ov-icon accent"><i class="ti ti-receipt-tax"></i></div>
               <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">…</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--brand)">—</div></div>
             </div>
+            <div class="ov-item" id="dash-card-mileage" data-module="mileage" onclick="showPage('mileage',null)" style="cursor:pointer" title="View the mileage log">
+              <div class="ov-icon cyan"><i class="ti ti-car"></i></div>
+              <div class="ov-item-text"><div class="ov-item-label">Miles</div><div class="ov-item-value" id="stat-miles" style="color:var(--cyan)">0 mi</div></div>
+            </div>
           </div>
-        </div>
-        <!-- Mileage total — a standalone card so it stays visible even when the
-             financial overview is hidden (Invoices & Customers off). -->
-        <div class="card mi-summary" id="dash-card-mileage" data-module="mileage" onclick="showPage('mileage',null)" title="View the mileage log">
-          <div class="ov-icon cyan"><i class="ti ti-car"></i></div>
-          <div class="mi-sum-main">
-            <div class="ov-item-label">Miles · This Year</div>
-            <div class="ov-item-value" style="color:var(--cyan)" id="stat-miles">0 mi</div>
-          </div>
-          <i class="ti ti-chevron-right" style="color:var(--text3);font-size:20px;flex-shrink:0"></i>
         </div>
         <div class="dash-group" id="dash-grp-cal">Calendar</div>
         <div class="card collapsible collapsed" id="dash-card-up">
