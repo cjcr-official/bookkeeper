@@ -1,1 +1,1 @@
-{"version":372,"note":"v372: Settings → Appearance gains a full Theme picker (Midnight default, Light, Ocean, Forest, Rose, Sunset, Sepia) alongside the accent color picker. Theme sets the whole canvas via <html data-theme> (localStorage bk-theme) and the iOS status-bar meta color; a chosen accent still composes on top. Legacy 'dark'/'light' values still work."}
+{"version":373,"note":"v373: Settings → Appearance — move the 24-hour time toggle below the Accent color picker so the Theme and Accent color settings sit together instead of being split by the time toggle."}
