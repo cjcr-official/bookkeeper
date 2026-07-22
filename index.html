@@ -45,6 +45,12 @@
   --amber-bg:rgba(245,158,11,.12);
   --cyan:#06b6d4;
   --cyan-bg:rgba(6,182,212,.12);
+  /* Semantic hairline borders (~.3α of each semantic hue) — pairs with the *-bg
+     tints on badges/toasts/alerts/danger buttons. Per-theme so the border tracks
+     the theme's own red/green/cyan instead of the hard-coded dark hue. */
+  --red-border:rgba(239,68,68,.3);
+  --green-border:rgba(34,197,94,.3);
+  --cyan-border:rgba(6,182,212,.3);
   --radius:16px;
   --radius-sm:11px;
   --radius-lg:22px;
@@ -79,6 +85,9 @@
   --amber-bg:rgba(217,119,6,.1);
   --cyan:#0891b2;
   --cyan-bg:rgba(8,145,178,.1);
+  --red-border:rgba(220,38,38,.3);
+  --green-border:rgba(21,128,61,.3);
+  --cyan-border:rgba(8,145,178,.3);
   --shadow:0 10px 30px rgba(30,38,80,.10);
   --shadow-lg:0 28px 70px rgba(30,38,80,.16);
 }
@@ -113,9 +122,9 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .auth-tabs{display:flex;gap:0;margin-bottom:1.5rem;background:var(--bg2);border-radius:var(--radius-sm);padding:3px;overflow:hidden}
 .auth-tab{flex:1;padding:.5rem;text-align:center;font-size:13px;font-weight:600;cursor:pointer;color:var(--text2);background:transparent;border:none;border-radius:6px;font-family:'Plus Jakarta Sans',sans-serif;transition:all .2s}
 .auth-tab.active{background:var(--surface);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.2)}
-.auth-error{background:var(--red-bg);color:var(--red);border:1px solid rgba(239,68,68,.3);border-radius:var(--radius-sm);padding:.65rem .85rem;font-size:13px;margin-bottom:1rem;display:none}
+.auth-error{background:var(--red-bg);color:var(--red);border:1px solid var(--red-border);border-radius:var(--radius-sm);padding:.65rem .85rem;font-size:13px;margin-bottom:1rem;display:none}
 .auth-error.show{display:block}
-.auth-success{background:var(--green-bg);color:var(--green);border:1px solid rgba(34,197,94,.3);border-radius:var(--radius-sm);padding:.65rem .85rem;font-size:13px;margin-bottom:1rem;display:none}
+.auth-success{background:var(--green-bg);color:var(--green);border:1px solid var(--green-border);border-radius:var(--radius-sm);padding:.65rem .85rem;font-size:13px;margin-bottom:1rem;display:none}
 .auth-success.show{display:block}
 
 /* ── APP LAYOUT ── */
@@ -180,7 +189,7 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .btn:disabled{opacity:.4;cursor:not-allowed}
 .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 0 0 0 var(--accent-glow)}
 .btn-primary:hover{background:var(--accent);filter:brightness(1.08);border-color:var(--accent);box-shadow:0 0 16px var(--accent-glow)}
-.btn-danger{background:var(--red-bg);color:var(--red);border-color:rgba(239,68,68,.3)}
+.btn-danger{background:var(--red-bg);color:var(--red);border-color:var(--red-border)}
 .btn-sm{padding:.28rem .6rem;font-size:12px}
 .audit-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:5px}
 .audit-chip{text-align:center;padding:.45rem .1rem;border-radius:9px}
@@ -190,7 +199,7 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
    Matched / finder / set-aside / pending are reference → flat rows in a zone
    set off by space, so a loaded month reads primary-first at a glance. */
 .rec-action{box-shadow:var(--shadow)}
-.rec-clear{display:flex;align-items:center;gap:.75rem;padding:.95rem 1.05rem;border-radius:var(--radius);background:var(--green-bg);border:1px solid rgba(34,197,94,.3);margin-bottom:.85rem}
+.rec-clear{display:flex;align-items:center;gap:.75rem;padding:.95rem 1.05rem;border-radius:var(--radius);background:var(--green-bg);border:1px solid var(--green-border);margin-bottom:.85rem}
 .rec-refzone{margin-top:1.5rem;padding-top:.15rem;border-top:1px solid var(--border)}
 .rec-ref{border-bottom:1px solid var(--border)}
 .rec-ref:last-child{border-bottom:none}
@@ -337,8 +346,8 @@ textarea{resize:vertical;min-height:70px}
 /* ── TOAST ── */
 .toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--surface2);color:var(--text);border:1px solid var(--border2);padding:.75rem 1.25rem;border-radius:var(--radius-sm);font-size:13px;z-index:9999;opacity:0;transform:translateY(8px);transition:all .25s;pointer-events:none;box-shadow:var(--shadow)}
 .toast.show{opacity:1;transform:translateY(0)}
-.toast.success{background:var(--green-bg);color:var(--green);border-color:rgba(34,197,94,.3)}
-.toast.error{background:var(--red-bg);color:var(--red);border-color:rgba(239,68,68,.3)}
+.toast.success{background:var(--green-bg);color:var(--green);border-color:var(--green-border)}
+.toast.error{background:var(--red-bg);color:var(--red);border-color:var(--red-border)}
 
 /* ── SPINNER ── */
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle}
@@ -625,9 +634,9 @@ body.modal-open .main{overflow:hidden}
   }
   .cust-btn i{font-size:16px;flex-shrink:0}
   .cust-btn:active{transform:scale(.97);background:var(--surface2);color:var(--text)}
-  .cust-btn-call{color:var(--green);border-color:rgba(34,197,94,.3);background:var(--green-bg)}
+  .cust-btn-call{color:var(--green);border-color:var(--green-border);background:var(--green-bg)}
   .cust-btn-email{color:var(--accent-text);border-color:rgba(59,130,246,.3);background:var(--accent-bg)}
-  .cust-btn-map{color:var(--cyan);border-color:rgba(6,182,212,.3);background:var(--cyan-bg)}
+  .cust-btn-map{color:var(--cyan);border-color:var(--cyan-border);background:var(--cyan-bg)}
 
   .m-card{
     background:var(--surface);border:1px solid var(--border);
@@ -3733,7 +3742,7 @@ function viewInvoice(id) {
 
     ${inv.notes?`<div style="margin:1rem 0;font-size:12px;color:#444">${esc(inv.notes)}</div>`:''}
 
-    ${(p.pay_instructions||'').trim()?`<div style="margin:1.25rem 0;border:1px solid #e2e2e2;border-left:3px solid #1a1a1a;border-radius:6px;overflow:hidden;max-width:340px">
+    ${(p.pay_instructions||'').trim()?`<div style="margin:1.25rem 0;border:1px solid #e2e2e2;border-radius:6px;overflow:hidden;max-width:340px">
       <div style="background:#1a1a1a;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:10.5px;padding:.45rem .8rem">How to Pay</div>
       <div style="padding:.55rem .8rem;font-size:12.5px;color:#333;line-height:1.6">${p.pay_instructions.split('\n').map(l=>l.trim()).filter(l=>l).map(l=>`<div style="padding:.12rem 0">${esc(l)}</div>`).join('')}</div>
     </div>`:''}

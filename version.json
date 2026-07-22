@@ -1,1 +1,1 @@
-{"version":363,"note":"v363: A11y hardening — associate form labels with inputs, make filter tabs keyboard-operable (role=button + Enter/Space), add main landmark."}
+{"version":364,"note":"v364: Polish — semantic border tokens (theme-correct red/green/cyan hairlines, replaces 8 hard-coded literals); removed the redundant side-stripe on the printed invoice How-to-Pay block."}
