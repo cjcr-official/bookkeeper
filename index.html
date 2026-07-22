@@ -1030,7 +1030,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <button class="theme-toggle" onclick="showPage('settings',null)" title="Settings" aria-label="Settings"><i class="ti ti-settings"></i></button>
       </div>
     </div>
-    <div class="content">
+    <div class="content" role="main">
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
@@ -1893,6 +1893,7 @@ let _lastIsMobile = window.innerWidth <= 768;
 function rerenderCurrentView() {
   const fn = pageRenderers[currentPage];
   if (typeof fn === 'function') fn();
+  enhanceA11y();
 }
 window.addEventListener('resize', () => {
   clearTimeout(_viewResizeTimer);
@@ -7385,8 +7386,40 @@ async function withBusy(btn, fn) {
 // invoice editor) — those only close via their X / Cancel / Save buttons so a
 // stray tap can't discard an in-progress edit.
 document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click',function(e){if(e.target===this && !this.hasAttribute('data-keep-open'))closeModal(this.id);}));
+// Progressive a11y hardening, applied to the static shell + every re-rendered view:
+//   1) tie each visible <label> to its control (for/id) so screen readers announce it;
+//   2) make onclick-only <div>/<span> controls keyboard-operable (role=button + tabindex),
+//      skipping any that already own a native control OR a heading — so we never nest
+//      interactive elements or bury an <h3> inside a button.
+// Idempotent: skips anything already wired, so it's cheap to call on every render.
+let _a11yUid = 0;
+function enhanceA11y(root) {
+  root = root || document;
+  root.querySelectorAll('label:not([for])').forEach(lb => {
+    if (lb.querySelector('input,select,textarea')) return;   // wrapping label — already tied
+    let n = lb.nextElementSibling, ctrl = null;
+    while (n && !ctrl) {
+      if (n.tagName === 'LABEL') break;                       // reached the next field
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(n.tagName)) { if (n.type !== 'hidden') ctrl = n; }
+      else if (n.querySelector) { ctrl = n.querySelector('input:not([type=hidden]),select,textarea'); }
+      n = n.nextElementSibling;
+    }
+    if (!ctrl) return;
+    if (!ctrl.id) ctrl.id = 'a11y-f' + (++_a11yUid);
+    lb.setAttribute('for', ctrl.id);
+  });
+  root.querySelectorAll('[onclick]').forEach(el => {
+    if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA|LABEL)$/.test(el.tagName)) return;
+    if (el.hasAttribute('role') || el.hasAttribute('tabindex')) return;
+    if (el.querySelector('button,a,input,select,textarea,[role="button"],h1,h2,h3,h4,h5,h6')) return;
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+  });
+}
+
 // Keyboard: Escape closes the top open modal (data-keep-open still only closes
-// via its own buttons); Enter/Space activate a focused nav item (they're divs).
+// via its own buttons); Enter/Space activate a focused non-native role=button
+// (nav items, filter tabs, and other divs enhanceA11y() wired up).
 document.addEventListener('keydown', e => {
   const openOverlay = [...document.querySelectorAll('.modal-overlay.open')].pop();
   if (e.key === 'Escape') {
@@ -7398,10 +7431,15 @@ document.addEventListener('keydown', e => {
     const first=items[0], last=items[items.length-1], a=document.activeElement;
     if (e.shiftKey && (a===first || !openOverlay.contains(a))) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && (a===last || !openOverlay.contains(a))) { e.preventDefault(); first.focus(); }
-  } else if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('nav-item')) {
+  } else if ((e.key === 'Enter' || e.key === ' ') && e.target.getAttribute
+             && e.target.getAttribute('role') === 'button'
+             && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
     e.preventDefault(); e.target.click();
   }
 });
+// Wire up the static shell + all static modals once the DOM is parsed (this script
+// runs at the end of <body>); re-renders re-run enhanceA11y() via rerenderCurrentView().
+enhanceA11y(document);
 
 // ====== BOOT ======
 async function boot() {

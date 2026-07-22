@@ -1,1 +1,1 @@
-{"version":362,"note":"v362: Polished the tax set-aside breakdown — cleaner rows with divider lines, a highlighted Set aside band, and a tidier source line."}
+{"version":363,"note":"v363: A11y hardening — associate form labels with inputs, make filter tabs keyboard-operable (role=button + Enter/Space), add main landmark."}
