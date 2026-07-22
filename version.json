@@ -1,1 +1,1 @@
-{"version":370,"note":"v370: Settings → Appearance adds a 24-hour time toggle (military vs 12-hour AM/PM); job & calendar times now render through fmtTime() honoring the choice. New profiles.time_format column (default '12')."}
+{"version":371,"note":"v371: Settings → Appearance adds an accent color picker (Violet default, Ocean, Teal, Rose, Sunset, Graphite). Choice is per-device (localStorage bk-accent); presets set --accent/--accent2 and color-mix derives the glow/tint/text tokens so the whole UI recolors."}
