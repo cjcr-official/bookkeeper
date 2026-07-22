@@ -500,8 +500,8 @@ async function runReminders(env) {
     try {
       const when = fmtClock(j.time);
       await sendWebPush(sub, env, {
-        title: 'Upcoming job',
-        body: (j.title || 'Job') + (when ? ' · ' + when : ''),
+        title: 'Upcoming event',
+        body: (j.title || 'Event') + (when ? ' · ' + when : ''),
         url: '/', tag: 'job-' + j.id
       });
       await supaPatch(env, `jobs?id=eq.${j.id}`, { reminded_at: new Date().toISOString() });

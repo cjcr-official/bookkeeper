@@ -1305,7 +1305,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         </div>
         <div class="dash-group" id="dash-grp-cal">Calendar</div>
         <div class="card collapsible collapsed" id="dash-card-up">
-          <div class="card-header" onclick="toggleDashCard(this)"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openJobModal()"><i class="ti ti-plus"></i> <span>Job</span></button><i class="ti ti-chevron-down dash-chev"></i></div>
+          <div class="card-header" onclick="toggleDashCard(this)"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" aria-label="New event" onclick="event.stopPropagation();openJobModal()"><i class="ti ti-plus"></i> <span>Event</span></button><i class="ti ti-chevron-down dash-chev"></i></div>
           <div id="upcoming-list"></div>
         </div>
         <div class="card" id="dash-card-cal">
@@ -1319,7 +1319,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div style="display:flex;align-items:center;gap:.5rem;flex:1;justify-content:center">
                 <div id="cal-month-label" style="font-weight:700;font-size:15px;letter-spacing:-.2px"></div>
                 <button class="btn btn-sm" onclick="event.stopPropagation();calNavToday()" title="Jump to today"><i class="ti ti-target"></i> Today</button>
-                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openJobModal()" title="New Job"><i class="ti ti-plus"></i></button>
+                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openJobModal()" title="New Event" aria-label="New event"><i class="ti ti-plus"></i></button>
               </div>
               <button class="btn btn-sm" onclick="event.stopPropagation();calNavMonth(1)" title="Next month"><i class="ti ti-chevron-right"></i></button>
             </div>
@@ -1537,7 +1537,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
                 <button class="btn btn-sm" onclick="enablePush()"><i class="ti ti-refresh"></i> Re-register</button>
               </div>
             </div>
-            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-job reminders at the time you set on each job. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-event reminders at the time you set on each event. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
           </div>
         </div>
         <div class="card settings-section" data-sec="invoice">
@@ -1987,7 +1987,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 <!-- JOB MODAL -->
 <div class="modal-overlay" id="modal-job">
   <div class="modal">
-    <div class="modal-header"><h2 id="job-modal-title">New Job</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-job')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-header"><h2 id="job-modal-title">New Event</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-job')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
       <input type="hidden" id="job-id">
       <div class="form-group"><label>Title</label><input id="job-title-input" type="text" placeholder="e.g. On-site repair at Acme"></div>
@@ -1995,11 +1995,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Date</label><input id="job-date" type="date"></div>
         <div class="form-group"><label>Time <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="job-time" type="time"></div>
       </div>
-      <div class="form-group"><label>Customer <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="job-customer"><option value="">— None —</option></select></div>
-      <div class="form-group"><label>Reminder <span style="color:var(--text3);font-weight:400;font-size:11px">(push notification before the job)</span></label>
+      <div class="form-group" id="job-customer-group"><label>Customer <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="job-customer"><option value="">— None —</option></select></div>
+      <div class="form-group"><label>Reminder <span style="color:var(--text3);font-weight:400;font-size:11px">(push notification before the event)</span></label>
         <select id="job-remind">
           <option value="">No reminder</option>
-          <option value="0">At time of job</option>
+          <option value="0">At time of event</option>
           <option value="5">5 minutes before</option>
           <option value="15">15 minutes before</option>
           <option value="30">30 minutes before</option>
@@ -3310,9 +3310,9 @@ function renderUpcoming() {
     const cust = j.customer_id ? (cache.customers.find(c=>c.id===j.customer_id)||{}).name : '';
     items.push({
       date: j.date,
-      type: overdue ? 'Overdue job' : 'Job',
-      label: (j.title||'Job') + (j.time?' · '+fmtTime(j.time):'') + (cust?' · '+cust:''),
-      icon: 'ti-briefcase',
+      type: overdue ? 'Overdue event' : 'Event',
+      label: (j.title||'Event') + (j.time?' · '+fmtTime(j.time):'') + (cust?' · '+cust:''),
+      icon: 'ti-calendar-event',
       onclick: `editJob('${j.id}')`,
       amount: 0,
       overdue,
@@ -3376,14 +3376,14 @@ function buildNotifications() {
     const cust = j.customer_id ? ((cache.customers.find(c=>c.id===j.customer_id)||{}).name||'') : '';
     const at = j.time ? ' at '+fmtTime(j.time) : '';
     if (j.date < t) {
-      out.push({ id:'job-late-'+j.id+'-'+j.date, date:j.date, tone:'red', icon:'ti-briefcase',
-        title:'Missed job: '+(j.title||'Job'),
+      out.push({ id:'job-late-'+j.id+'-'+j.date, date:j.date, tone:'red', icon:'ti-calendar-event',
+        title:'Missed event: '+(j.title||'Event'),
         body:(cust?cust+' · ':'')+'was '+fmtDate(j.date),
         target:{action:'job', ref:j.id} });
     } else if (j.date <= soon) {
-      out.push({ id:'job-'+j.id+'-'+j.date, date:j.date, tone:'accent', icon:'ti-briefcase',
-        title:(j.title||'Job')+(j.date===t?' today'+at:' '+fmtDate(j.date)+at),
-        body:cust||'Scheduled job',
+      out.push({ id:'job-'+j.id+'-'+j.date, date:j.date, tone:'accent', icon:'ti-calendar-event',
+        title:(j.title||'Event')+(j.date===t?' today'+at:' '+fmtDate(j.date)+at),
+        body:cust||'Scheduled event',
         target:{action:'job', ref:j.id} });
     }
   });
@@ -3444,7 +3444,7 @@ function renderNotifPane() {
     el.innerHTML = `<div class="notif-empty">
       <div class="notif-empty-badge"><i class="ti ti-bell-check"></i></div>
       <div class="notif-empty-title">You're all caught up</div>
-      <div class="notif-empty-sub">Alerts about overdue invoices, upcoming jobs, and recurring items will show up here.</div>
+      <div class="notif-empty-sub">Alerts about overdue invoices, upcoming events, and recurring items will show up here.</div>
     </div>`;
     return;
   }
@@ -4730,8 +4730,11 @@ async function deleteTrip(id) {
 // ====== JOBS (editable calendar entries shown in dashboard Upcoming) ======
 function openJobModal(job) {
   const j = job || {};
-  document.getElementById('job-modal-title').textContent = j.id ? 'Edit Job' : 'New Job';
+  document.getElementById('job-modal-title').textContent = j.id ? 'Edit Event' : 'New Event';
   document.getElementById('job-id').value = j.id || '';
+  // The Customer link only makes sense with Invoices & Customers on — hide it otherwise.
+  const custGrp = document.getElementById('job-customer-group');
+  if (custGrp) custGrp.style.display = isModuleHidden('invoicing') ? 'none' : '';
   document.getElementById('job-title-input').value = j.title || '';
   document.getElementById('job-date').value = j.date || today();
   document.getElementById('job-time').value = j.time || '';
@@ -4934,7 +4937,7 @@ function calPickDay(ds) {
 function renderCalDayList() {
   const el = document.getElementById('cal-day-jobs');
   if (!el) return;
-  if (!calSelectedDate) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);text-align:center;padding:.5rem">Tap a day to see/add jobs · tap it again to add a new job</div>'; return; }
+  if (!calSelectedDate) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);text-align:center;padding:.5rem">Tap a day to see/add events · tap it again to add a new event</div>'; return; }
   const byDate = calItemsByDate();
   const items = byDate[calSelectedDate] || [];
   const heading = new Date(calSelectedDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
@@ -4945,10 +4948,10 @@ function renderCalDayList() {
   } else {
     body = items.map(it => `
       <div onclick="${it.onclick}" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .25rem;border-bottom:1px solid var(--border);cursor:pointer">
-        <i class="ti ${it.kind==='job'?'ti-briefcase':it.kind==='invoice'?'ti-file-invoice':'ti-repeat'}" style="color:var(--accent);font-size:18px;flex-shrink:0"></i>
+        <i class="ti ${it.kind==='job'?'ti-calendar-event':it.kind==='invoice'?'ti-file-invoice':'ti-repeat'}" style="color:var(--accent);font-size:18px;flex-shrink:0"></i>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;${it.done?'text-decoration:line-through;opacity:.55':''}">${esc(it.label)}</div>
-          <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase">${it.time?esc(fmtTime(it.time))+' · ':''}${it.kind}</div>
+          <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase">${it.time?esc(fmtTime(it.time))+' · ':''}${it.kind==='job'?'event':it.kind}</div>
         </div>
       </div>`).join('');
   }
