@@ -92,6 +92,35 @@
   --shadow-lg:0 28px 70px rgba(30,38,80,.16);
 }
 
+/* ── ACCENT COLOR THEMES ──
+   Each preset sets only --accent + --accent2; the glow/tint/text tokens are
+   derived from --accent via color-mix (iOS 16.2+), so the whole accent system
+   (buttons, badges, active nav, focus rings…) recolors from two values. Two
+   scopes per preset: dark (default) lightens --accent-text for contrast on the
+   dark surface; light darkens it for contrast on white and drops the tint alpha.
+   The default (violet) has no [data-accent] — it uses the hand-tuned tokens in
+   :root / [data-theme="light"] above, so its look is unchanged. */
+:root[data-accent]{
+  --accent-glow:color-mix(in srgb,var(--accent) 40%,transparent);
+  --accent-bg:color-mix(in srgb,var(--accent) 15%,transparent);
+  --accent-text:color-mix(in srgb,var(--accent) 45%,#fff);
+}
+[data-theme="light"][data-accent]{
+  --accent-glow:color-mix(in srgb,var(--accent) 22%,transparent);
+  --accent-bg:color-mix(in srgb,var(--accent) 8%,transparent);
+  --accent-text:color-mix(in srgb,var(--accent) 82%,#000);
+}
+[data-accent="ocean"]  { --accent:#3b82f6; --accent2:#06b6d4; }
+[data-accent="teal"]   { --accent:#14b8a6; --accent2:#22d3ee; }
+[data-accent="rose"]   { --accent:#ec4899; --accent2:#f472b6; }
+[data-accent="sunset"] { --accent:#f97316; --accent2:#f59e0b; }
+[data-accent="graphite"]{ --accent:#64748b; --accent2:#94a3b8; }
+[data-theme="light"][data-accent="ocean"]  { --accent:#2563eb; --accent2:#0891b2; }
+[data-theme="light"][data-accent="teal"]   { --accent:#0d9488; --accent2:#0891b2; }
+[data-theme="light"][data-accent="rose"]   { --accent:#db2777; --accent2:#ec4899; }
+[data-theme="light"][data-accent="sunset"] { --accent:#ea580c; --accent2:#d97706; }
+[data-theme="light"][data-accent="graphite"]{ --accent:#475569; --accent2:#64748b; }
+
 html{height:100%;overflow:hidden}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;height:100%;overflow:hidden;transition:background .2s,color .2s;-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 h1,h2,h3{font-weight:700;letter-spacing:-.3px}
@@ -160,6 +189,17 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .theme-switch.on{background:var(--accent);border-color:var(--accent)}
 .theme-switch-knob{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.22,1,.36,1)}
 .theme-switch.on .theme-switch-knob{transform:translateX(18px)}
+.accent-picker{display:flex;flex-wrap:wrap;gap:.85rem;padding:.15rem 0}
+.accent-chip{width:34px;height:34px;border-radius:50%;border:none;padding:0;cursor:pointer;position:relative;box-shadow:0 1px 4px rgba(0,0,0,.2);transition:transform .12s}
+.accent-chip:active{transform:scale(.9)}
+.accent-chip.active{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--accent)}
+.accent-chip.active::after{content:'';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5L20 7'/%3E%3C/svg%3E") center/16px no-repeat;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))}
+.accent-chip[data-accent="violet"]  {background:linear-gradient(135deg,#7b6cff,#4f8cff)}
+.accent-chip[data-accent="ocean"]   {background:linear-gradient(135deg,#3b82f6,#06b6d4)}
+.accent-chip[data-accent="teal"]    {background:linear-gradient(135deg,#14b8a6,#22d3ee)}
+.accent-chip[data-accent="rose"]    {background:linear-gradient(135deg,#ec4899,#f472b6)}
+.accent-chip[data-accent="sunset"]  {background:linear-gradient(135deg,#f97316,#f59e0b)}
+.accent-chip[data-accent="graphite"]{background:linear-gradient(135deg,#64748b,#94a3b8)}
 /* Passcode keypad: fire on touch-down (no iOS click delay) with instant tactile feedback. */
 .lock-key{width:72px;height:72px;border-radius:50%;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:24px;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;transition:transform .05s ease,background .05s ease,color .05s ease}
 .lock-key:active{transform:scale(.9);background:var(--accent);border-color:var(--accent);color:#fff}
@@ -1267,6 +1307,17 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span><span class="setting-row-title">24-hour time</span><span class="setting-row-sub">Show times as 14:00 instead of 2:00 PM.</span></span>
               <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
             </button>
+            <div class="setting-row" style="cursor:default;flex-direction:column;align-items:stretch;gap:.7rem">
+              <span><span class="setting-row-title">Accent color</span><span class="setting-row-sub">Pick the app's highlight color.</span></span>
+              <div class="accent-picker" id="accent-picker" role="radiogroup" aria-label="Accent color">
+                <button class="accent-chip" role="radio" data-accent="violet" onclick="setAccent('violet')" aria-label="Violet"></button>
+                <button class="accent-chip" role="radio" data-accent="ocean" onclick="setAccent('ocean')" aria-label="Ocean"></button>
+                <button class="accent-chip" role="radio" data-accent="teal" onclick="setAccent('teal')" aria-label="Teal"></button>
+                <button class="accent-chip" role="radio" data-accent="rose" onclick="setAccent('rose')" aria-label="Rose"></button>
+                <button class="accent-chip" role="radio" data-accent="sunset" onclick="setAccent('sunset')" aria-label="Sunset"></button>
+                <button class="accent-chip" role="radio" data-accent="graphite" onclick="setAccent('graphite')" aria-label="Graphite"></button>
+              </div>
+            </div>
           </div>
         </div>
         <div class="card settings-section" data-sec="notifications">
@@ -7041,6 +7092,7 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
 function loadSettingsForm() {
   syncThemeUI();
   syncTimeFormatUI();
+  syncAccentUI();
   renderPushStatus();
   // Invoice defaults
   document.getElementById('s-inv-due-days').value = (profile.invoice_due_days!=null?profile.invoice_due_days:'');
@@ -7695,6 +7747,30 @@ function syncThemeUI() {
   const row = document.getElementById('theme-switch-row');
   if (row) row.setAttribute('aria-checked', String(!light));
 }
+// Accent color theme (per-device, localStorage bk-accent — same as bk-theme).
+// 'violet' is the built-in default and carries no [data-accent] attribute, so it
+// falls through to the hand-tuned :root tokens; every other preset sets --accent
+// on the root and lets color-mix derive the rest.
+const ACCENTS = ['violet','ocean','teal','rose','sunset','graphite'];
+function applyAccent(name) {
+  const html = document.documentElement;
+  if (!name || name === 'violet') html.removeAttribute('data-accent');
+  else html.setAttribute('data-accent', name);
+}
+function setAccent(name) {
+  if (!ACCENTS.includes(name)) name = 'violet';
+  applyAccent(name);
+  lsSet('bk-accent', name);
+  syncAccentUI();
+}
+function syncAccentUI() {
+  const cur = lsGet('bk-accent') || 'violet';
+  document.querySelectorAll('#accent-picker .accent-chip').forEach(c => {
+    const on = c.dataset.accent === cur;
+    c.classList.toggle('active', on);
+    c.setAttribute('aria-checked', String(on));
+  });
+}
 // 12-hour (default) vs 24-hour "military" time for job times across the app.
 function syncTimeFormatUI() {
   const on = !!(profile && profile.time_format === '24');
@@ -7735,6 +7811,8 @@ function toggleTheme() {
     document.documentElement.setAttribute('data-theme','light');
     document.addEventListener('DOMContentLoaded', syncThemeUI);
   }
+  const acc = lsGet('bk-accent');
+  if (acc && acc !== 'violet') document.documentElement.setAttribute('data-accent', acc);
 })();
 
 // ====== ROLODEX SCROLL (all mobile list cards) ======
