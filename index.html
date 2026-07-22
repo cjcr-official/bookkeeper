@@ -1276,7 +1276,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
-        <div class="overview">
+        <div class="overview" data-module="invoicing">
           <div class="ov-hero">
             <div>
               <div class="ov-hero-label">Net Profit · This Year</div>
@@ -1361,7 +1361,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
           <div id="cat-breakdown"></div>
         </div>
-        <div class="dash-group" id="dash-grp-rep">Recents &amp; Reports</div>
+        <div class="dash-group" id="dash-grp-rep" data-module-all="invoicing expenses">Recents &amp; Reports</div>
         <div class="two-col" id="dash-card-recents">
           <div class="card collapsible collapsed" id="dash-card-inv" data-module="invoicing">
             <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Invoices</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('invoices',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
@@ -1373,8 +1373,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
         </div>
 
-        <!-- REPORTS (collapsible card on dashboard) -->
-        <div class="card" id="dash-card-reports">
+        <!-- REPORTS (collapsible card on dashboard) — P&L is revenue-driven, so it
+             follows Invoices & Customers. -->
+        <div class="card" id="dash-card-reports" data-module="invoicing">
           <div class="card-header" onclick="toggleReports()" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-chart-pie" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Reports</h3>
             <i class="ti ti-chevron-down dash-chev" id="reports-chevron" style="transform:rotate(-90deg)"></i>
@@ -2694,12 +2695,16 @@ function isModuleHidden(id) { return getHiddenModules().includes(id); }
 function applyModuleVisibility() {
   const hidPages = hiddenPagesSet(), hid = getHiddenModules();
   document.querySelectorAll('.nav-item[data-page]').forEach(n => { n.style.display = hidPages.has(n.dataset.page) ? 'none' : ''; });
-  // data-module may list one or more module ids (space-separated); the element
-  // hides if ANY listed module is off (e.g. the income-vs-expenses chart hides
-  // when either Invoices or Expenses is off).
+  // data-module lists one or more module ids (space-separated); the element hides
+  // if ANY listed module is off (e.g. the income-vs-expenses chart hides when
+  // either Invoices or Expenses is off).
   document.querySelectorAll('[data-module]').forEach(el => {
-    const hide = el.dataset.module.split(/\s+/).some(id => hid.includes(id));
-    el.style.display = hide ? 'none' : '';
+    el.style.display = el.dataset.module.split(/\s+/).some(id => hid.includes(id)) ? 'none' : '';
+  });
+  // data-module-all hides only when EVERY listed module is off — for a group
+  // header that should linger as long as any child under it is still visible.
+  document.querySelectorAll('[data-module-all]').forEach(el => {
+    el.style.display = el.dataset.moduleAll.split(/\s+/).every(id => hid.includes(id)) ? 'none' : '';
   });
   if (isPageHidden(currentPage)) showPage('dashboard', null);
 }
