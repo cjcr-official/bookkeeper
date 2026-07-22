@@ -1,1 +1,1 @@
-{"version":367,"note":"v367: Expenses filters laid out on a clean grid — Category full-width, From/To as equal aligned halves, Clear bottom-right — instead of the flex-wrap that shoved To/From onto a misaligned second row."}
+{"version":368,"note":"v368: Expenses search bar now matches the other tabs — icon-in-field input, no label, no card wrapper (dropped the .exp-filter panel); filters stay a clean collapsible grid below."}
