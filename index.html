@@ -364,6 +364,10 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .pm-input:focus{outline:none;border-color:var(--accent)}
 .pm-hint{font-size:12px;color:var(--text3);margin-top:2px}
 .pm-switch{flex-shrink:0;cursor:pointer;border:none;padding:0;background:none}
+/* Sections (module show/hide) toggle rows — reuse .setting-row + .theme-switch. */
+.mod-ico{width:34px;height:34px;flex-shrink:0;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--accent-bg);color:var(--accent);font-size:17px}
+#module-toggles .setting-row{padding:.7rem 0;border-bottom:1px solid var(--border)}
+#module-toggles .setting-row:last-child{border-bottom:none}
 /* Theme picker: a grid of tappable swatches, each previewing a theme's canvas
    + accent. Active one gets an accent ring + check. */
 .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.7rem;margin-top:.4rem}
@@ -1240,12 +1244,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
       </div>
     </div>
     <div class="sidebar-nav-scroll">
-    <div class="nav-item active" role="button" tabindex="0" onclick="showPage('dashboard',this)"><i class="ti ti-layout-dashboard"></i><span>Home</span></div>
-    <div class="nav-item" role="button" tabindex="0" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i><span>Invoices</span></div>
-    <div class="nav-item" role="button" tabindex="0" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
-    <div class="nav-item" role="button" tabindex="0" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
-    <div class="nav-item" role="button" tabindex="0" onclick="showPage('accounts',this)"><i class="ti ti-file-dollar"></i><span>Statements</span></div>
-    <div class="nav-item" role="button" tabindex="0" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
+    <div class="nav-item active" role="button" tabindex="0" data-page="dashboard" onclick="showPage('dashboard',this)"><i class="ti ti-layout-dashboard"></i><span>Home</span></div>
+    <div class="nav-item" role="button" tabindex="0" data-page="invoices" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i><span>Invoices</span></div>
+    <div class="nav-item" role="button" tabindex="0" data-page="customers" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
+    <div class="nav-item" role="button" tabindex="0" data-page="expenses" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
+    <div class="nav-item" role="button" tabindex="0" data-page="accounts" onclick="showPage('accounts',this)"><i class="ti ti-file-dollar"></i><span>Statements</span></div>
+    <div class="nav-item" role="button" tabindex="0" data-page="mileage" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
     </div>
     <div style="margin-top:auto" class="sidebar-bottom">
       <div class="nav-item" role="button" tabindex="0" onclick="showPage('settings',this)"><i class="ti ti-settings"></i> Settings</div>
@@ -1359,11 +1363,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
         </div>
         <div class="dash-group" id="dash-grp-rep">Recents &amp; Reports</div>
         <div class="two-col" id="dash-card-recents">
-          <div class="card collapsible collapsed" id="dash-card-inv">
+          <div class="card collapsible collapsed" id="dash-card-inv" data-module="invoicing">
             <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Invoices</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('invoices',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
             <div id="dash-invoices"></div>
           </div>
-          <div class="card collapsible collapsed" id="dash-card-exp">
+          <div class="card collapsible collapsed" id="dash-card-exp" data-module="expenses">
             <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Expenses</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('expenses',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
             <div id="dash-expenses"></div>
           </div>
@@ -1465,6 +1469,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <div id="page-settings" class="page">
         <aside class="settings-nav">
           <button class="settings-nav-item active" data-sec="appearance" onclick="showSettingsSection('appearance')"><i class="ti ti-palette"></i>Appearance</button>
+          <button class="settings-nav-item" data-sec="sections" onclick="showSettingsSection('sections')"><i class="ti ti-layout-grid"></i>Sections</button>
           <button class="settings-nav-item" data-sec="notifications" onclick="showSettingsSection('notifications')"><i class="ti ti-bell"></i>Notifications</button>
           <button class="settings-nav-item" data-sec="invoice" onclick="showSettingsSection('invoice')"><i class="ti ti-file-invoice"></i>Invoice Defaults</button>
           <button class="settings-nav-item" data-sec="categories" onclick="showSettingsSection('categories')"><i class="ti ti-tags"></i>Expense Categories</button>
@@ -1496,6 +1501,13 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span><span class="setting-row-title">24-hour time</span><span class="setting-row-sub">Show times as 14:00 instead of 2:00 PM.</span></span>
               <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
             </button>
+          </div>
+        </div>
+        <div class="card settings-section" data-sec="sections">
+          <div class="card-header"><h3>Sections</h3></div>
+          <div class="modal-body">
+            <p style="font-size:12.5px;color:var(--text3);margin:0 0 .6rem;line-height:1.55">Turn off parts of the app you don’t use. Hidden sections disappear from the navigation everywhere — you can switch them back on anytime. Home and Settings always stay.</p>
+            <div id="module-toggles"></div>
           </div>
         </div>
         <div class="card settings-section" data-sec="notifications">
@@ -2616,6 +2628,9 @@ async function loadAllData() {
     safe(sb.from('store_credits').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
   ]);
   profile = prof.data || {};
+  // Sync the hidden-sections mirror from the (durable) profile, then hide nav tabs.
+  if (Array.isArray(profile.hidden_modules)) setHiddenModulesLS(profile.hidden_modules);
+  applyModuleVisibility();
   cache.customers = customers.data || [];
   cache.invoices = invoices.data || [];
   cache.expenses = expenses.data || [];
@@ -2649,7 +2664,68 @@ function showDataLoadError() {
 }
 
 // ====== NAVIGATION ======
+// ====== SECTIONS (show/hide whole app modules to cut clutter) ======
+// Each module maps to one or more nav pages (+ optional dashboard cards tagged
+// data-module). Hiding a module drops its nav tab(s), blocks navigation to its
+// page(s), and hides its dashboard cards. Home and Settings can't be hidden.
+// Stored per-account on profile.hidden_modules (jsonb id array) with a
+// localStorage mirror (bk-hidden-modules) so the nav hides instantly on boot —
+// and so it keeps working on-device even before the DB column is added.
+const MODULES = [
+  { id:'invoicing',  label:'Invoices & Customers', icon:'ti-file-invoice', desc:'Billing, the customer list, and recurring invoices.', pages:['invoices','customers'] },
+  { id:'expenses',   label:'Expenses',             icon:'ti-receipt',      desc:'Spending, receipts, and recurring expenses.',        pages:['expenses'] },
+  { id:'mileage',    label:'Mileage',              icon:'ti-car',          desc:'The trip log and mileage tracking.',                 pages:['mileage'] },
+  { id:'statements', label:'Statements',           icon:'ti-file-dollar',  desc:'Bank statements and reconciliation.',                pages:['accounts'] },
+];
+function getHiddenModules() {
+  try { const v = JSON.parse(lsGet('bk-hidden-modules')||'[]'); return Array.isArray(v) ? v.filter(id=>MODULES.some(m=>m.id===id)) : []; }
+  catch(e) { return []; }
+}
+function setHiddenModulesLS(ids) { lsSet('bk-hidden-modules', JSON.stringify(ids)); }
+function hiddenPagesSet() {
+  const hid = getHiddenModules(), s = new Set();
+  MODULES.forEach(m => { if (hid.includes(m.id)) m.pages.forEach(p => s.add(p)); });
+  return s;
+}
+function isPageHidden(page) { return hiddenPagesSet().has(page); }
+// Reflect the hidden set onto the nav tabs + dashboard cards; bounce off a page
+// that just became hidden.
+function applyModuleVisibility() {
+  const hidPages = hiddenPagesSet(), hid = getHiddenModules();
+  document.querySelectorAll('.nav-item[data-page]').forEach(n => { n.style.display = hidPages.has(n.dataset.page) ? 'none' : ''; });
+  document.querySelectorAll('[data-module]').forEach(el => { el.style.display = hid.includes(el.dataset.module) ? 'none' : ''; });
+  if (isPageHidden(currentPage)) showPage('dashboard', null);
+}
+function toggleModule(id) {
+  const hid = getHiddenModules(), i = hid.indexOf(id);
+  if (i >= 0) hid.splice(i, 1); else hid.push(id);
+  setHiddenModulesLS(hid);
+  applyModuleVisibility();
+  renderModuleToggles();
+  if (typeof profile === 'object') profile.hidden_modules = hid.slice();
+  // Persist to the profile too (synced/durable). A missing column is non-fatal —
+  // the localStorage mirror keeps it working on this device until the migration runs.
+  if (currentUser) sb.from('profiles').upsert({ id: currentUser.id, hidden_modules: hid }).then(({error})=>{
+    if (error && !/column .*hidden_modules/i.test(error.message)) showToast(error.message,'error');
+  });
+}
+function renderModuleToggles() {
+  const el = document.getElementById('module-toggles'); if (!el) return;
+  const hid = getHiddenModules();
+  el.innerHTML = MODULES.map(m => {
+    const on = !hid.includes(m.id);   // on = visible
+    return `<button type="button" class="setting-row" role="switch" aria-checked="${on}" aria-label="Show ${escHtml(m.label)}" onclick="toggleModule('${m.id}')">
+      <span style="display:flex;align-items:center;gap:.7rem;min-width:0">
+        <span class="mod-ico"><i class="ti ${m.icon}"></i></span>
+        <span style="min-width:0"><span class="setting-row-title">${escHtml(m.label)}</span><span class="setting-row-sub">${escHtml(m.desc)}</span></span>
+      </span>
+      <span class="theme-switch${on?' on':''}"><span class="theme-switch-knob"></span></span>
+    </button>`;
+  }).join('');
+}
+
 function showPage(page, el) {
+  if (isPageHidden(page)) { page = 'dashboard'; el = null; }   // guard deep-links to a hidden section
   currentPage = page;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
@@ -7321,6 +7397,7 @@ function loadSettingsForm() {
   document.getElementById('s-pay-instructions').value = profile.pay_instructions||'';
   _payMethods = Array.isArray(profile.pay_methods) ? profile.pay_methods.map(m => ({ type:m.type, value:m.value||'' })) : [];
   renderPayMethods();
+  renderModuleToggles();
   renderSettingsCats();
   renderLockUI();
   renderMfaUI();
@@ -8111,6 +8188,9 @@ function setTheme(id) {
   const acc = lsGet('bk-accent');
   if (acc && acc !== 'auto') document.documentElement.setAttribute('data-accent', acc);
 })();
+// Hide any switched-off sections from the very first paint, straight off the
+// localStorage mirror (the profile load later reconciles it).
+document.addEventListener('DOMContentLoaded', () => { try { applyModuleVisibility(); } catch(e){} });
 
 // ====== ROLODEX SCROLL (all mobile list cards) ======
 // Applies to every card list — Invoices/Expenses/Mileage (.m-card) and
