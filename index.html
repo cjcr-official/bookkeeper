@@ -1285,15 +1285,15 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div class="ov-margin" id="ov-margin" style="display:none"></div>
           </div>
           <div class="ov-grid">
-            <div class="ov-item">
+            <div class="ov-item" data-module="invoicing">
               <div class="ov-icon green"><i class="ti ti-trending-up"></i></div>
               <div class="ov-item-text"><div class="ov-item-label">Revenue</div><div class="ov-item-value green" id="stat-revenue">$0.00</div></div>
             </div>
-            <div class="ov-item">
+            <div class="ov-item" data-module="expenses">
               <div class="ov-icon red"><i class="ti ti-trending-down"></i></div>
               <div class="ov-item-text"><div class="ov-item-label">Expenses</div><div class="ov-item-value red" id="stat-expenses">$0.00</div></div>
             </div>
-            <div class="ov-item">
+            <div class="ov-item" data-module="invoicing">
               <div class="ov-icon amber"><i class="ti ti-hourglass-high"></i></div>
               <div class="ov-item-text"><div class="ov-item-label">Outstanding</div><div class="ov-item-value amber" id="stat-outstanding">$0.00</div></div>
             </div>
@@ -1327,8 +1327,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div id="cal-day-jobs" style="padding:.75rem 1rem"></div>
           </div>
         </div>
-        <div class="dash-group" id="dash-grp-exp">Expenses</div>
-        <div class="card collapsible collapsed" id="dash-card-flow">
+        <div class="dash-group" id="dash-grp-exp" data-module="expenses">Expenses</div>
+        <div class="card collapsible collapsed" id="dash-card-flow" data-module="invoicing expenses">
           <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-wave-sine" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Cash Flow</h3>
             <div class="ac-legend">
@@ -1342,7 +1342,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div class="ac-tip" id="cashflow-tip"></div>
           </div>
         </div>
-        <div class="card collapsible collapsed" id="dash-card-spend">
+        <div class="card collapsible collapsed" id="dash-card-spend" data-module="expenses">
           <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-calendar-dollar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spend This Month</h3>
             <div class="spend-total" id="spend-cal-total">$0.00</div>
@@ -1350,7 +1350,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
           <div id="spend-cal" class="spend-cal"></div>
         </div>
-        <div class="card collapsible collapsed" id="dash-card-cat">
+        <div class="card collapsible collapsed" id="dash-card-cat" data-module="expenses">
           <div class="card-header" onclick="toggleDashCard(this)">
             <h3><i class="ti ti-chart-donut-3" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Spending by Category</h3>
             <div class="seg" id="cat-period">
@@ -2688,12 +2688,19 @@ function hiddenPagesSet() {
   return s;
 }
 function isPageHidden(page) { return hiddenPagesSet().has(page); }
+function isModuleHidden(id) { return getHiddenModules().includes(id); }
 // Reflect the hidden set onto the nav tabs + dashboard cards; bounce off a page
 // that just became hidden.
 function applyModuleVisibility() {
   const hidPages = hiddenPagesSet(), hid = getHiddenModules();
   document.querySelectorAll('.nav-item[data-page]').forEach(n => { n.style.display = hidPages.has(n.dataset.page) ? 'none' : ''; });
-  document.querySelectorAll('[data-module]').forEach(el => { el.style.display = hid.includes(el.dataset.module) ? 'none' : ''; });
+  // data-module may list one or more module ids (space-separated); the element
+  // hides if ANY listed module is off (e.g. the income-vs-expenses chart hides
+  // when either Invoices or Expenses is off).
+  document.querySelectorAll('[data-module]').forEach(el => {
+    const hide = el.dataset.module.split(/\s+/).some(id => hid.includes(id));
+    el.style.display = hide ? 'none' : '';
+  });
   if (isPageHidden(currentPage)) showPage('dashboard', null);
 }
 function toggleModule(id) {
@@ -2702,6 +2709,9 @@ function toggleModule(id) {
   setHiddenModulesLS(hid);
   applyModuleVisibility();
   renderModuleToggles();
+  // Refresh Home views that list per-module items (invoice/recurring rows).
+  if (typeof renderUpcoming === 'function') renderUpcoming();
+  if (typeof renderCalendar === 'function') renderCalendar();
   if (typeof profile === 'object') profile.hidden_modules = hid.slice();
   // Persist to the profile too (synced/durable). A missing column is non-fatal —
   // the localStorage mirror keeps it working on this device until the migration runs.
@@ -3258,8 +3268,10 @@ function renderUpcoming() {
   const h = new Date(); h.setDate(h.getDate()+30);
   const horizon = h.toISOString().slice(0,10);
   const items = [];
+  const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses');
   (cache.recurring||[]).forEach(r => {
     if (!r.active || !r.next_date || r.next_date > horizon) return;
+    if (r.kind==='invoice' ? hidInv : hidExp) return;   // hidden section → keep it off Home
     const d = r.data || {};
     const who = r.kind==='invoice'
       ? ((cache.customers.find(c=>c.id===d.customer_id)||{}).name||'')
@@ -3274,7 +3286,7 @@ function renderUpcoming() {
       overdue: false,
     });
   });
-  (cache.invoices||[]).forEach(i => {
+  if (!hidInv) (cache.invoices||[]).forEach(i => {
     if (i.status==='draft' || effectiveStatus(i)==='paid' || !i.due || i.due > horizon) return;
     const overdue = i.due < todayStr;
     items.push({
@@ -4845,12 +4857,14 @@ function calItemsByDate() {
     if (!j.date) return;
     (out[j.date] = out[j.date] || []).push({ kind:'job', id:j.id, label:j.title||'Job', time:j.time||'', done:!!j.done, onclick:`editJob('${j.id}')` });
   });
-  (cache.invoices||[]).forEach(i => {
+  const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses');
+  if (!hidInv) (cache.invoices||[]).forEach(i => {
     if (!i.due || i.status==='draft' || effectiveStatus(i)==='paid') return;
     (out[i.due] = out[i.due] || []).push({ kind:'invoice', id:i.id, label:'#'+(i.number||'')+' '+(i.customer_name||''), time:'', done:false, onclick:`editInvoice('${i.id}')` });
   });
   (cache.recurring||[]).forEach(r => {
     if (!r.active || !r.next_date) return;
+    if (r.kind==='invoice' ? hidInv : hidExp) return;   // drop chips for hidden sections
     const label = r.label || ((r.data||{}).vendor) || ((cache.customers.find(c=>c.id===((r.data||{}).customer_id))||{}).name) || 'Recurring';
     (out[r.next_date] = out[r.next_date] || []).push({ kind:'recurring', id:r.id, label, time:'', done:false, onclick:`openRecurringManager('${r.kind}')` });
   });
