@@ -368,13 +368,10 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .mod-ico{width:34px;height:34px;flex-shrink:0;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--accent-bg);color:var(--accent);font-size:17px}
 #module-toggles .setting-row{padding:.7rem 0;border-bottom:1px solid var(--border)}
 #module-toggles .setting-row:last-child{border-bottom:none}
-/* Dashboard Mileage card — small stat tiles (revealed when the card expands). */
-.mi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:.6rem;padding:1rem}
-.mi-stat{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .7rem}
-.mi-stat-wide{grid-column:1/-1}
-.mi-stat-label{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-bottom:.35rem;white-space:nowrap}
-.mi-stat-value{display:block;font-weight:700;font-size:1.05rem;letter-spacing:-.3px;font-variant-numeric:tabular-nums;line-height:1.1}
-.mi-headline{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:17px;letter-spacing:-.3px;color:var(--cyan);font-variant-numeric:tabular-nums}
+/* Dashboard Mileage summary — one compact card: miles this year + est. deduction. */
+.mi-summary{display:flex;align-items:center;gap:.9rem;padding:1rem 1.15rem;cursor:pointer}
+.mi-summary .mi-sum-main{flex:1;min-width:0}
+.mi-summary .mi-sum-ded{text-align:right;flex-shrink:0}
 /* Theme picker: a grid of tappable swatches, each previewing a theme's canvas
    + accent. Active one gets an accent ring + check. */
 .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.7rem;margin-top:.4rem}
@@ -1309,10 +1306,19 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="ov-icon accent"><i class="ti ti-receipt-tax"></i></div>
               <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">…</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--brand)">—</div></div>
             </div>
-            <div class="ov-item" data-module="mileage" onclick="showPage('mileage',null)" style="cursor:pointer" title="View the mileage log">
-              <div class="ov-icon cyan"><i class="ti ti-car"></i></div>
-              <div class="ov-item-text"><div class="ov-item-label">Miles</div><div class="ov-item-value" id="stat-miles" style="color:var(--cyan)">0 mi</div></div>
-            </div>
+          </div>
+        </div>
+        <!-- Mileage total — a standalone card so it stays visible even when the
+             financial overview is hidden (Invoices & Customers off). -->
+        <div class="card mi-summary" id="dash-card-mileage" data-module="mileage" onclick="showPage('mileage',null)" title="View the mileage log">
+          <div class="ov-icon cyan"><i class="ti ti-car"></i></div>
+          <div class="mi-sum-main">
+            <div class="ov-item-label">Miles · This Year</div>
+            <div class="ov-item-value" style="color:var(--cyan)" id="stat-miles">0 mi</div>
+          </div>
+          <div class="mi-sum-ded">
+            <div class="ov-item-label" id="dash-mi-ded-label">Est. Deduction</div>
+            <div class="ov-item-value" style="color:var(--green);font-size:1.05rem" id="dash-mi-deduction">$0</div>
           </div>
         </div>
         <div class="dash-group" id="dash-grp-cal">Calendar</div>
@@ -1372,21 +1378,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <i class="ti ti-chevron-down dash-chev"></i>
           </div>
           <div id="cat-breakdown"></div>
-        </div>
-        <div class="dash-group" id="dash-grp-mi" data-module="mileage">Mileage</div>
-        <div class="card collapsible collapsed" id="dash-card-mileage" data-module="mileage">
-          <div class="card-header" onclick="toggleDashCard(this)">
-            <h3><i class="ti ti-car" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Mileage</h3>
-            <div class="mi-headline" id="dash-mi-headline">0 mi</div>
-            <i class="ti ti-chevron-down dash-chev"></i>
-          </div>
-          <div class="mi-grid">
-            <div class="mi-stat"><span class="mi-stat-label">This Year</span><span class="mi-stat-value" id="dash-mi-year">0 mi</span></div>
-            <div class="mi-stat"><span class="mi-stat-label">This Month</span><span class="mi-stat-value" id="dash-mi-month">0 mi</span></div>
-            <div class="mi-stat"><span class="mi-stat-label">All Time</span><span class="mi-stat-value" id="dash-mi-total">0 mi</span></div>
-            <div class="mi-stat"><span class="mi-stat-label">Trips · Year</span><span class="mi-stat-value" id="dash-mi-trips">0</span></div>
-            <div class="mi-stat mi-stat-wide"><span class="mi-stat-label" id="dash-mi-ded-label">Est. Deduction · Year</span><span class="mi-stat-value" style="color:var(--green)" id="dash-mi-deduction">$0</span></div>
-          </div>
         </div>
         <div class="dash-group" id="dash-grp-rep" data-module-all="invoicing expenses">Recents &amp; Reports</div>
         <div class="two-col" id="dash-card-recents">
@@ -4608,21 +4599,12 @@ const IRS_MILEAGE_RATE = 0.70;
 // and an estimated deduction at the standard rate. Hidden with the Mileage module.
 function renderDashMileage() {
   const trips = cache.trips || [];
-  const now = new Date();
-  const ym = now.toISOString().slice(0,7), yr = now.toISOString().slice(0,4);
-  const sum = arr => arr.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
-  const yearTrips = trips.filter(t => (t.date||'').slice(0,4) === yr);
-  const yearMiles = sum(yearTrips);
-  const fmtMi = n => Math.round(n).toLocaleString() + ' mi';
+  const yr = new Date().toISOString().slice(0,4);
+  const yearMiles = trips.filter(t => (t.date||'').slice(0,4) === yr)
+                         .reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  // Top summary-widget stat
-  set('stat-miles', fmtMi(yearMiles));
-  // Detailed Mileage card
-  set('dash-mi-headline', fmtMi(yearMiles));
-  set('dash-mi-year', fmtMi(yearMiles));
-  set('dash-mi-month', fmtMi(sum(trips.filter(t => (t.date||'').slice(0,7) === ym))));
-  set('dash-mi-total', fmtMi(sum(trips)));
-  set('dash-mi-trips', String(yearTrips.length));
+  // Exact miles (no rounding) — matches the Mileage page.
+  set('stat-miles', yearMiles.toLocaleString(undefined,{maximumFractionDigits:2}) + ' mi');
   set('dash-mi-deduction', fmt(yearMiles * IRS_MILEAGE_RATE));
   set('dash-mi-ded-label', `Est. Deduction · ${Math.round(IRS_MILEAGE_RATE*100)}¢/mi`);
 }
