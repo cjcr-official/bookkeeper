@@ -1,1 +1,1 @@
-{"version":373,"note":"v373: Settings → Appearance — move the 24-hour time toggle below the Accent color picker so the Theme and Accent color settings sit together instead of being split by the time toggle."}
+{"version":374,"note":"v374: Dashboard Tax stat now tracks the selected THEME's signature color (like revenue-green / expenses-red) via new --brand tokens, instead of the accent picker's overridable --accent. So the tax value/badge/icon recolor with the theme even when a custom accent is chosen."}
