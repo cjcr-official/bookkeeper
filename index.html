@@ -368,6 +368,13 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .mod-ico{width:34px;height:34px;flex-shrink:0;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--accent-bg);color:var(--accent);font-size:17px}
 #module-toggles .setting-row{padding:.7rem 0;border-bottom:1px solid var(--border)}
 #module-toggles .setting-row:last-child{border-bottom:none}
+/* Dashboard Mileage card — small stat tiles (revealed when the card expands). */
+.mi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:.6rem;padding:1rem}
+.mi-stat{background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .7rem}
+.mi-stat-wide{grid-column:1/-1}
+.mi-stat-label{display:block;font-size:9.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-bottom:.35rem;white-space:nowrap}
+.mi-stat-value{display:block;font-weight:700;font-size:1.05rem;letter-spacing:-.3px;font-variant-numeric:tabular-nums;line-height:1.1}
+.mi-headline{font-family:'JetBrains Mono',monospace;font-weight:800;font-size:17px;letter-spacing:-.3px;color:var(--accent-text);font-variant-numeric:tabular-nums}
 /* Theme picker: a grid of tappable swatches, each previewing a theme's canvas
    + accent. Active one gets an accent ring + check. */
 .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.7rem;margin-top:.4rem}
@@ -1360,6 +1367,21 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <i class="ti ti-chevron-down dash-chev"></i>
           </div>
           <div id="cat-breakdown"></div>
+        </div>
+        <div class="dash-group" id="dash-grp-mi" data-module="mileage">Mileage</div>
+        <div class="card collapsible collapsed" id="dash-card-mileage" data-module="mileage">
+          <div class="card-header" onclick="toggleDashCard(this)">
+            <h3><i class="ti ti-car" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Mileage</h3>
+            <div class="mi-headline" id="dash-mi-headline">0 mi</div>
+            <i class="ti ti-chevron-down dash-chev"></i>
+          </div>
+          <div class="mi-grid">
+            <div class="mi-stat"><span class="mi-stat-label">This Year</span><span class="mi-stat-value" id="dash-mi-year">0 mi</span></div>
+            <div class="mi-stat"><span class="mi-stat-label">This Month</span><span class="mi-stat-value" id="dash-mi-month">0 mi</span></div>
+            <div class="mi-stat"><span class="mi-stat-label">All Time</span><span class="mi-stat-value" id="dash-mi-total">0 mi</span></div>
+            <div class="mi-stat"><span class="mi-stat-label">Trips · Year</span><span class="mi-stat-value" id="dash-mi-trips">0</span></div>
+            <div class="mi-stat mi-stat-wide"><span class="mi-stat-label" id="dash-mi-ded-label">Est. Deduction · Year</span><span class="mi-stat-value" style="color:var(--green)" id="dash-mi-deduction">$0</span></div>
+          </div>
         </div>
         <div class="dash-group" id="dash-grp-rep" data-module-all="invoicing expenses">Recents &amp; Reports</div>
         <div class="two-col" id="dash-card-recents">
@@ -2848,6 +2870,7 @@ function renderDashboard() {
   drawCashFlow();
   renderSpendMonth();
   renderCategoryBreakdown();
+  renderDashMileage();
 
   const esc = escHtml;
   const ri = document.getElementById('dash-invoices');
@@ -4572,6 +4595,30 @@ document.addEventListener('visibilitychange', () => {
   if (sleep && sleep.style.display !== 'none' && navigator.wakeLock)
     navigator.wakeLock.request('screen').then(l => _sleepLock = l).catch(() => {});
 });
+
+// IRS business standard mileage rate — used for the dashboard deduction estimate.
+// Update once a year when the IRS publishes the new rate (2025 = 70¢/mile).
+const IRS_MILEAGE_RATE = 0.70;
+// Home-page Mileage card: this-year / month / all-time miles, year trip count,
+// and an estimated deduction at the standard rate. Hidden with the Mileage module.
+function renderDashMileage() {
+  if (!document.getElementById('dash-mi-year')) return;
+  const trips = cache.trips || [];
+  const now = new Date();
+  const ym = now.toISOString().slice(0,7), yr = now.toISOString().slice(0,4);
+  const sum = arr => arr.reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+  const yearTrips = trips.filter(t => (t.date||'').slice(0,4) === yr);
+  const yearMiles = sum(yearTrips);
+  const fmtMi = n => Math.round(n).toLocaleString() + ' mi';
+  document.getElementById('dash-mi-headline').textContent = fmtMi(yearMiles);
+  document.getElementById('dash-mi-year').textContent = fmtMi(yearMiles);
+  document.getElementById('dash-mi-month').textContent = fmtMi(sum(trips.filter(t => (t.date||'').slice(0,7) === ym)));
+  document.getElementById('dash-mi-total').textContent = fmtMi(sum(trips));
+  document.getElementById('dash-mi-trips').textContent = yearTrips.length;
+  document.getElementById('dash-mi-deduction').textContent = fmt(yearMiles * IRS_MILEAGE_RATE);
+  const dl = document.getElementById('dash-mi-ded-label');
+  if (dl) dl.textContent = `Est. Deduction · ${Math.round(IRS_MILEAGE_RATE*100)}¢/mi`;
+}
 
 function renderMileage() {
   renderTracker();
