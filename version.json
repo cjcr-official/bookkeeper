@@ -1,1 +1,1 @@
-{"version":382,"note":"v382: Miles (this year) now shows as a total in the top summary widget on Home, next to Revenue/Expenses/Outstanding/Tax — tap it to open the mileage log. Keeps the detailed Mileage card below (month/all-time/trips/estimated deduction). Both hide when the Mileage section is off."}
+{"version":383,"note":"v383: Mileage now uses cyan consistently — the top-widget Miles value matches its cyan icon (was plain black), and the Mileage card headline is cyan too. Brings Miles in line with the other color-matched stats (Revenue green, Expenses red, etc.)."}
