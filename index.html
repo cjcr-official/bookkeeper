@@ -1435,10 +1435,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span><span class="setting-row-title">Theme</span><span class="setting-row-sub">Pick the color palette for the whole app.</span></span>
               <div class="theme-grid" id="theme-grid" role="radiogroup" aria-label="Theme"></div>
             </div>
-            <button class="setting-row" id="timefmt-switch-row" role="switch" aria-checked="false" aria-label="24-hour time" onclick="toggleTimeFormat()">
-              <span><span class="setting-row-title">24-hour time</span><span class="setting-row-sub">Show times as 14:00 instead of 2:00 PM.</span></span>
-              <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
-            </button>
             <div class="setting-row" style="cursor:default;flex-direction:column;align-items:stretch;gap:.7rem">
               <span><span class="setting-row-title">Accent color</span><span class="setting-row-sub">Pick the app's highlight color.</span></span>
               <div class="accent-picker" id="accent-picker" role="radiogroup" aria-label="Accent color">
@@ -1450,6 +1446,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
                 <button class="accent-chip" role="radio" data-accent="graphite" onclick="setAccent('graphite')" aria-label="Graphite"></button>
               </div>
             </div>
+            <button class="setting-row" id="timefmt-switch-row" role="switch" aria-checked="false" aria-label="24-hour time" onclick="toggleTimeFormat()">
+              <span><span class="setting-row-title">24-hour time</span><span class="setting-row-sub">Show times as 14:00 instead of 2:00 PM.</span></span>
+              <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
+            </button>
           </div>
         </div>
         <div class="card settings-section" data-sec="notifications">
