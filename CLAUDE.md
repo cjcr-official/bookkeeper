@@ -292,6 +292,9 @@ alter table profiles add column if not exists invoice_start integer;
 -- cash/check/Zelle/etc.); printed on every invoice above the footer. No payment
 -- processing, no integration, no fees — it's display-only text.
 alter table profiles add column if not exists pay_instructions text;
+-- time_format: how job/calendar times display app-wide — '12' (default, 12-hour
+-- AM/PM) or '24' (24-hour / military). Toggled in Settings → Appearance.
+alter table profiles add column if not exists time_format text default '12';
 
 -- App lock is fully on-device (no DB): localStorage bk-lock-pin (SHA-256 hash),
 -- bk-lock-len, bk-lock-cred (WebAuthn platform credential id for Face ID unlock).

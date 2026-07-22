@@ -1263,6 +1263,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span><span class="setting-row-title">Dark mode</span><span class="setting-row-sub">Switch between light and dark.</span></span>
               <span class="theme-switch" id="theme-switch"><span class="theme-switch-knob"></span></span>
             </button>
+            <button class="setting-row" id="timefmt-switch-row" role="switch" aria-checked="false" aria-label="24-hour time" onclick="toggleTimeFormat()">
+              <span><span class="setting-row-title">24-hour time</span><span class="setting-row-sub">Show times as 14:00 instead of 2:00 PM.</span></span>
+              <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
+            </button>
           </div>
         </div>
         <div class="card settings-section" data-sec="notifications">
@@ -1964,6 +1968,17 @@ function fmt(n) {
 function fmtDate(d) {
   if (!d) return '—';
   return new Date(d+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+}
+// Format a stored 24-hour "HH:MM[:SS]" time string for display, honoring the user's
+// preference (profile.time_format: '24' = military; anything else = 12-hour AM/PM).
+function fmtTime(t) {
+  if (!t) return '';
+  const p = String(t).slice(0,5).split(':');
+  let H = parseInt(p[0], 10); const M = p[1] || '00';
+  if (isNaN(H)) return String(t).slice(0,5);
+  if (profile && profile.time_format === '24') return String(H).padStart(2,'0') + ':' + M;
+  const ap = H < 12 ? 'AM' : 'PM'; let h = H % 12; if (h === 0) h = 12;
+  return h + ':' + M + ' ' + ap;
 }
 function today() { return new Date().toISOString().slice(0,10); }
 function in30() { const d=new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); }
@@ -2970,7 +2985,7 @@ function renderUpcoming() {
     items.push({
       date: j.date,
       type: overdue ? 'Overdue job' : 'Job',
-      label: (j.title||'Job') + (j.time?' · '+j.time.slice(0,5):'') + (cust?' · '+cust:''),
+      label: (j.title||'Job') + (j.time?' · '+fmtTime(j.time):'') + (cust?' · '+cust:''),
       icon: 'ti-briefcase',
       onclick: `editJob('${j.id}')`,
       amount: 0,
@@ -3033,7 +3048,7 @@ function buildNotifications() {
   (cache.jobs||[]).forEach(j => {
     if (j.done || !j.date) return;
     const cust = j.customer_id ? ((cache.customers.find(c=>c.id===j.customer_id)||{}).name||'') : '';
-    const at = j.time ? ' at '+j.time.slice(0,5) : '';
+    const at = j.time ? ' at '+fmtTime(j.time) : '';
     if (j.date < t) {
       out.push({ id:'job-late-'+j.id+'-'+j.date, date:j.date, tone:'red', icon:'ti-briefcase',
         title:'Missed job: '+(j.title||'Job'),
@@ -4516,7 +4531,7 @@ function renderCalendar() {
     const cls = 'cal-cell' + (otherMonth?' other-month':'') + (ds===todayStr?' today':'') + (ds===calSelectedDate?' selected':'');
     const cap = (window.innerWidth<=768) ? 2 : 3;
     const chips = items.slice(0,cap).map(it =>
-      `<div class="cal-cell-job ${it.kind} ${it.done?'done':''}" onclick="event.stopPropagation();${it.onclick}" title="${esc(it.label)}">${it.time?esc(it.time.slice(0,5))+' ':''}${esc(it.label)}</div>`
+      `<div class="cal-cell-job ${it.kind} ${it.done?'done':''}" onclick="event.stopPropagation();${it.onclick}" title="${esc(it.label)}">${it.time?esc(fmtTime(it.time))+' ':''}${esc(it.label)}</div>`
     ).join('');
     const more = items.length>cap ? `<div class="cal-cell-more">+${items.length-cap} more</div>` : '';
     return `<div class="${cls}" onclick="calPickDay('${ds}')"><span class="cal-cell-date">${day}</span>${chips}${more}</div>`;
@@ -4567,7 +4582,7 @@ function renderCalDayList() {
         <i class="ti ${it.kind==='job'?'ti-briefcase':it.kind==='invoice'?'ti-file-invoice':'ti-repeat'}" style="color:var(--accent);font-size:18px;flex-shrink:0"></i>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;${it.done?'text-decoration:line-through;opacity:.55':''}">${esc(it.label)}</div>
-          <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase">${it.time?esc(it.time.slice(0,5))+' · ':''}${it.kind}</div>
+          <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase">${it.time?esc(fmtTime(it.time))+' · ':''}${it.kind}</div>
         </div>
       </div>`).join('');
   }
@@ -7025,6 +7040,7 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
 // Settings page = app-level (appearance + notifications + account).
 function loadSettingsForm() {
   syncThemeUI();
+  syncTimeFormatUI();
   renderPushStatus();
   // Invoice defaults
   document.getElementById('s-inv-due-days').value = (profile.invoice_due_days!=null?profile.invoice_due_days:'');
@@ -7678,6 +7694,24 @@ function syncThemeUI() {
   if (sw) sw.classList.toggle('on', !light);
   const row = document.getElementById('theme-switch-row');
   if (row) row.setAttribute('aria-checked', String(!light));
+}
+// 12-hour (default) vs 24-hour "military" time for job times across the app.
+function syncTimeFormatUI() {
+  const on = !!(profile && profile.time_format === '24');
+  const sw = document.getElementById('timefmt-switch'); if (sw) sw.classList.toggle('on', on);
+  const row = document.getElementById('timefmt-switch-row'); if (row) row.setAttribute('aria-checked', String(on));
+}
+async function toggleTimeFormat() {
+  const to24 = !(profile && profile.time_format === '24');
+  profile.time_format = to24 ? '24' : '12';
+  syncTimeFormatUI();
+  rerenderCurrentView();   // repaint calendar/upcoming times with the new format
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, time_format: profile.time_format });
+  if (error) {
+    if (/column .*time_format/i.test(error.message))
+      showToast("Run: alter table profiles add column if not exists time_format text default '12';", 'error');
+    else showToast(error.message, 'error');
+  }
 }
 function toggleTheme() {
   const html = document.documentElement;
