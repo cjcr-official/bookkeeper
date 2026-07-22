@@ -477,6 +477,7 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .ov-icon.red{background:rgba(220,38,38,.13);color:var(--red)}
 .ov-icon.amber{background:var(--amber-bg);color:var(--amber)}
 .ov-icon.accent{background:var(--brand-bg);color:var(--brand)}
+.ov-icon.cyan{background:var(--cyan-bg);color:var(--cyan)}
 .ov-item-text{min-width:0}
 .ov-item-label{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;gap:5px;white-space:nowrap}
 .ov-item-value{font-size:19px;font-weight:800;letter-spacing:-.6px;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:3px}
@@ -1307,6 +1308,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div class="ov-item" onclick="openTaxModal()" style="cursor:pointer" title="Tap to set up your tax estimate">
               <div class="ov-icon accent"><i class="ti ti-receipt-tax"></i></div>
               <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">…</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--brand)">—</div></div>
+            </div>
+            <div class="ov-item" data-module="mileage" onclick="showPage('mileage',null)" style="cursor:pointer" title="View the mileage log">
+              <div class="ov-icon cyan"><i class="ti ti-car"></i></div>
+              <div class="ov-item-text"><div class="ov-item-label">Miles</div><div class="ov-item-value" id="stat-miles">0 mi</div></div>
             </div>
           </div>
         </div>
@@ -4602,7 +4607,6 @@ const IRS_MILEAGE_RATE = 0.70;
 // Home-page Mileage card: this-year / month / all-time miles, year trip count,
 // and an estimated deduction at the standard rate. Hidden with the Mileage module.
 function renderDashMileage() {
-  if (!document.getElementById('dash-mi-year')) return;
   const trips = cache.trips || [];
   const now = new Date();
   const ym = now.toISOString().slice(0,7), yr = now.toISOString().slice(0,4);
@@ -4610,14 +4614,17 @@ function renderDashMileage() {
   const yearTrips = trips.filter(t => (t.date||'').slice(0,4) === yr);
   const yearMiles = sum(yearTrips);
   const fmtMi = n => Math.round(n).toLocaleString() + ' mi';
-  document.getElementById('dash-mi-headline').textContent = fmtMi(yearMiles);
-  document.getElementById('dash-mi-year').textContent = fmtMi(yearMiles);
-  document.getElementById('dash-mi-month').textContent = fmtMi(sum(trips.filter(t => (t.date||'').slice(0,7) === ym)));
-  document.getElementById('dash-mi-total').textContent = fmtMi(sum(trips));
-  document.getElementById('dash-mi-trips').textContent = yearTrips.length;
-  document.getElementById('dash-mi-deduction').textContent = fmt(yearMiles * IRS_MILEAGE_RATE);
-  const dl = document.getElementById('dash-mi-ded-label');
-  if (dl) dl.textContent = `Est. Deduction · ${Math.round(IRS_MILEAGE_RATE*100)}¢/mi`;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  // Top summary-widget stat
+  set('stat-miles', fmtMi(yearMiles));
+  // Detailed Mileage card
+  set('dash-mi-headline', fmtMi(yearMiles));
+  set('dash-mi-year', fmtMi(yearMiles));
+  set('dash-mi-month', fmtMi(sum(trips.filter(t => (t.date||'').slice(0,7) === ym))));
+  set('dash-mi-total', fmtMi(sum(trips)));
+  set('dash-mi-trips', String(yearTrips.length));
+  set('dash-mi-deduction', fmt(yearMiles * IRS_MILEAGE_RATE));
+  set('dash-mi-ded-label', `Est. Deduction · ${Math.round(IRS_MILEAGE_RATE*100)}¢/mi`);
 }
 
 function renderMileage() {
