@@ -352,6 +352,18 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
    whole UI follows the theme. */
 .accent-chip[data-accent="auto"]{background:conic-gradient(from 90deg,#7b6cff,#3b82f6,#22d3ee,#34d399,#f59e0b,#f472b6,#7b6cff)}
 .accent-chip[data-accent="auto"]::before{content:'';position:absolute;inset:6px;border-radius:50%;background:var(--accent);border:2px solid var(--surface)}
+/* Payment methods editor (Settings → Invoice Defaults → How to pay). A row per
+   method: brand tile + handle field + on/off switch (reuses .theme-switch). */
+.pm-list{display:flex;flex-direction:column;gap:.1rem;margin-top:.35rem}
+.pm-row{display:flex;align-items:center;gap:.7rem;padding:.5rem .3rem;border-radius:var(--radius-sm)}
+.pm-row.pm-off{opacity:.55}
+.pm-ico{width:36px;height:36px;flex-shrink:0;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:15px;font-family:'JetBrains Mono',monospace;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.pm-mid{flex:1;min-width:0}
+.pm-name{font-weight:600;font-size:14px;color:var(--text)}
+.pm-input{width:100%;margin-top:4px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12.5px;padding:.42rem .6rem}
+.pm-input:focus{outline:none;border-color:var(--accent)}
+.pm-hint{font-size:12px;color:var(--text3);margin-top:2px}
+.pm-switch{flex-shrink:0;cursor:pointer;border:none;padding:0;background:none}
 /* Theme picker: a grid of tappable swatches, each previewing a theme's canvas
    + accent. Active one gets an accent ring + check. */
 .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.7rem;margin-top:.4rem}
@@ -1523,7 +1535,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="form-group"><label>Start invoice # at <span style="color:var(--text3);font-weight:400;font-size:11px">(full number, e.g. 2648)</span></label><input id="s-inv-start" type="number" min="1" step="1" placeholder="auto"></div>
             </div>
             <div class="form-group"><label>Default notes / footer <span style="color:var(--text3);font-weight:400;font-size:11px">(prefilled on new invoices)</span></label><textarea id="s-inv-terms" rows="3" placeholder="Thank you for your business!"></textarea></div>
-            <div class="form-group"><label>How to pay <span style="color:var(--text3);font-weight:400;font-size:11px">(prints on every invoice)</span></label><textarea id="s-pay-instructions" rows="3" placeholder="Cash or check to [your business name]&#10;Zelle: (your phone or email)&#10;Venmo: @your-handle (friends & family)"></textarea></div>
+            <div class="form-group">
+              <label>How to pay <span style="color:var(--text3);font-weight:400;font-size:11px">(prints on every invoice)</span></label>
+              <div class="pm-list" id="pay-methods-editor"></div>
+            </div>
+            <div class="form-group"><label>Payment note <span style="color:var(--text3);font-weight:400;font-size:11px">(optional — prints under the methods)</span></label><textarea id="s-pay-instructions" rows="2" placeholder="e.g. No processing fees on any of these — thank you!"></textarea></div>
             <button class="btn btn-primary btn-sm" onclick="saveInvoiceDefaults()"><i class="ti ti-check"></i> Save invoice defaults</button>
           </div>
         </div>
@@ -3987,10 +4003,7 @@ function viewInvoice(id) {
 
     ${inv.notes?`<div style="margin:1rem 0;font-size:12px;color:#444">${esc(inv.notes)}</div>`:''}
 
-    ${(p.pay_instructions||'').trim()?`<div style="margin:1.25rem 0;border:1px solid #e2e2e2;border-radius:6px;overflow:hidden;max-width:340px">
-      <div style="background:#1a1a1a;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:10.5px;padding:.45rem .8rem">How to Pay</div>
-      <div style="padding:.55rem .8rem;font-size:12.5px;color:#333;line-height:1.6">${p.pay_instructions.split('\n').map(l=>l.trim()).filter(l=>l).map(l=>`<div style="padding:.12rem 0">${esc(l)}</div>`).join('')}</div>
-    </div>`:''}
+    ${payHowToHTML(p, bizName)}
 
     <!-- FOOTER -->
     <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid #ddd;font-size:12px;color:#333;line-height:1.7;text-align:center">
@@ -4007,6 +4020,47 @@ function viewInvoice(id) {
 
 // ====== CUSTOMERS ======
 function escHtml(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+// "How to Pay" block for the invoice PDF/print. Renders the structured payment
+// methods (profile.pay_methods) as brand-tiled rows, with the optional payment
+// note (profile.pay_instructions) underneath. Brand glyphs are plain text so
+// they survive html2canvas. Falls back to the legacy free-text blob for users
+// who only ever set the note. Returns '' when there's nothing to show.
+function payHowToHTML(p, bizName) {
+  const esc = escHtml;
+  const note = (p.pay_instructions||'').trim();
+  const rows = [];
+  (Array.isArray(p.pay_methods) ? p.pay_methods : []).forEach(m => {
+    const d = PAY_METHODS.find(x => x.id === m.type); if (!d) return;
+    let val = (m.value||'').trim();
+    if (!val) {
+      if (m.type === 'cash') val = 'Accepted in person';
+      else if (m.type === 'check') val = 'Payable to ' + bizName;
+      else return;   // an app handle left blank → nothing to print
+    }
+    rows.push({ d, val });
+  });
+  const head = `<div style="background:#1a1a1a;color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:.6px;font-size:10.5px;padding:.45rem .8rem">How to Pay</div>`;
+  if (rows.length) {
+    return `<div style="margin:1.25rem 0;border:1px solid #e2e2e2;border-radius:6px;overflow:hidden;max-width:360px">
+      ${head}
+      <div style="padding:.15rem .8rem">
+        ${rows.map(({d,val},i)=>`<div style="display:flex;align-items:center;gap:.55rem;padding:.42rem 0;${i<rows.length-1?'border-bottom:1px solid #f0f0f0':''}">
+          <span style="width:24px;height:24px;flex-shrink:0;border-radius:6px;background:${d.color};color:#fff;font-weight:800;font-size:12px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;justify-content:center;line-height:1">${d.mono}</span>
+          <span style="flex:1;min-width:0"><span style="display:block;font-size:9.5px;font-weight:700;color:#111;text-transform:uppercase;letter-spacing:.4px">${esc(d.name)}</span><span style="display:block;font-family:'JetBrains Mono',monospace;font-size:12px;color:#333;margin-top:1px;word-break:break-word">${esc(val)}</span></span>
+        </div>`).join('')}
+      </div>
+      ${note?`<div style="padding:.5rem .8rem .6rem;font-size:11px;color:#666;border-top:1px solid #ececec">${esc(note)}</div>`:''}
+    </div>`;
+  }
+  if (note) {
+    return `<div style="margin:1.25rem 0;border:1px solid #e2e2e2;border-radius:6px;overflow:hidden;max-width:340px">
+      ${head}
+      <div style="padding:.55rem .8rem;font-size:12.5px;color:#333;line-height:1.6">${note.split('\n').map(l=>l.trim()).filter(l=>l).map(l=>`<div style="padding:.12rem 0">${esc(l)}</div>`).join('')}</div>
+    </div>`;
+  }
+  return '';
+}
 
 function fmtAddress(addr) {
   if (!addr) return '';
@@ -7265,6 +7319,8 @@ function loadSettingsForm() {
   document.getElementById('s-inv-start').value = (profile.invoice_start!=null?profile.invoice_start:'');
   document.getElementById('s-inv-terms').value = profile.terms||'';
   document.getElementById('s-pay-instructions').value = profile.pay_instructions||'';
+  _payMethods = Array.isArray(profile.pay_methods) ? profile.pay_methods.map(m => ({ type:m.type, value:m.value||'' })) : [];
+  renderPayMethods();
   renderSettingsCats();
   renderLockUI();
   renderMfaUI();
@@ -7281,25 +7337,71 @@ function showSettingsSection(name) {
   const m = document.querySelector('.main'); if (m) m.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+// ── Payment methods (Settings → How to pay) ──
+// Catalog of accepted-payment types. `mono` is a plain-text glyph (NOT an icon
+// font) so it renders identically on screen and inside the html2canvas invoice
+// PDF. Order here is the display + print order.
+const PAY_METHODS = [
+  { id:'zelle',   name:'Zelle',    color:'#6d1ed4', mono:'Z', ph:'Phone or email' },
+  { id:'venmo',   name:'Venmo',    color:'#008cff', mono:'V', ph:'@username' },
+  { id:'cashapp', name:'Cash App', color:'#00c244', mono:'$', ph:'$cashtag' },
+  { id:'paypal',  name:'PayPal',   color:'#0070e0', mono:'P', ph:'Email or PayPal.me link' },
+  { id:'cash',    name:'Cash',     color:'#16a34a', mono:'¤', ph:'e.g. accepted in person (optional)' },
+  { id:'check',   name:'Check',    color:'#64748b', mono:'✓', ph:'Payable to… (blank = your business name)' },
+];
+let _payMethods = [];   // working copy while the Settings form is open: [{type,value}]
+function pmGet(type) { return _payMethods.find(m => m.type === type); }
+function renderPayMethods() {
+  const el = document.getElementById('pay-methods-editor'); if (!el) return;
+  el.innerHTML = PAY_METHODS.map(d => {
+    const m = pmGet(d.id), on = !!m;
+    return `<div class="pm-row${on?'':' pm-off'}">
+      <span class="pm-ico" style="background:${d.color}">${d.mono}</span>
+      <div class="pm-mid">
+        <div class="pm-name">${d.name}</div>
+        ${on
+          ? `<input class="pm-input" id="pm-val-${d.id}" value="${escHtml(m.value||'')}" placeholder="${escHtml(d.ph)}" oninput="pmSetVal('${d.id}',this.value)">`
+          : `<div class="pm-hint">${escHtml(d.ph)}</div>`}
+      </div>
+      <button type="button" class="pm-switch theme-switch${on?' on':''}" role="switch" aria-checked="${on}" aria-label="${d.name}" onclick="pmToggle('${d.id}')"><span class="theme-switch-knob"></span></button>
+    </div>`;
+  }).join('');
+}
+function pmToggle(type) {
+  const i = _payMethods.findIndex(m => m.type === type);
+  if (i >= 0) _payMethods.splice(i, 1);
+  else _payMethods.push({ type, value:'' });
+  renderPayMethods();
+  const inp = document.getElementById('pm-val-'+type); if (inp) inp.focus();
+}
+function pmSetVal(type, val) { const m = pmGet(type); if (m) m.value = val; }
+// Collect enabled methods in catalog order (so display order == print order).
+function collectPayMethods() {
+  return PAY_METHODS.filter(d => pmGet(d.id)).map(d => ({ type:d.id, value:(pmGet(d.id).value||'').trim() }));
+}
+
 // ── Invoice defaults (terms/footer, payment window, starting number) ──
 function saveInvoiceDefaults() {
   const days = document.getElementById('s-inv-due-days').value;
   const start = document.getElementById('s-inv-start').value;
+  const methods = collectPayMethods();
   const row = {
     id: currentUser.id,
     terms: document.getElementById('s-inv-terms').value,
     pay_instructions: document.getElementById('s-pay-instructions').value,
+    pay_methods: methods,
     invoice_due_days: days==='' ? null : (parseInt(days,10)||0),
     invoice_start: start==='' ? null : (parseInt(start,10)||null)
   };
   sb.from('profiles').upsert(row).then(({error})=>{
     if (error) {
-      if (/column .*(invoice_due_days|invoice_start|pay_instructions)/i.test(error.message))
-        showToast('Run: alter table profiles add column if not exists invoice_due_days integer; add column if not exists invoice_start integer; add column if not exists pay_instructions text;','error');
+      if (/column .*(invoice_due_days|invoice_start|pay_instructions|pay_methods)/i.test(error.message))
+        showToast("Run: alter table profiles add column if not exists pay_methods jsonb default '[]'::jsonb;",'error');
       else showToast(error.message,'error');
       return;
     }
     profile.terms = row.terms; profile.pay_instructions = row.pay_instructions;
+    profile.pay_methods = methods;
     profile.invoice_due_days = row.invoice_due_days; profile.invoice_start = row.invoice_start;
     showToast('Invoice defaults saved','success');
   });
