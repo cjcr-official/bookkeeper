@@ -236,8 +236,9 @@
    over a theme's built-in accent (equal specificity → source order). Two scopes
    per preset: light-based themes darken --accent-text for contrast on the light
    surface and drop the tint alpha; everything else lightens it for the dark
-   surface. The default (violet) has no [data-accent] — it keeps each theme's
-   own hand-tuned accent tokens, so a theme's signature look is unchanged. */
+   surface. "Match theme" (the default) sets NO [data-accent], so it keeps each
+   theme's own hand-tuned accent tokens and follows the theme; every named preset
+   below (including violet) pins that color across all themes. */
 :root[data-accent]{
   --accent-glow:color-mix(in srgb,var(--accent) 40%,transparent);
   --accent-bg:color-mix(in srgb,var(--accent) 15%,transparent);
@@ -248,6 +249,8 @@
   --accent-bg:color-mix(in srgb,var(--accent) 8%,transparent);
   --accent-text:color-mix(in srgb,var(--accent) 82%,#000);
 }
+[data-accent="violet"]{ --accent:#7b6cff; --accent2:#4f8cff; }
+[data-theme="light"][data-accent="violet"],[data-theme="sepia"][data-accent="violet"]{ --accent:#6d5efc; --accent2:#4f8cff; }
 [data-accent="ocean"]  { --accent:#3b82f6; --accent2:#06b6d4; }
 [data-accent="teal"]   { --accent:#14b8a6; --accent2:#22d3ee; }
 [data-accent="rose"]   { --accent:#ec4899; --accent2:#f472b6; }
@@ -343,6 +346,12 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .accent-chip[data-accent="rose"]    {background:linear-gradient(135deg,#ec4899,#f472b6)}
 .accent-chip[data-accent="sunset"]  {background:linear-gradient(135deg,#f97316,#f59e0b)}
 .accent-chip[data-accent="graphite"]{background:linear-gradient(135deg,#64748b,#94a3b8)}
+/* "Match theme" (auto): a rainbow ring signalling it's automatic, with the live
+   theme accent (var(--accent)) filled in the center so it previews the color the
+   theme currently gives you. No [data-accent] on the root when active, so the
+   whole UI follows the theme. */
+.accent-chip[data-accent="auto"]{background:conic-gradient(from 90deg,#7b6cff,#3b82f6,#22d3ee,#34d399,#f59e0b,#f472b6,#7b6cff)}
+.accent-chip[data-accent="auto"]::before{content:'';position:absolute;inset:6px;border-radius:50%;background:var(--accent);border:2px solid var(--surface)}
 /* Theme picker: a grid of tappable swatches, each previewing a theme's canvas
    + accent. Active one gets an accent ring + check. */
 .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.7rem;margin-top:.4rem}
@@ -1460,8 +1469,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="theme-grid" id="theme-grid" role="radiogroup" aria-label="Theme"></div>
             </div>
             <div class="setting-row" style="cursor:default;flex-direction:column;align-items:stretch;gap:.7rem">
-              <span><span class="setting-row-title">Accent color</span><span class="setting-row-sub">Pick the app's highlight color.</span></span>
+              <span><span class="setting-row-title">Accent color</span><span class="setting-row-sub">Match theme follows your theme; pick a color to lock it.</span></span>
               <div class="accent-picker" id="accent-picker" role="radiogroup" aria-label="Accent color">
+                <button class="accent-chip" role="radio" data-accent="auto" onclick="setAccent('auto')" aria-label="Match theme" title="Match theme"></button>
                 <button class="accent-chip" role="radio" data-accent="violet" onclick="setAccent('violet')" aria-label="Violet"></button>
                 <button class="accent-chip" role="radio" data-accent="ocean" onclick="setAccent('ocean')" aria-label="Ocean"></button>
                 <button class="accent-chip" role="radio" data-accent="teal" onclick="setAccent('teal')" aria-label="Teal"></button>
@@ -7937,24 +7947,24 @@ function syncThemeUI() {
       <span class="theme-swatch-name">${t.name}</span>
     </button>`).join('');
 }
-// Accent color theme (per-device, localStorage bk-accent — same as bk-theme).
-// 'violet' is the built-in default and carries no [data-accent] attribute, so it
-// falls through to the hand-tuned :root tokens; every other preset sets --accent
-// on the root and lets color-mix derive the rest.
-const ACCENTS = ['violet','ocean','teal','rose','sunset','graphite'];
+// Accent color (per-device, localStorage bk-accent). 'auto' is the default and
+// carries NO [data-accent] attribute, so the accent falls through to each theme's
+// own tokens and follows the theme. Every named preset (including 'violet') sets
+// [data-accent] to pin that color across all themes; color-mix derives the rest.
+const ACCENTS = ['auto','violet','ocean','teal','rose','sunset','graphite'];
 function applyAccent(name) {
   const html = document.documentElement;
-  if (!name || name === 'violet') html.removeAttribute('data-accent');
+  if (!name || name === 'auto') html.removeAttribute('data-accent');
   else html.setAttribute('data-accent', name);
 }
 function setAccent(name) {
-  if (!ACCENTS.includes(name)) name = 'violet';
+  if (!ACCENTS.includes(name)) name = 'auto';
   applyAccent(name);
   lsSet('bk-accent', name);
   syncAccentUI();
 }
 function syncAccentUI() {
-  const cur = lsGet('bk-accent') || 'violet';
+  const cur = lsGet('bk-accent') || 'auto';
   document.querySelectorAll('#accent-picker .accent-chip').forEach(c => {
     const on = c.dataset.accent === cur;
     c.classList.toggle('active', on);
@@ -7997,7 +8007,7 @@ function setTheme(id) {
     document.addEventListener('DOMContentLoaded', syncThemeUI);
   }
   const acc = lsGet('bk-accent');
-  if (acc && acc !== 'violet') document.documentElement.setAttribute('data-accent', acc);
+  if (acc && acc !== 'auto') document.documentElement.setAttribute('data-accent', acc);
 })();
 
 // ====== ROLODEX SCROLL (all mobile list cards) ======
