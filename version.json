@@ -1,1 +1,1 @@
-{"version":368,"note":"v368: Expenses search bar now matches the other tabs — icon-in-field input, no label, no card wrapper (dropped the .exp-filter panel); filters stay a clean collapsible grid below."}
+{"version":369,"note":"v369: Expenses summary restacked vertically (label / calmer red total / count on one line) so the number reads as a clean headline instead of a big loud block; Clear is now a subtle 'Clear filters' accent link instead of an awkward floating pill."}
