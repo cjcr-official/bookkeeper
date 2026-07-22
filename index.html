@@ -36,6 +36,12 @@
   --accent-glow:rgba(123,108,255,.40);
   --accent-bg:rgba(123,108,255,.15);
   --accent-text:#c7bfff;
+  /* --brand* mirror the theme's own accent but are NEVER touched by the accent
+     picker override — used by the dashboard Tax stat so it always reflects the
+     chosen THEME (like revenue-green / expenses-red), not a custom accent. */
+  --brand:#7b6cff;
+  --brand-bg:rgba(123,108,255,.15);
+  --brand-text:#c7bfff;
   --glass:rgba(15,17,23,.70);
   --green:#22c55e;
   --green-bg:rgba(34,197,94,.12);
@@ -76,6 +82,9 @@
   --accent-glow:rgba(109,94,252,.22);
   --accent-bg:rgba(109,94,252,.08);
   --accent-text:#5b46e0;
+  --brand:#6d5efc;
+  --brand-bg:rgba(109,94,252,.08);
+  --brand-text:#5b46e0;
   --glass:rgba(255,255,255,.72);
   --green:#15803d;   /* ≥4.5:1 on white at badge size (was #16a34a ≈ 3.3:1) */
   --green-bg:rgba(22,163,74,.1);
@@ -112,6 +121,9 @@
   --accent-glow:rgba(45,212,191,.40);
   --accent-bg:rgba(45,212,191,.15);
   --accent-text:#7ff0e2;
+  --brand:#2dd4bf;
+  --brand-bg:rgba(45,212,191,.15);
+  --brand-text:#7ff0e2;
   --glass:rgba(10,17,32,.72);
 }
 
@@ -131,6 +143,9 @@
   --accent-glow:rgba(52,211,153,.38);
   --accent-bg:rgba(52,211,153,.14);
   --accent-text:#8cf0c8;
+  --brand:#34d399;
+  --brand-bg:rgba(52,211,153,.14);
+  --brand-text:#8cf0c8;
   --glass:rgba(10,21,14,.72);
 }
 
@@ -150,6 +165,9 @@
   --accent-glow:rgba(244,114,182,.40);
   --accent-bg:rgba(244,114,182,.15);
   --accent-text:#ffc4e2;
+  --brand:#f472b6;
+  --brand-bg:rgba(244,114,182,.15);
+  --brand-text:#ffc4e2;
   --glass:rgba(24,11,21,.72);
 }
 
@@ -169,6 +187,9 @@
   --accent-glow:rgba(251,146,60,.40);
   --accent-bg:rgba(251,146,60,.15);
   --accent-text:#ffcf9f;
+  --brand:#fb923c;
+  --brand-bg:rgba(251,146,60,.15);
+  --brand-text:#ffcf9f;
   --glass:rgba(26,15,8,.72);
 }
 
@@ -188,6 +209,9 @@
   --accent-glow:rgba(180,83,9,.20);
   --accent-bg:rgba(180,83,9,.09);
   --accent-text:#8a3f07;
+  --brand:#b45309;
+  --brand-bg:rgba(180,83,9,.09);
+  --brand-text:#8a3f07;
   --glass:rgba(251,246,234,.74);
   --green:#15803d;
   --green-bg:rgba(21,128,61,.1);
@@ -420,11 +444,11 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .ov-icon.green{background:var(--green-bg);color:var(--green)}
 .ov-icon.red{background:rgba(220,38,38,.13);color:var(--red)}
 .ov-icon.amber{background:var(--amber-bg);color:var(--amber)}
-.ov-icon.accent{background:var(--accent-bg);color:var(--accent)}
+.ov-icon.accent{background:var(--brand-bg);color:var(--brand)}
 .ov-item-text{min-width:0}
 .ov-item-label{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;gap:5px;white-space:nowrap}
 .ov-item-value{font-size:19px;font-weight:800;letter-spacing:-.6px;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:3px}
-.ov-badge{font-size:9px;background:var(--accent-bg);color:var(--accent-text);padding:1px 6px;border-radius:var(--radius-pill);font-weight:700;letter-spacing:0}
+.ov-badge{font-size:9px;background:var(--brand-bg);color:var(--brand-text);padding:1px 6px;border-radius:var(--radius-pill);font-weight:700;letter-spacing:0}
 .ov-foot{position:relative;z-index:1;margin-top:1.05rem;font-size:11.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;line-height:1.5}
 @media(max-width:768px){
   .overview{padding:1.1rem 1.15rem;margin-bottom:1rem}
@@ -1250,7 +1274,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             </div>
             <div class="ov-item" onclick="openTaxModal()" style="cursor:pointer" title="Tap to set up your tax estimate">
               <div class="ov-icon accent"><i class="ti ti-receipt-tax"></i></div>
-              <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">…</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--accent)">—</div></div>
+              <div class="ov-item-text"><div class="ov-item-label">Tax <span class="ov-badge" id="tax-rate-badge">…</span></div><div class="ov-item-value" id="tax-setaside" style="color:var(--brand)">—</div></div>
             </div>
           </div>
         </div>
