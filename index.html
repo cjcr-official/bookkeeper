@@ -368,10 +368,9 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .mod-ico{width:34px;height:34px;flex-shrink:0;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--accent-bg);color:var(--accent);font-size:17px}
 #module-toggles .setting-row{padding:.7rem 0;border-bottom:1px solid var(--border)}
 #module-toggles .setting-row:last-child{border-bottom:none}
-/* Dashboard Mileage summary — one compact card: miles this year + est. deduction. */
+/* Dashboard Mileage summary — one compact card: miles logged this year. */
 .mi-summary{display:flex;align-items:center;gap:.9rem;padding:1rem 1.15rem;cursor:pointer}
 .mi-summary .mi-sum-main{flex:1;min-width:0}
-.mi-summary .mi-sum-ded{text-align:right;flex-shrink:0}
 /* Theme picker: a grid of tappable swatches, each previewing a theme's canvas
    + accent. Active one gets an accent ring + check. */
 .theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.7rem;margin-top:.4rem}
@@ -1316,10 +1315,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div class="ov-item-label">Miles · This Year</div>
             <div class="ov-item-value" style="color:var(--cyan)" id="stat-miles">0 mi</div>
           </div>
-          <div class="mi-sum-ded">
-            <div class="ov-item-label" id="dash-mi-ded-label">Est. Deduction</div>
-            <div class="ov-item-value" style="color:var(--green);font-size:1.05rem" id="dash-mi-deduction">$0</div>
-          </div>
+          <i class="ti ti-chevron-right" style="color:var(--text3);font-size:20px;flex-shrink:0"></i>
         </div>
         <div class="dash-group" id="dash-grp-cal">Calendar</div>
         <div class="card collapsible collapsed" id="dash-card-up">
@@ -4592,21 +4588,15 @@ document.addEventListener('visibilitychange', () => {
     navigator.wakeLock.request('screen').then(l => _sleepLock = l).catch(() => {});
 });
 
-// IRS business standard mileage rate — used for the dashboard deduction estimate.
-// Update once a year when the IRS publishes the new rate (2025 = 70¢/mile).
-const IRS_MILEAGE_RATE = 0.70;
-// Home-page Mileage card: this-year / month / all-time miles, year trip count,
-// and an estimated deduction at the standard rate. Hidden with the Mileage module.
+// Home-page Mileage card: total business miles logged this year (exact, no
+// rounding — matches the Mileage page). Hidden with the Mileage module.
 function renderDashMileage() {
-  const trips = cache.trips || [];
+  const el = document.getElementById('stat-miles'); if (!el) return;
   const yr = new Date().toISOString().slice(0,4);
-  const yearMiles = trips.filter(t => (t.date||'').slice(0,4) === yr)
-                         .reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  // Exact miles (no rounding) — matches the Mileage page.
-  set('stat-miles', yearMiles.toLocaleString(undefined,{maximumFractionDigits:2}) + ' mi');
-  set('dash-mi-deduction', fmt(yearMiles * IRS_MILEAGE_RATE));
-  set('dash-mi-ded-label', `Est. Deduction · ${Math.round(IRS_MILEAGE_RATE*100)}¢/mi`);
+  const yearMiles = (cache.trips || [])
+    .filter(t => (t.date||'').slice(0,4) === yr)
+    .reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
+  el.textContent = yearMiles.toLocaleString(undefined,{maximumFractionDigits:2}) + ' mi';
 }
 
 function renderMileage() {
