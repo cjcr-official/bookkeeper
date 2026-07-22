@@ -92,20 +92,134 @@
   --shadow-lg:0 28px 70px rgba(30,38,80,.16);
 }
 
-/* ── ACCENT COLOR THEMES ──
-   Each preset sets only --accent + --accent2; the glow/tint/text tokens are
-   derived from --accent via color-mix (iOS 16.2+), so the whole accent system
-   (buttons, badges, active nav, focus rings…) recolors from two values. Two
-   scopes per preset: dark (default) lightens --accent-text for contrast on the
-   dark surface; light darkens it for contrast on white and drops the tint alpha.
-   The default (violet) has no [data-accent] — it uses the hand-tuned tokens in
-   :root / [data-theme="light"] above, so its look is unchanged. */
+/* ── OCEAN (dark blue/teal) ──
+   Extra themes inherit the dark base (:root) and override only the surfaces,
+   text tones, accent, and glass — green/red/amber/cyan stay from :root so
+   income-green / expense-red never drift. Light-based themes (Sepia) override
+   the full palette like the Light theme does. */
+[data-theme="ocean"]{
+  --bg:#070d17;
+  --bg2:#0a1120;
+  --surface:#101c30;
+  --surface2:#16273f;
+  --border:rgba(120,180,255,.09);
+  --border2:rgba(120,180,255,.16);
+  --text:#e6eefc;
+  --text2:#8ba3c6;
+  --text3:#7f97ba;
+  --accent:#2dd4bf;
+  --accent2:#38bdf8;
+  --accent-glow:rgba(45,212,191,.40);
+  --accent-bg:rgba(45,212,191,.15);
+  --accent-text:#7ff0e2;
+  --glass:rgba(10,17,32,.72);
+}
+
+/* ── FOREST (dark green/emerald) ── */
+[data-theme="forest"]{
+  --bg:#070f0a;
+  --bg2:#0a150e;
+  --surface:#101f16;
+  --surface2:#162b1e;
+  --border:rgba(140,220,170,.09);
+  --border2:rgba(140,220,170,.16);
+  --text:#e8f3ec;
+  --text2:#94af9d;
+  --text3:#88a391;
+  --accent:#34d399;
+  --accent2:#22c55e;
+  --accent-glow:rgba(52,211,153,.38);
+  --accent-bg:rgba(52,211,153,.14);
+  --accent-text:#8cf0c8;
+  --glass:rgba(10,21,14,.72);
+}
+
+/* ── ROSE (dark magenta/violet) ── */
+[data-theme="rose"]{
+  --bg:#120810;
+  --bg2:#180b15;
+  --surface:#22111d;
+  --surface2:#2f1828;
+  --border:rgba(255,150,205,.09);
+  --border2:rgba(255,150,205,.16);
+  --text:#f8eaf2;
+  --text2:#c599b2;
+  --text3:#ba8da7;
+  --accent:#f472b6;
+  --accent2:#c084fc;
+  --accent-glow:rgba(244,114,182,.40);
+  --accent-bg:rgba(244,114,182,.15);
+  --accent-text:#ffc4e2;
+  --glass:rgba(24,11,21,.72);
+}
+
+/* ── SUNSET (dark warm amber/coral) ── */
+[data-theme="sunset"]{
+  --bg:#140b06;
+  --bg2:#1a0f08;
+  --surface:#24160c;
+  --surface2:#321f11;
+  --border:rgba(255,185,125,.09);
+  --border2:rgba(255,185,125,.16);
+  --text:#f8ede3;
+  --text2:#c4aa93;
+  --text3:#b89e87;
+  --accent:#fb923c;
+  --accent2:#f43f5e;
+  --accent-glow:rgba(251,146,60,.40);
+  --accent-bg:rgba(251,146,60,.15);
+  --accent-text:#ffcf9f;
+  --glass:rgba(26,15,8,.72);
+}
+
+/* ── SEPIA (warm light / paper) ── full light-style palette ── */
+[data-theme="sepia"]{
+  --bg:#f2ebdd;
+  --bg2:#ebe1cf;
+  --surface:#fbf6ea;
+  --surface2:#f2ebdd;
+  --border:rgba(90,70,40,.11);
+  --border2:rgba(90,70,40,.18);
+  --text:#2a2013;
+  --text2:#5c503c;
+  --text3:#6e6247;
+  --accent:#b45309;
+  --accent2:#a16207;
+  --accent-glow:rgba(180,83,9,.20);
+  --accent-bg:rgba(180,83,9,.09);
+  --accent-text:#8a3f07;
+  --glass:rgba(251,246,234,.74);
+  --green:#15803d;
+  --green-bg:rgba(21,128,61,.1);
+  --red:#b91c1c;
+  --red-bg:rgba(185,28,28,.1);
+  --amber:#92400e;
+  --amber-bg:rgba(146,64,14,.1);
+  --cyan:#0e7490;
+  --cyan-bg:rgba(14,116,144,.1);
+  --red-border:rgba(185,28,28,.3);
+  --green-border:rgba(21,128,61,.3);
+  --cyan-border:rgba(14,116,144,.3);
+  --shadow:0 10px 30px rgba(80,60,30,.12);
+  --shadow-lg:0 28px 70px rgba(80,60,30,.18);
+}
+
+/* ── ACCENT COLOR OVERRIDE ──
+   Independent of the theme above: each preset sets only --accent + --accent2,
+   and the glow/tint/text tokens are derived via color-mix (iOS 16.2+), so the
+   whole accent system (buttons, badges, active nav, focus rings…) recolors from
+   two values. This block sits AFTER the theme palettes so a chosen accent wins
+   over a theme's built-in accent (equal specificity → source order). Two scopes
+   per preset: light-based themes darken --accent-text for contrast on the light
+   surface and drop the tint alpha; everything else lightens it for the dark
+   surface. The default (violet) has no [data-accent] — it keeps each theme's
+   own hand-tuned accent tokens, so a theme's signature look is unchanged. */
 :root[data-accent]{
   --accent-glow:color-mix(in srgb,var(--accent) 40%,transparent);
   --accent-bg:color-mix(in srgb,var(--accent) 15%,transparent);
   --accent-text:color-mix(in srgb,var(--accent) 45%,#fff);
 }
-[data-theme="light"][data-accent]{
+[data-theme="light"][data-accent],[data-theme="sepia"][data-accent]{
   --accent-glow:color-mix(in srgb,var(--accent) 22%,transparent);
   --accent-bg:color-mix(in srgb,var(--accent) 8%,transparent);
   --accent-text:color-mix(in srgb,var(--accent) 82%,#000);
@@ -120,6 +234,11 @@
 [data-theme="light"][data-accent="rose"]   { --accent:#db2777; --accent2:#ec4899; }
 [data-theme="light"][data-accent="sunset"] { --accent:#ea580c; --accent2:#d97706; }
 [data-theme="light"][data-accent="graphite"]{ --accent:#475569; --accent2:#64748b; }
+[data-theme="sepia"][data-accent="ocean"]  { --accent:#2563eb; --accent2:#0891b2; }
+[data-theme="sepia"][data-accent="teal"]   { --accent:#0d9488; --accent2:#0891b2; }
+[data-theme="sepia"][data-accent="rose"]   { --accent:#db2777; --accent2:#ec4899; }
+[data-theme="sepia"][data-accent="sunset"] { --accent:#ea580c; --accent2:#d97706; }
+[data-theme="sepia"][data-accent="graphite"]{ --accent:#475569; --accent2:#64748b; }
 
 html{height:100%;overflow:hidden}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;height:100%;overflow:hidden;transition:background .2s,color .2s;-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
@@ -200,6 +319,19 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .accent-chip[data-accent="rose"]    {background:linear-gradient(135deg,#ec4899,#f472b6)}
 .accent-chip[data-accent="sunset"]  {background:linear-gradient(135deg,#f97316,#f59e0b)}
 .accent-chip[data-accent="graphite"]{background:linear-gradient(135deg,#64748b,#94a3b8)}
+/* Theme picker: a grid of tappable swatches, each previewing a theme's canvas
+   + accent. Active one gets an accent ring + check. */
+.theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:.7rem;margin-top:.4rem}
+.theme-swatch{position:relative;display:flex;flex-direction:column;gap:.5rem;padding:0;background:none;border:none;cursor:pointer;font-family:inherit;text-align:center;-webkit-tap-highlight-color:transparent}
+.theme-swatch-preview{position:relative;height:58px;border-radius:var(--radius-sm);border:1px solid var(--border2);overflow:hidden;transition:transform .1s ease,box-shadow .2s ease}
+.theme-swatch:active .theme-swatch-preview{transform:scale(.96)}
+.theme-swatch.on .theme-swatch-preview{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.theme-swatch-preview .ts-card{position:absolute;left:9px;right:9px;bottom:9px;height:16px;border-radius:6px}
+.theme-swatch-preview .ts-dot{position:absolute;top:9px;left:9px;width:16px;height:16px;border-radius:50%}
+.theme-swatch-preview .ts-bar{position:absolute;top:13px;left:31px;width:34px;height:6px;border-radius:3px;opacity:.55}
+.theme-swatch.on .theme-swatch-preview .ts-check{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.theme-swatch-name{font-size:11.5px;font-weight:600;color:var(--text2)}
+.theme-swatch.on .theme-swatch-name{color:var(--text)}
 /* Passcode keypad: fire on touch-down (no iOS click delay) with instant tactile feedback. */
 .lock-key{width:72px;height:72px;border-radius:50%;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:24px;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;transition:transform .05s ease,background .05s ease,color .05s ease}
 .lock-key:active{transform:scale(.9);background:var(--accent);border-color:var(--accent);color:#fff}
@@ -793,8 +925,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
    there. Keyed on the pointer being coarse, NOT on screen width, so a mouse
    desktop keeps its compact controls and this also covers phones in landscape
    (>768px wide) and 2-in-1 touch laptops. ── */
-/* ── THEME CROSSFADE — toggling light/dark runs through the View Transitions
-   API (see toggleTheme), so the whole UI — cards, borders, icons, the gradient
+/* ── THEME CROSSFADE — switching themes runs through the View Transitions
+   API (see setTheme), so the whole UI — cards, borders, icons, the gradient
    canvas — crossfades in one compositor pass instead of the body fading while
    everything else snaps. Reduced-motion users skip it (gated in JS too). ── */
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.35s;animation-timing-function:cubic-bezier(.22,1,.36,1)}
@@ -1299,10 +1431,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="card settings-section active" data-sec="appearance">
           <div class="card-header"><h3>Appearance</h3></div>
           <div class="modal-body">
-            <button class="setting-row" id="theme-switch-row" role="switch" aria-label="Dark mode" onclick="toggleTheme()">
-              <span><span class="setting-row-title">Dark mode</span><span class="setting-row-sub">Switch between light and dark.</span></span>
-              <span class="theme-switch" id="theme-switch"><span class="theme-switch-knob"></span></span>
-            </button>
+            <div class="setting-row" style="cursor:default;display:block">
+              <span><span class="setting-row-title">Theme</span><span class="setting-row-sub">Pick the color palette for the whole app.</span></span>
+              <div class="theme-grid" id="theme-grid" role="radiogroup" aria-label="Theme"></div>
+            </div>
             <button class="setting-row" id="timefmt-switch-row" role="switch" aria-checked="false" aria-label="24-hour time" onclick="toggleTimeFormat()">
               <span><span class="setting-row-title">24-hour time</span><span class="setting-row-sub">Show times as 14:00 instead of 2:00 PM.</span></span>
               <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
@@ -7738,14 +7870,48 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ====== THEME ======
-// Reflect the active theme on the Dark-mode switch (Settings page — the only
-// theme control; the old topbar sun/moon button was removed in v265).
+// Theme catalog. `id` is what's stored in localStorage `bk-theme` and set as
+// the <html data-theme> attribute (the default 'dark' uses no attribute, so it
+// falls through to :root). Each entry carries preview swatch colors so the
+// picker renders without reading computed styles. `statusBar` feeds the iOS
+// <meta name="theme-color"> so the notch/status area matches the canvas.
+const THEMES = [
+  { id:'dark',   name:'Midnight', bg:'#0f1117', card:'#1d212c', accent:'#7b6cff', statusBar:'#0f1117' },
+  { id:'light',  name:'Light',    bg:'#f0f1fb', card:'#ffffff', accent:'#6d5efc', statusBar:'#f0f1fb' },
+  { id:'ocean',  name:'Ocean',    bg:'#0a1120', card:'#16273f', accent:'#2dd4bf', statusBar:'#0a1120' },
+  { id:'forest', name:'Forest',   bg:'#0a150e', card:'#162b1e', accent:'#34d399', statusBar:'#0a150e' },
+  { id:'rose',   name:'Rose',     bg:'#180b15', card:'#2f1828', accent:'#f472b6', statusBar:'#180b15' },
+  { id:'sunset', name:'Sunset',   bg:'#1a0f08', card:'#321f11', accent:'#fb923c', statusBar:'#1a0f08' },
+  { id:'sepia',  name:'Sepia',    bg:'#f2ebdd', card:'#fbf6ea', accent:'#b45309', statusBar:'#f2ebdd' },
+];
+function currentTheme() {
+  return document.documentElement.getAttribute('data-theme') || 'dark';
+}
+function applyThemeAttr(id) {
+  const html = document.documentElement;
+  if (id === 'dark') html.removeAttribute('data-theme');
+  else html.setAttribute('data-theme', id);
+  const t = THEMES.find(x => x.id === id);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta && t) meta.setAttribute('content', t.statusBar);
+}
+// Reflect the active theme on the Settings picker (the only theme control; the
+// old topbar sun/moon button was removed in v265).
 function syncThemeUI() {
-  const light = document.documentElement.hasAttribute('data-theme');
-  const sw = document.getElementById('theme-switch');
-  if (sw) sw.classList.toggle('on', !light);
-  const row = document.getElementById('theme-switch-row');
-  if (row) row.setAttribute('aria-checked', String(!light));
+  const grid = document.getElementById('theme-grid');
+  if (!grid) return;
+  const active = currentTheme();
+  grid.innerHTML = THEMES.map(t => `
+    <button class="theme-swatch${t.id === active ? ' on' : ''}" role="radio"
+      aria-checked="${t.id === active}" aria-label="${t.name} theme" onclick="setTheme('${t.id}')">
+      <span class="theme-swatch-preview" style="background:${t.bg}">
+        <span class="ts-dot" style="background:${t.accent}"></span>
+        <span class="ts-bar" style="background:${t.accent}"></span>
+        <span class="ts-card" style="background:${t.card}"></span>
+        <span class="ts-check"><i class="ti ti-check"></i></span>
+      </span>
+      <span class="theme-swatch-name">${t.name}</span>
+    </button>`).join('');
 }
 // Accent color theme (per-device, localStorage bk-accent — same as bk-theme).
 // 'violet' is the built-in default and carries no [data-accent] attribute, so it
@@ -7789,26 +7955,21 @@ async function toggleTimeFormat() {
     else showToast(error.message, 'error');
   }
 }
-function toggleTheme() {
-  const html = document.documentElement;
-  const toLight = !html.hasAttribute('data-theme');   // no attr = currently dark
-  const apply = () => {
-    if (toLight) html.setAttribute('data-theme', 'light');
-    else html.removeAttribute('data-theme');
-    syncThemeUI();
-  };
-  lsSet('bk-theme', toLight ? 'light' : 'dark');
+function setTheme(id) {
+  if (!THEMES.some(t => t.id === id)) id = 'dark';
+  const apply = () => { applyThemeAttr(id); syncThemeUI(); };
+  lsSet('bk-theme', id);
   // One uniform crossfade of the whole UI. Feature-detected; reduced-motion and
   // unsupported browsers get the instant swap.
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   if (document.startViewTransition && !reduce) document.startViewTransition(apply);
   else apply();
 }
-// Apply saved theme on load
+// Apply saved theme on load. Unknown/legacy values fall back to dark.
 (function(){
   const saved = lsGet('bk-theme');
-  if (saved === 'light') {
-    document.documentElement.setAttribute('data-theme','light');
+  if (saved && saved !== 'dark' && THEMES.some(t => t.id === saved)) {
+    applyThemeAttr(saved);
     document.addEventListener('DOMContentLoaded', syncThemeUI);
   }
   const acc = lsGet('bk-accent');
