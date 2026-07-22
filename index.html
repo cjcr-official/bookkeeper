@@ -211,6 +211,19 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .rec-ref>div{padding:.15rem .1rem .75rem}
 .btn-full{width:100%;justify-content:center;padding:.65rem}
 
+/* ── SEGMENTED TOGGLE (Expenses scope) ── */
+.seg{display:flex;gap:4px;padding:4px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-pill);margin-bottom:.7rem}
+.seg button{flex:1;border:none;background:transparent;color:var(--text2);font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:13px;padding:.6rem;border-radius:var(--radius-pill);cursor:pointer;transition:background .18s,color .18s,box-shadow .18s;-webkit-tap-highlight-color:transparent}
+.seg button:active{transform:scale(.98)}
+.seg button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 14px var(--accent-glow)}
+
+/* ── EXPENSES HERO SUMMARY ── */
+.exp-hero{position:relative;overflow:hidden;display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;padding:1.15rem 1.25rem;margin-bottom:.85rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow)}
+.exp-hero::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--red);opacity:.55}
+.exp-hero-label{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-bottom:.4rem}
+.exp-hero-sub{font-size:12px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+.exp-hero-amt{font-weight:800;font-size:1.75rem;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+
 /* ── STAT CARDS ── */
 .stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem}
 .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem 1.25rem;position:relative;overflow:hidden;transition:transform .15s,box-shadow .15s}
@@ -1188,11 +1201,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
       <!-- EXPENSES -->
       <div id="page-expenses" class="page">
-        <div style="display:flex;gap:.4rem;margin-bottom:.6rem">
-          <button type="button" id="exp-scope-year" class="btn btn-sm" onclick="setExpScope('year')" style="flex:1">This year</button>
-          <button type="button" id="exp-scope-all" class="btn btn-sm" onclick="setExpScope('all')" style="flex:1">All time</button>
+        <div class="seg">
+          <button type="button" id="exp-scope-year" onclick="setExpScope('year')">This year</button>
+          <button type="button" id="exp-scope-all" onclick="setExpScope('all')">All time</button>
         </div>
-        <div id="exp-summary" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.85rem 1rem;margin-bottom:.75rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)"></div>
+        <div id="exp-summary" class="exp-hero"></div>
         <div style="margin-bottom:.75rem">
           <div class="form-group" style="margin:0"><label>Search</label><input id="exp-search" type="text" placeholder="vendor, note, category…" oninput="renderExpenses()"></div>
           <details style="margin-top:.45rem">
@@ -4609,15 +4622,15 @@ function renderExpenses() {
   // active button, and label the summary with the scope in effect.
   const scope = lsGet('bk-exp-scope','year');
   const yb = document.getElementById('exp-scope-year'), ab = document.getElementById('exp-scope-all');
-  if (yb) yb.className = 'btn btn-sm' + (scope==='year' ? ' btn-primary' : '');
-  if (ab) ab.className = 'btn btn-sm' + (scope==='all' ? ' btn-primary' : '');
+  if (yb) yb.classList.toggle('on', scope==='year');
+  if (ab) ab.classList.toggle('on', scope==='all');
   const fromV = document.getElementById('exp-from')?.value || '', toV = document.getElementById('exp-to')?.value || '';
   const scopeLabel = (fromV || toV) ? 'Filtered' : (scope==='year' ? String(new Date().getFullYear()) : 'All time');
   // Top summary bar (reflects the current scope/filters): count + total spent, with
   // a reimbursed note. Set in every branch so it clears on empty/no-match states.
   const setExpSummary = (n, tot, reimb) => {
     const s = document.getElementById('exp-summary'); if (!s) return;
-    s.innerHTML = `<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);font-family:'JetBrains Mono',monospace">Total spent · ${scopeLabel}</div><div style="font-size:12px;color:var(--text3)">${n} expense${n===1?'':'s'}${reimb>0?` · excl. ${fmt(reimb)} reimbursed`:''}</div></div><div class="red" style="font-weight:800;font-size:1.35rem;font-family:'JetBrains Mono',monospace">${fmt(tot)}</div>`;
+    s.innerHTML = `<div><div class="exp-hero-label">Total spent · ${scopeLabel}</div><div class="exp-hero-sub">${n} expense${n===1?'':'s'}${reimb>0?` · excl. ${fmt(reimb)} reimbursed`:''}</div></div><div class="exp-hero-amt red">${fmt(tot)}</div>`;
   };
   if (!cache.expenses.length) { setExpSummary(0,0,0); el.innerHTML = `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`; return; }
   const list = getFilteredExpenses();

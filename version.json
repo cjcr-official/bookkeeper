@@ -1,1 +1,1 @@
-{"version":364,"note":"v364: Polish — semantic border tokens (theme-correct red/green/cyan hairlines, replaces 8 hard-coded literals); removed the redundant side-stripe on the printed invoice How-to-Pay block."}
+{"version":365,"note":"v365: Expenses top section restyled — This year/All time is now a segmented pill control, and the Total Spent summary is a hero card with an accent hairline and larger tabular figure."}
