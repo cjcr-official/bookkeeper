@@ -7,7 +7,7 @@
 <script>
   // Match the app's chosen theme (localStorage bk-theme; default dark). Runs
   // before paint to avoid a flash of the wrong theme.
-  try { if (localStorage.getItem('bk-theme') === 'light') document.documentElement.setAttribute('data-theme','light'); } catch(e) {}
+  try { var _t = localStorage.getItem('bk-theme'); if (_t === 'light' || _t === 'sepia') document.documentElement.setAttribute('data-theme','light'); } catch(e) {}
 </script>
 <style>
   *{ box-sizing:border-box; }
