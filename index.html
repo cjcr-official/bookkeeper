@@ -1209,11 +1209,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <div class="form-group" style="margin:0"><label>Search</label><input id="exp-search" type="text" placeholder="vendor, note, category…" oninput="renderExpenses()"></div>
           <details style="margin-top:.55rem">
             <summary style="font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;user-select:none;padding:.2rem 0"><i class="ti ti-filter" style="font-size:13px;vertical-align:-2px"></i> Filters — category &amp; dates</summary>
-            <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:end;margin-top:.5rem">
-              <div class="form-group" style="margin:0;flex:1;min-width:140px"><label>Category</label><select id="exp-cat-filter" onchange="renderExpenses()"><option value="">All</option></select></div>
-              <div class="form-group" style="margin:0;flex:1;min-width:130px"><label>From</label><input id="exp-from" type="date" onchange="renderExpenses()"></div>
-              <div class="form-group" style="margin:0;flex:1;min-width:130px"><label>To</label><input id="exp-to" type="date" onchange="renderExpenses()"></div>
-              <button class="btn btn-sm" onclick="clearExpFilters()" style="height:38px">Clear</button>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem .6rem;margin-top:.5rem">
+              <div class="form-group" style="margin:0;grid-column:1/-1"><label>Category</label><select id="exp-cat-filter" onchange="renderExpenses()"><option value="">All</option></select></div>
+              <div class="form-group" style="margin:0"><label>From</label><input id="exp-from" type="date" onchange="renderExpenses()"></div>
+              <div class="form-group" style="margin:0"><label>To</label><input id="exp-to" type="date" onchange="renderExpenses()"></div>
+              <button class="btn btn-sm" onclick="clearExpFilters()" style="grid-column:1/-1;justify-self:end;margin-top:.15rem">Clear</button>
             </div>
           </details>
         </div>
