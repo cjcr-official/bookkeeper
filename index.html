@@ -1260,7 +1260,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="nav-item nav-primary" role="button" tabindex="0" data-page="invoices" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i><span>Invoices</span></div>
     <div class="nav-item nav-primary" role="button" tabindex="0" data-page="customers" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
     <div class="nav-item nav-primary" role="button" tabindex="0" data-page="expenses" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
-    <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="accounts" onclick="showPage('accounts',this)"><i class="ti ti-file-dollar"></i><span>Statements</span></div>
+    <div class="nav-item nav-primary" role="button" tabindex="0" data-page="accounts" onclick="showPage('accounts',this)"><i class="ti ti-file-dollar"></i><span>Statements</span></div>
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="mileage" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="time" onclick="showPage('time',this)"><i class="ti ti-clock"></i><span>Time</span></div>
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="budget" onclick="showPage('budget',this)"><i class="ti ti-pig-money"></i><span>Budget</span></div>
@@ -2758,7 +2758,6 @@ const MODULES = [
 // them). Order here = order in the More sheet. Kept in sync with the .nav-overflow
 // tabs in the sidebar markup.
 const MORE_PAGES = [
-  { page:'accounts', label:'Statements',  icon:'ti-file-dollar' },
   { page:'mileage',  label:'Mileage',     icon:'ti-car' },
   { page:'time',     label:'Time Clock',  icon:'ti-clock' },
   { page:'budget',   label:'Budget',      icon:'ti-pig-money' },
