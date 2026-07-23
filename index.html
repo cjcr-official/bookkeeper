@@ -619,6 +619,7 @@ textarea{resize:vertical;min-height:70px}
 .cal-cell-job.done{opacity:.4;text-decoration:line-through}
 .cal-cell-job.invoice{background:var(--amber-bg);color:var(--amber)}
 .cal-cell-job.recurring{background:var(--cyan-bg);color:var(--cyan)}
+.cal-cell-job.bill{background:var(--red-bg);color:var(--red)}
 .cal-cell-more{font-size:9px;color:var(--text3);padding:0 2px}
 @media(max-width:768px){
   .cal-cell{min-height:54px;padding:.25rem;font-size:11px}
@@ -2119,6 +2120,22 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <button class="btn btn-danger" id="bill-delete-btn" onclick="withBusy(this,deleteBill)" style="margin-right:auto;display:none"><i class="ti ti-trash"></i> Delete</button>
       <button class="btn" onclick="closeModal('modal-bill')">Cancel</button>
       <button class="btn btn-primary" onclick="withBusy(this,saveBill)"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- PAYCHECK AMOUNT MODAL (Budget) -->
+<div class="modal-overlay" id="modal-paycheck">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header"><h2 id="paycheck-modal-title">Paycheck</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-paycheck')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Amount you were paid</label><input id="paycheck-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updatePaycheckLeft()" style="text-align:right"></div>
+      <div id="paycheck-left" style="font-size:12.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:right;min-height:1em"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="paycheck-clear-btn" onclick="withBusy(this,clearPaycheckAmount)" style="margin-right:auto;display:none"><i class="ti ti-x"></i> Clear</button>
+      <button class="btn" onclick="closeModal('modal-paycheck')">Cancel</button>
+      <button class="btn btn-primary" onclick="withBusy(this,savePaycheckFromModal)"><i class="ti ti-check"></i> Save</button>
     </div>
   </div>
 </div>
@@ -5330,6 +5347,33 @@ async function savePayScheduleObj(sched, label){
     if (error && !/pay_schedule|reimburse_label/i.test(error.message||'')) showToast(error.message,'error'); }
 }
 
+// ── Actual paycheck amounts (what you were really paid), keyed by payday date ──
+function ymd(d){ const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function paycheckAmounts(){ return (profile && profile.paycheck_amounts) || {}; }
+function getPaycheckAmount(dateKey){ const v=paycheckAmounts()[dateKey]; return v==null?null:parseFloat(v); }
+async function savePaycheckAmount(dateKey, amount){
+  const map={...paycheckAmounts()};
+  if (amount==null || isNaN(amount)) delete map[dateKey]; else map[dateKey]=amount;
+  profile.paycheck_amounts=map;
+  if (currentUser){ const {error}=await sb.from('profiles').upsert({id:currentUser.id, paycheck_amounts:map});
+    if (error && !/paycheck_amounts/i.test(error.message||'')) showToast(error.message,'error'); }
+}
+
+// ── Per-month "bill paid" flags, keyed {YYYY-MM: {billId: true}} ──
+function budMonthKey(y,m){ return `${y}-${String(m+1).padStart(2,'0')}`; }
+function billPaidMap(){ return (profile && profile.bill_paid) || {}; }
+function isBillPaid(billId,y,m){ const mm=billPaidMap()[budMonthKey(y,m)]; return !!(mm && mm[billId]); }
+async function toggleBillPaid(billId,y,m){
+  const map=JSON.parse(JSON.stringify(billPaidMap())), k=budMonthKey(y,m);
+  map[k]=map[k]||{};
+  if (map[k][billId]) delete map[k][billId]; else map[k][billId]=true;
+  if (!Object.keys(map[k]).length) delete map[k];
+  profile.bill_paid=map;
+  renderBudget();
+  if (currentUser){ const {error}=await sb.from('profiles').upsert({id:currentUser.id, bill_paid:map});
+    if (error && !/bill_paid/i.test(error.message||'')) showToast(error.message,'error'); }
+}
+
 // A date at noon (avoids TZ/DST edge cases), day-of-month clamped to the month.
 function budDateAt(y,m,day){ const last=new Date(y,m+1,0).getDate(); return new Date(y,m,Math.min(Math.max(1,day),last),12); }
 
@@ -5448,11 +5492,21 @@ function renderBudget(){
       const need = list.reduce((s,b)=>s+amt(b),0);
       const rows = list.length ? list.map(billRow).join('')
         : `<div style="color:var(--text3);font-size:12px;padding:.5rem .1rem">Nothing due to this paycheck.</div>`;
+      const dateKey = ymd(pd);
+      const got = getPaycheckAmount(dateKey);
+      const left = got!=null ? got - need : null;
+      // Tappable bar: enter what you were actually paid → shows what's left after this check's bills.
+      const payBar = `<button onclick="openPaycheckModal('${dateKey}','${payFmt(pd).replace(/'/g,'')}',${need})" style="width:100%;font-family:inherit;color:inherit;text-align:left;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.5rem .7rem;margin-bottom:.6rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+        ${got!=null
+          ? `<span style="font-size:12px;color:var(--text3);font-family:'JetBrains Mono',monospace">Paid ${fmt(got)}</span><span style="font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;color:${left>=0?'var(--green)':'var(--red)'}">${fmt(left)} left</span>`
+          : `<span style="font-size:12px;color:var(--accent-text);font-weight:600"><i class="ti ti-plus"></i> Enter what you were paid</span><span style="font-size:16px;color:var(--text3)">›</span>`}
+      </button>`;
       return `<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.5rem;padding-bottom:.55rem;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.6rem;padding-bottom:.55rem;border-bottom:1px solid var(--border)">
           <div><div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--accent-text)">Paycheck ${i+1}${paydays.length>2&&i===paydays.length-1?' · extra':''}</div><div style="font-weight:700;font-size:15px">${payFmt(pd)}</div></div>
           <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px">${fmt(need)}</div><div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">to pay</div></div>
         </div>
+        ${payBar}
         ${rows}
       </div>`;
     }).join('');
@@ -5467,15 +5521,20 @@ function renderBudget(){
   host.innerHTML = nav + hero + sections;
 }
 
-// One bill line inside a paycheck card. Tapping it opens the editor.
+// One bill line inside a paycheck card. The left circle toggles paid (per month);
+// tapping the rest opens the editor.
 function billRow(b){
   const amt=parseFloat(b.amount||0), r=parseFloat(b.reimbursed||0), net=Math.max(0,amt-r);
-  return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .1rem;cursor:pointer" onclick="openBillModal('${b.id}')">
-    <div style="flex:1;min-width:0">
-      <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(b.name||'Bill')}</div>
+  const y=budgetCursor.getFullYear(), m=budgetCursor.getMonth();
+  const paid=isBillPaid(b.id,y,m);
+  const dim = paid ? ';opacity:.5' : '';
+  return `<div style="display:flex;align-items:center;gap:.65rem;padding:.55rem .1rem">
+    <button onclick="event.stopPropagation();toggleBillPaid('${b.id}',${y},${m})" aria-label="${paid?'Mark unpaid':'Mark paid'}" title="${paid?'Paid — tap to undo':'Mark paid'}" style="flex-shrink:0;width:24px;height:24px;border-radius:50%;border:1.5px solid ${paid?'var(--green)':'var(--border2)'};background:${paid?'var(--green)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">${paid?'<i class="ti ti-check" style="font-size:14px"></i>':''}</button>
+    <div style="flex:1;min-width:0;cursor:pointer${dim}" onclick="openBillModal('${b.id}')">
+      <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis${paid?';text-decoration:line-through':''}">${escHtml(b.name||'Bill')}</div>
       <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${b.due?('due '+ordinal(b.due)):'no due date'}${b.notes?' · '+escHtml(b.notes):''}</div>
     </div>
-    <div style="text-align:right;flex-shrink:0">
+    <div style="text-align:right;flex-shrink:0;cursor:pointer${dim}" onclick="openBillModal('${b.id}')">
       <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px">${fmt(amt)}</div>
       ${r?`<div style="font-size:10px;color:var(--green);font-family:'JetBrains Mono',monospace">${fmt(r)} back · you ${fmt(net)}</div>`:''}
     </div>
@@ -5577,6 +5636,34 @@ async function deleteBill(){
   showToast('Deleted'); closeModal('modal-bill'); renderBudget();
 }
 
+// ── Paycheck amount modal (enter what you were actually paid) ──
+let _payEditKey=null, _payEditNeed=0;
+function openPaycheckModal(dateKey, label, need){
+  _payEditKey=dateKey; _payEditNeed=parseFloat(need)||0;
+  document.getElementById('paycheck-modal-title').textContent = 'Paycheck · ' + label;
+  const cur = paycheckAmounts()[dateKey];
+  document.getElementById('paycheck-amount').value = (cur!=null ? cur : '');
+  document.getElementById('paycheck-clear-btn').style.display = (cur!=null) ? '' : 'none';
+  updatePaycheckLeft();
+  openModal('modal-paycheck');
+}
+function updatePaycheckLeft(){
+  const el=document.getElementById('paycheck-left'); if(!el) return;
+  const a=parseFloat(document.getElementById('paycheck-amount').value);
+  if (isNaN(a)){ el.innerHTML = `Bills on this check: <b>${fmt(_payEditNeed)}</b>`; return; }
+  const left=a-_payEditNeed;
+  el.innerHTML = `Bills on this check: ${fmt(_payEditNeed)} · <b style="color:${left>=0?'var(--green)':'var(--red)'}">${fmt(left)} left</b>`;
+}
+async function savePaycheckFromModal(){
+  const raw=document.getElementById('paycheck-amount').value;
+  await savePaycheckAmount(_payEditKey, raw==='' ? null : parseFloat(raw));
+  closeModal('modal-paycheck'); renderBudget();
+}
+async function clearPaycheckAmount(){
+  await savePaycheckAmount(_payEditKey, null);
+  closeModal('modal-paycheck'); renderBudget();
+}
+
 // ====== CALENDAR (month grid view of jobs + invoice due dates + recurring runs) ======
 let calCursor = (() => { const d = new Date(); d.setDate(1); return d; })();
 let calSelectedDate = null;
@@ -5601,6 +5688,16 @@ function calItemsByDate() {
     const label = r.label || ((r.data||{}).vendor) || ((cache.customers.find(c=>c.id===((r.data||{}).customer_id))||{}).name) || 'Recurring';
     (out[r.next_date] = out[r.next_date] || []).push({ kind:'recurring', id:r.id, label, time:'', done:false, onclick:`openRecurringManager('${r.kind}')` });
   });
+  // Budget bills recur monthly → place each on its due day in the calendar's shown
+  // month, marked done when it's been paid that month. Tapping opens the Budget page.
+  if (!isModuleHidden('budget')){
+    const bcy=calCursor.getFullYear(), bcm=calCursor.getMonth();
+    getBills().forEach(b => {
+      if (b.due==null || b.due==='') return;
+      const ds = ymd(budDateAt(bcy,bcm,parseInt(b.due)||1));
+      (out[ds] = out[ds] || []).push({ kind:'bill', id:b.id, label:(b.name||'Bill'), time:'', done:isBillPaid(b.id,bcy,bcm), onclick:`showPage('budget',null)` });
+    });
+  }
   return out;
 }
 
@@ -5673,10 +5770,10 @@ function renderCalDayList() {
   } else {
     body = items.map(it => `
       <div onclick="${it.onclick}" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .25rem;border-bottom:1px solid var(--border);cursor:pointer">
-        <i class="ti ${it.kind==='job'?'ti-calendar-event':it.kind==='invoice'?'ti-file-invoice':'ti-repeat'}" style="color:var(--accent);font-size:18px;flex-shrink:0"></i>
+        <i class="ti ${it.kind==='job'?'ti-calendar-event':it.kind==='invoice'?'ti-file-invoice':it.kind==='bill'?'ti-cash':'ti-repeat'}" style="color:${it.kind==='bill'?'var(--red)':'var(--accent)'};font-size:18px;flex-shrink:0"></i>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;${it.done?'text-decoration:line-through;opacity:.55':''}">${esc(it.label)}</div>
-          <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase">${it.time?esc(fmtTime(it.time))+' · ':''}${it.kind==='job'?'event':it.kind}</div>
+          <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase">${it.time?esc(fmtTime(it.time))+' · ':''}${it.kind==='job'?'event':it.kind==='bill'?(it.done?'bill · paid':'bill due'):it.kind}</div>
         </div>
       </div>`).join('');
   }

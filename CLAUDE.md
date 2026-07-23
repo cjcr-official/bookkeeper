@@ -417,9 +417,17 @@ alter table profiles add column if not exists hourly_rate numeric;
 --                    "Reimbursed". Bills saved by rewriting the whole array + upsert
 --                    (same pattern as expense_categories), so the app works before the
 --                    migration runs (getBills() → []).
+--   paycheck_amounts  {"YYYY-MM-DD": amount} — what you were ACTUALLY paid on that
+--                     payday (keyed by the payday date). Drives the "$X left" after a
+--                     paycheck's bills on the Budget page.
+--   bill_paid         {"YYYY-MM": {billId: true}} — per-month paid flags (a bill
+--                     recurs monthly, so "paid" is per occurrence). Green check +
+--                     strikethrough on the row; also marks the calendar chip done.
 alter table profiles add column if not exists pay_schedule jsonb;
 alter table profiles add column if not exists budget_bills jsonb;
 alter table profiles add column if not exists reimburse_label text;
+alter table profiles add column if not exists paycheck_amounts jsonb;
+alter table profiles add column if not exists bill_paid jsonb;
 
 -- Storage: private buckets "receipts" and "statements" + RLS policies scoped to
 -- (storage.foldername(name))[1] = auth.uid()::text  (select/insert/delete).
