@@ -4937,7 +4937,6 @@ function fmtDur(hrs) {                      // H:MM:SS running clock
   const s = Math.max(0, Math.round(hrs * 3600));
   return Math.floor(s/3600) + ':' + String(Math.floor((s%3600)/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
 }
-function fmtHrs(hrs) { return (Math.round(hrs*100)/100).toFixed(2); }
 function fmtClockTime(iso) {                // reuse the app's 12/24h preference
   const d = new Date(iso);
   return fmtTime(String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'));
@@ -5010,7 +5009,7 @@ async function clockOut() {
   const r = await sb.from('time_entries').update({ clock_out: out }).eq('id', act.id);
   if (r.error) { showToast(r.error.message,'error'); return; }
   act.clock_out = out;
-  showToast('Clocked out · ' + fmtHrs(hoursBetween(act.clock_in, out)) + ' hrs','success');
+  showToast('Clocked out · ' + fmtDur(hoursBetween(act.clock_in, out)),'success');
   renderTime();
 }
 
@@ -5062,16 +5061,17 @@ function renderTimeList() {
         <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.label||'Time entry')}</div>
         <div style="font-size:12px;color:var(--text3);font-family:'JetBrains Mono',monospace">${fmtDayShort(t.clock_in)} · ${fmtClockTime(t.clock_in)}–${fmtClockTime(t.clock_out)}</div>
       </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px">${fmtHrs(hrs)}<span style="font-size:10px;color:var(--text3)"> hrs</span></div>
+      <div style="text-align:right;flex-shrink:0;cursor:pointer" onclick="editTimeEntry('${t.id}')">
+        <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;font-variant-numeric:tabular-nums">${fmtDur(hrs)}</div>
         ${rate ? `<div style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace">${fmt(hrs*rate)}</div>` : ''}
       </div>
+      <button class="btn btn-sm btn-danger" aria-label="Delete entry" title="Delete entry" onclick="deleteTimeRow('${t.id}',event)" style="flex-shrink:0;padding:.3rem .45rem"><i class="ti ti-trash"></i></button>
     </div>`;
   }).join('');
   wrap.innerHTML = `
     <div class="card" style="display:flex;justify-content:space-between;padding:.6rem .85rem;margin-bottom:.6rem;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3)">
       <span>${rows.length} ${rows.length===1?'entry':'entries'}</span>
-      <span>${fmtHrs(totalHrs)} hrs${totalAmt ? ' · ' + fmt(totalAmt) : ''}</span>
+      <span>${fmtDur(totalHrs)}${totalAmt ? ' · ' + fmt(totalAmt) : ''}</span>
     </div>
     ${cards}
     ${canBill ? `<div id="time-sel-bar" style="display:none;position:sticky;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 8px);z-index:5"></div>` : ''}`;
@@ -5089,7 +5089,7 @@ function updateTimeSelBar() {
   const amt = sel.reduce((s,t) => s + hoursBetween(t.clock_in, t.clock_out) * entryRate(t), 0);
   bar.style.display = '';
   bar.innerHTML = `<div class="card" style="display:flex;align-items:center;gap:.6rem;justify-content:space-between;padding:.6rem .85rem;margin:0;box-shadow:var(--shadow);border-color:var(--accent-bg)">
-    <div style="font-size:13px"><b>${ids.length}</b> selected · <span style="font-family:'JetBrains Mono',monospace">${fmtHrs(hrs)} hrs</span>${amt ? ` · <span style="font-family:'JetBrains Mono',monospace">${fmt(amt)}</span>` : ''}</div>
+    <div style="font-size:13px"><b>${ids.length}</b> selected · <span style="font-family:'JetBrains Mono',monospace">${fmtDur(hrs)}</span>${amt ? ` · <span style="font-family:'JetBrains Mono',monospace">${fmt(amt)}</span>` : ''}</div>
     <button class="btn btn-primary btn-sm" onclick="invoiceFromTime()"><i class="ti ti-file-invoice"></i> Create invoice</button>
   </div>`;
 }
@@ -5131,7 +5131,7 @@ function updateTimeEntrySummary() {
   if (!inV || !outV) { el.textContent = ''; return; }
   const hrs = hoursBetween(fromLocalInput(inV), fromLocalInput(outV));
   const rateV = parseFloat(document.getElementById('time-e-rate').value), rate = isNaN(rateV) ? 0 : rateV;
-  el.textContent = fmtHrs(hrs) + ' hrs' + (rate ? ' · ' + fmt(hrs * rate) : '');
+  el.textContent = fmtDur(hrs) + (rate ? ' · ' + fmt(hrs * rate) : '');
 }
 
 async function saveTimeEntry() {
@@ -5154,14 +5154,23 @@ async function saveTimeEntry() {
   showToast('Saved','success'); closeModal('modal-time'); renderTime();
 }
 
-async function deleteTimeEntry() {
-  const id = document.getElementById('time-entry-id').value;
-  if (!id) return;
-  if (!confirm('Delete this time entry?')) return;
+// Core delete used by both the modal Delete button and the per-row trash button.
+async function removeTimeEntry(id) {
+  if (!id) return false;
   const r = await sb.from('time_entries').delete().eq('id', id);
-  if (r.error) { showToast(r.error.message,'error'); return; }
+  if (r.error) { showToast(r.error.message,'error'); return false; }
   cache.time_entries = (cache.time_entries||[]).filter(t => t.id !== id);
-  showToast('Deleted'); closeModal('modal-time'); renderTime();
+  return true;
+}
+async function deleteTimeEntry() {            // from the edit modal
+  const id = document.getElementById('time-entry-id').value;
+  if (!id || !confirm('Delete this time entry?')) return;
+  if (await removeTimeEntry(id)) { showToast('Deleted'); closeModal('modal-time'); renderTime(); }
+}
+async function deleteTimeRow(id, ev) {        // from a list-row trash button
+  if (ev) ev.stopPropagation();               // don't also open the editor
+  if (!confirm('Delete this time entry?')) return;
+  if (await removeTimeEntry(id)) { showToast('Deleted'); renderTime(); }
 }
 
 // ====== CALENDAR (month grid view of jobs + invoice due dates + recurring runs) ======
