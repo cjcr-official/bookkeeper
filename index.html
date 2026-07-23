@@ -1668,14 +1668,19 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <!-- Standalone punch clock: Clock In stores a start timestamp, Clock Out the
              end; duration is derived, so it's correct even if the phone slept between
              punches (nothing runs in the background). Tracked hours can be billed onto
-             a new invoice at an hourly rate. -->
-        <div class="card" id="time-punch" style="margin-bottom:1rem"></div>
-        <div class="card">
-          <div class="card-header"><h3>Time Log</h3></div>
-          <div style="display:flex;gap:.6rem;align-items:flex-end;flex-wrap:wrap;padding:.75rem 1rem">
-            <div style="flex:1;min-width:100px"><label style="display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.25rem">Hourly rate</label><input type="number" id="time-rate" min="0" step="0.01" inputmode="decimal" placeholder="0.00" onchange="saveHourlyRate()" style="width:100%;padding:.4rem .5rem;font-size:12px;text-align:right"></div>
-            <div style="flex:1;min-width:100px"><label style="display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.25rem">From</label><input type="date" id="time-from" onchange="renderTimeList()" style="width:100%;padding:.4rem .5rem;font-size:12px"></div>
-            <div style="flex:1;min-width:100px"><label style="display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.25rem">To</label><input type="date" id="time-to" onchange="renderTimeList()" style="width:100%;padding:.4rem .5rem;font-size:12px"></div>
+             a new invoice at an hourly rate. renderTimePunch() sets this container's
+             class — no card frame when idle, a card when the timer is running. -->
+        <div id="time-punch" style="margin-bottom:1.1rem"></div>
+        <div class="card" style="padding:.85rem 1rem;margin-bottom:1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem">
+            <div style="min-width:0">
+              <div style="font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;font-family:'JetBrains Mono',monospace">Hourly rate</div>
+              <div style="font-size:12px;color:var(--text3);margin-top:2px">Used when billing tracked time</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:.35rem;flex-shrink:0">
+              <span style="font-size:17px;color:var(--text3);font-family:'JetBrains Mono',monospace">$</span>
+              <input type="number" id="time-rate" min="0" step="0.01" inputmode="decimal" placeholder="0.00" onchange="saveHourlyRate()" style="width:100px;padding:.45rem .55rem;font-size:16px;text-align:right;font-family:'JetBrains Mono',monospace">
+            </div>
           </div>
         </div>
         <div id="time-list"></div>
@@ -4964,20 +4969,20 @@ function renderTimePunch() {
   const el = document.getElementById('time-punch'); if (!el) return;
   const act = activeTimeEntry();
   if (act) {
+    el.className = 'card';   // running timer gets a focal card
     el.innerHTML = `
-      <div style="text-align:center;padding:.5rem 0">
-        <div style="font-size:11px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;color:var(--text3)">Clocked in${act.label?' · '+escHtml(act.label):''}</div>
-        <div id="time-elapsed" style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:700;margin:.35rem 0;letter-spacing:1px;font-variant-numeric:tabular-nums">${fmtDur(hoursBetween(act.clock_in,null))}</div>
-        <div style="font-size:12px;color:var(--text3);margin-bottom:1rem">Started ${fmtClockTime(act.clock_in)} · ${fmtDayShort(act.clock_in)}</div>
-        <button class="btn btn-danger btn-full" onclick="withBusy(this,clockOut)" style="max-width:320px;margin:0 auto;font-size:16px;padding:.8rem"><i class="ti ti-player-stop-filled"></i> Clock Out</button>
-        <div style="margin-top:.6rem"><button class="btn btn-sm" onclick="discardActiveTime()" style="color:var(--text3)">Discard</button></div>
+      <div style="text-align:center;padding:1.1rem .75rem">
+        <div style="font-size:11px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;color:var(--green);font-weight:700">● Clocked in${act.label?' · '+escHtml(act.label):''}</div>
+        <div id="time-elapsed" style="font-family:'JetBrains Mono',monospace;font-size:46px;font-weight:700;margin:.4rem 0;letter-spacing:1px;font-variant-numeric:tabular-nums">${fmtDur(hoursBetween(act.clock_in,null))}</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:1.1rem">Started ${fmtClockTime(act.clock_in)} · ${fmtDayShort(act.clock_in)}</div>
+        <button class="btn btn-danger btn-full" onclick="withBusy(this,clockOut)" style="max-width:320px;margin:0 auto;font-size:16px;padding:.85rem"><i class="ti ti-player-stop-filled"></i> Clock Out</button>
+        <div style="margin-top:.55rem"><button class="btn btn-sm" onclick="discardActiveTime()" style="color:var(--text3)">Discard</button></div>
       </div>`;
   } else {
+    el.className = '';       // idle state sits flush on the page — no box
     el.innerHTML = `
-      <div style="padding:.4rem 0">
-        <input type="text" id="time-label" placeholder="What are you working on? (optional)" style="width:100%;margin-bottom:.7rem;padding:.55rem .7rem;font-size:14px">
-        <button class="btn btn-primary btn-full" onclick="withBusy(this,clockIn)" style="font-size:16px;padding:.8rem"><i class="ti ti-player-play-filled"></i> Clock In</button>
-      </div>`;
+      <input type="text" id="time-label" placeholder="What are you working on? (optional)" style="width:100%;margin-bottom:.7rem;padding:.7rem .85rem;font-size:14px">
+      <button class="btn btn-primary btn-full" onclick="withBusy(this,clockIn)" style="font-size:17px;padding:.9rem"><i class="ti ti-player-play-filled"></i> Clock In</button>`;
   }
 }
 
@@ -5032,28 +5037,48 @@ async function saveHourlyRate() {
     if (error && !/hourly_rate/i.test(error.message||'')) showToast(error.message,'error'); }
 }
 
-// Completed entries only (the active one lives in the punch card), newest first,
-// filtered by the optional From/To dates (compared on the clock-in day).
+// Optional From/To date filter, held in state (not the DOM) so the list can
+// redraw the inputs without losing the values.
+let _timeFrom = '', _timeTo = '';
+// Completed entries only (the active one lives in the punch card), newest first.
 function timeFiltered() {
-  const from = (document.getElementById('time-from')||{}).value || '';
-  const to = (document.getElementById('time-to')||{}).value || '';
   return (cache.time_entries||[])
     .filter(t => t.clock_out)
-    .filter(t => { const d = t.clock_in.slice(0,10); return (!from || d >= from) && (!to || d <= to); })
+    .filter(t => { const d = t.clock_in.slice(0,10); return (!_timeFrom || d >= _timeFrom) && (!_timeTo || d <= _timeTo); })
     .sort((a,b) => b.clock_in.localeCompare(a.clock_in));
 }
 
 function renderTimeList() {
   const wrap = document.getElementById('time-list'); if (!wrap) return;
-  const rows = timeFiltered();
   const canBill = !isModuleHidden('invoicing');
-  if (!rows.length) {
-    wrap.innerHTML = `<div class="card" style="text-align:center;color:var(--text3);padding:2rem 1rem">No completed time entries yet. Tap <b>Clock In</b> above to start, or <b>Add Entry</b> to log time by hand.</div>`;
+  const anyEntries = (cache.time_entries||[]).some(t => t.clock_out);
+  // Nothing tracked yet → a single clean empty state, no filter row.
+  if (!anyEntries) {
+    wrap.innerHTML = `<div class="card" style="text-align:center;color:var(--text3);padding:2.25rem 1.25rem;line-height:1.6">No time entries yet.<br>Tap <b>Clock In</b> above to start the timer, or <b>Add Entry</b> to log time by hand.</div>`;
     updateTimeSelBar(); return;
   }
+  const rows = timeFiltered();
+  const filterOn = !!(_timeFrom || _timeTo);
   const totalHrs = rows.reduce((s,t) => s + hoursBetween(t.clock_in, t.clock_out), 0);
   const totalAmt = rows.reduce((s,t) => s + hoursBetween(t.clock_in, t.clock_out) * entryRate(t), 0);
-  const cards = rows.map(t => {
+
+  const header = `<div class="card" style="padding:.85rem 1rem;margin-bottom:.7rem">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:.75rem">
+      <div>
+        <h3 style="margin:0;font-size:16px">Time Log</h3>
+        <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:2px">${rows.length} ${rows.length===1?'entry':'entries'}${filterOn?' · filtered':''}</div>
+      </div>
+      <div style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px;font-variant-numeric:tabular-nums">${fmtDur(totalHrs)}${totalAmt ? `<div style="font-size:12px;color:var(--green);font-weight:600">${fmt(totalAmt)}</div>` : ''}</div>
+    </div>
+    <div style="display:flex;gap:.4rem;align-items:center">
+      <input type="date" aria-label="From date" value="${_timeFrom}" onchange="_timeFrom=this.value;renderTimeList()" style="flex:1;min-width:0;padding:.42rem .5rem;font-size:12px">
+      <span style="color:var(--text3);font-size:11px;flex-shrink:0">to</span>
+      <input type="date" aria-label="To date" value="${_timeTo}" onchange="_timeTo=this.value;renderTimeList()" style="flex:1;min-width:0;padding:.42rem .5rem;font-size:12px">
+      ${filterOn ? `<button class="btn btn-sm" onclick="_timeFrom='';_timeTo='';renderTimeList()">Clear</button>` : ''}
+    </div>
+  </div>`;
+
+  const list = rows.length ? rows.map(t => {
     const hrs = hoursBetween(t.clock_in, t.clock_out), rate = entryRate(t);
     return `<div class="card" style="display:flex;align-items:center;gap:.6rem;padding:.7rem .85rem;margin-bottom:.5rem">
       ${canBill ? `<input type="checkbox" class="time-sel" data-id="${t.id}" onchange="updateTimeSelBar()" aria-label="Select for billing" style="width:18px;height:18px;flex-shrink:0">` : ''}
@@ -5067,14 +5092,11 @@ function renderTimeList() {
       </div>
       <button class="btn btn-sm btn-danger" aria-label="Delete entry" title="Delete entry" onclick="deleteTimeRow('${t.id}',event)" style="flex-shrink:0;padding:.3rem .45rem"><i class="ti ti-trash"></i></button>
     </div>`;
-  }).join('');
-  wrap.innerHTML = `
-    <div class="card" style="display:flex;justify-content:space-between;padding:.6rem .85rem;margin-bottom:.6rem;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3)">
-      <span>${rows.length} ${rows.length===1?'entry':'entries'}</span>
-      <span>${fmtDur(totalHrs)}${totalAmt ? ' · ' + fmt(totalAmt) : ''}</span>
-    </div>
-    ${cards}
-    ${canBill ? `<div id="time-sel-bar" style="display:none;position:sticky;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 8px);z-index:5"></div>` : ''}`;
+  }).join('')
+    : `<div class="card" style="text-align:center;color:var(--text3);padding:1.5rem 1rem">No entries in this date range.</div>`;
+
+  wrap.innerHTML = header + list +
+    (canBill ? `<div id="time-sel-bar" style="display:none;position:sticky;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 8px);z-index:5"></div>` : '');
   updateTimeSelBar();
 }
 
