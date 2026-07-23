@@ -381,6 +381,26 @@ create table if not exists store_credits (
 alter table store_credits enable row level security;
 create policy "store_credits_own" on store_credits for all using (auth.uid() = user_id);
 
+-- time_entries: standalone punch clock (Time Clock section). A row is one punch —
+-- clock_in set on Clock In, clock_out set on Clock Out (null = currently clocked in,
+-- shown live in the punch card). Duration is DERIVED (clock_out − clock_in), never
+-- stored, so it stays correct across phone sleep/reload. rate = the hourly rate for
+-- billing (defaults from profiles.hourly_rate at punch time; editable per entry).
+-- Selected entries can be billed onto a new invoice (one line each: hours × rate).
+create table if not exists time_entries (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  clock_in timestamptz not null,
+  clock_out timestamptz,
+  label text,
+  rate numeric,
+  created_at timestamptz default now()
+);
+alter table time_entries enable row level security;
+create policy "time_entries_own" on time_entries for all using (auth.uid() = user_id);
+-- default hourly rate for the Time Clock (set on the Time page; prefills new punches)
+alter table profiles add column if not exists hourly_rate numeric;
+
 -- Storage: private buckets "receipts" and "statements" + RLS policies scoped to
 -- (storage.foldername(name))[1] = auth.uid()::text  (select/insert/delete).
 -- "statements" archives reconciled bank-statement PDFs; the reconcile modal can
