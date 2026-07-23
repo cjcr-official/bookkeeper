@@ -2107,7 +2107,11 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-body">
       <input type="hidden" id="bill-id">
       <div class="form-group"><label>Bill name</label><input id="bill-name" type="text" placeholder="e.g. Electric, Rent, Car payment"></div>
-      <div class="form-group"><label>Due date <span style="color:var(--text3);font-weight:400;font-size:11px">(repeats monthly)</span></label><input id="bill-due" type="date"></div>
+      <div class="form-group"><label>Due date</label><input id="bill-due" type="date"></div>
+      <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.35rem 0 .6rem;font-weight:500">
+        <input type="checkbox" id="bill-recurring" style="width:18px;height:18px;flex-shrink:0">
+        <span>Repeats every month <span style="color:var(--text3);font-weight:400;font-size:12px">(leave off for a one-time bill)</span></span>
+      </label>
       <div class="form-row">
         <div class="form-group"><label>Amount</label><input id="bill-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
         <div class="form-group"><label id="bill-reimb-label">Reimbursed</label><input id="bill-reimbursed" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
@@ -5317,6 +5321,22 @@ function getBills(){ return Array.isArray(profile.budget_bills) ? profile.budget
 function paySchedule(){ return (profile && profile.pay_schedule) || null; }
 function reimburseLabel(){ return (profile && (profile.reimburse_label||'').trim()) || 'Reimbursed'; }
 function ordinal(n){ n=parseInt(n)||0; const s=['th','st','nd','rd'], v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+// A bill recurs monthly (recurring flag true) or is a one-time bill on a specific
+// date (recurring false, date='YYYY-MM-DD'). Legacy bills (no flag, day in `due`)
+// were always monthly → treat as recurring.
+function billRecurs(b){ return b.recurring===undefined ? true : !!b.recurring; }
+// The due day-of-month for a bill (from `due` when recurring, else from `date`).
+function billDueDay(b){
+  if (billRecurs(b)) return (b.due==null || b.due==='') ? null : (parseInt(b.due)||1);
+  return b.date ? (parseInt(b.date.split('-')[2],10)||1) : null;
+}
+// Does this bill belong in month (y,m)? Recurring: always. One-time: only its month.
+function billInMonth(b,y,m){
+  if (billRecurs(b)) return true;
+  if (!b.date) return false;
+  const [dy,dm] = b.date.split('-').map(Number);
+  return dy===y && (dm-1)===m;
+}
 
 async function saveBills(arr){
   profile.budget_bills = arr;
@@ -5435,13 +5455,17 @@ function renderBudget(){
   const paydays = paydaysForMonth(y,m);
   const amt = b=>parseFloat(b.amount||0), reimb = b=>parseFloat(b.reimbursed||0), net = b=>Math.max(0, amt(b)-reimb(b));
 
+  // Only bills that belong in this month (recurring always; one-time only its month).
+  const monthBills = bills.filter(b => billInMonth(b,y,m));
+
   // Assign each bill to the last payday on/before its due date (bills due before the
   // first payday, or with no due date, fall into their own buckets).
   const buckets = paydays.map(()=>[]);
   const early = [], noDue = [];
-  bills.forEach(b=>{
-    if (b.due==null || b.due===''){ noDue.push(b); return; }
-    const due = budDateAt(y,m,parseInt(b.due)||1);
+  monthBills.forEach(b=>{
+    const dd = billDueDay(b);
+    if (dd==null){ noDue.push(b); return; }
+    const due = budDateAt(y,m,dd);
     let idx=-1;
     for (let i=0;i<paydays.length;i++){ if (paydays[i]<=due) idx=i; }
     if (idx>=0) buckets[idx].push(b);
@@ -5449,9 +5473,9 @@ function renderBudget(){
     else noDue.push(b);
   });
 
-  const totBills = bills.reduce((s,b)=>s+amt(b),0);
-  const totReimb = bills.reduce((s,b)=>s+reimb(b),0);
-  const totNet = bills.reduce((s,b)=>s+net(b),0);
+  const totBills = monthBills.reduce((s,b)=>s+amt(b),0);
+  const totReimb = monthBills.reduce((s,b)=>s+reimb(b),0);
+  const totNet = monthBills.reduce((s,b)=>s+net(b),0);
 
   const hero = `<div class="overview" style="margin-bottom:1rem">
     <div class="ov-hero">
@@ -5525,7 +5549,7 @@ function billRow(b){
     <button onclick="event.stopPropagation();toggleBillPaid('${b.id}',${y},${m})" aria-label="${paid?'Mark unpaid':'Mark paid'}" title="${paid?'Paid — tap to undo':'Mark paid'}" style="flex-shrink:0;width:24px;height:24px;border-radius:50%;border:1.5px solid ${paid?'var(--green)':'var(--border2)'};background:${paid?'var(--green)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">${paid?'<i class="ti ti-check" style="font-size:14px"></i>':''}</button>
     <div style="flex:1;min-width:0;cursor:pointer${dim}" onclick="openBillModal('${b.id}')">
       <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis${paid?';text-decoration:line-through':''}">${escHtml(b.name||'Bill')}</div>
-      <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${b.due?('due '+ordinal(b.due)):'no due date'}${b.notes?' · '+escHtml(b.notes):''}</div>
+      <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${(()=>{const dd=billDueDay(b);return dd!=null?('due '+ordinal(dd)+(billRecurs(b)?'':' · one-time')):'no due date';})()}${b.notes?' · '+escHtml(b.notes):''}</div>
     </div>
     <div style="text-align:right;flex-shrink:0;cursor:pointer${dim}" onclick="openBillModal('${b.id}')">
       <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px">${fmt(amt)}</div>
@@ -5592,7 +5616,11 @@ function openBillModal(id){
   document.getElementById('bill-modal-title').textContent = b ? 'Edit Bill' : 'Add Bill';
   document.getElementById('bill-id').value = b ? b.id : '';
   document.getElementById('bill-name').value = b ? (b.name||'') : '';
-  document.getElementById('bill-due').value = (b && b.due!=null) ? billDueInputValue(b.due) : '';
+  // New bills default to one-time (unchecked). Recurring bills seed the picker with
+  // their day in the viewed month; one-time bills use their stored full date.
+  const rec = b ? billRecurs(b) : false;
+  document.getElementById('bill-recurring').checked = rec;
+  document.getElementById('bill-due').value = b ? (rec ? (b.due!=null?billDueInputValue(b.due):'') : (b.date||'')) : '';
   document.getElementById('bill-amount').value = (b && b.amount!=null) ? b.amount : '';
   document.getElementById('bill-reimbursed').value = (b && b.reimbursed) ? b.reimbursed : '';
   document.getElementById('bill-notes').value = b ? (b.notes||'') : '';
@@ -5611,14 +5639,20 @@ async function saveBill(){
   const id=document.getElementById('bill-id').value;
   const name=document.getElementById('bill-name').value.trim();
   if(!name){ showToast('Bill name is required','error'); return; }
+  const recurring=document.getElementById('bill-recurring').checked;
   const dueRaw=document.getElementById('bill-due').value;   // 'YYYY-MM-DD' from the date picker
-  const due = dueRaw==='' ? null : (parseInt(dueRaw.split('-')[2],10) || null);   // store day-of-month only (recurs monthly)
+  if (!recurring && dueRaw===''){ showToast('Pick a due date for a one-time bill','error'); return; }
+  // Recurring: keep the day-of-month (repeats), no fixed date. One-time: keep the
+  // full date (shows only that month), day derived from it.
+  const day = dueRaw==='' ? null : (parseInt(dueRaw.split('-')[2],10) || null);
+  const due = recurring ? day : null;
+  const date = recurring ? null : dueRaw;
   const amount=parseFloat(document.getElementById('bill-amount').value)||0;
   const reimbursed=parseFloat(document.getElementById('bill-reimbursed').value)||0;
   const notes=document.getElementById('bill-notes').value.trim();
   const bills=getBills().slice();
-  if (id){ const i=bills.findIndex(x=>x.id===id); if(i>-1) bills[i]={...bills[i],name,due,amount,reimbursed,notes}; }
-  else { const nid=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('b'+Date.now()+Math.random().toString(36).slice(2)); bills.push({id:nid,name,due,amount,reimbursed,notes}); }
+  if (id){ const i=bills.findIndex(x=>x.id===id); if(i>-1) bills[i]={...bills[i],name,due,date,recurring,amount,reimbursed,notes}; }
+  else { const nid=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('b'+Date.now()+Math.random().toString(36).slice(2)); bills.push({id:nid,name,due,date,recurring,amount,reimbursed,notes}); }
   await saveBills(bills);
   showToast('Saved','success'); closeModal('modal-bill'); renderBudget();
 }
@@ -5668,14 +5702,16 @@ function calItemsByDate() {
     const label = r.label || ((r.data||{}).vendor) || ((cache.customers.find(c=>c.id===((r.data||{}).customer_id))||{}).name) || 'Recurring';
     (out[r.next_date] = out[r.next_date] || []).push({ kind:'recurring', id:r.id, label, time:'', done:false, onclick:`openRecurringManager('${r.kind}')` });
   });
-  // Budget bills recur monthly → place each on its due day in the calendar's shown
-  // month, marked done when it's been paid that month. Tapping opens the Budget page.
+  // Budget bills: recurring ones land on their due day in the shown month; one-time
+  // bills on their fixed date. Marked done when paid that month. Tap → Budget page.
   if (!isModuleHidden('budget')){
     const bcy=calCursor.getFullYear(), bcm=calCursor.getMonth();
     getBills().forEach(b => {
-      if (b.due==null || b.due==='') return;
-      const ds = ymd(budDateAt(bcy,bcm,parseInt(b.due)||1));
-      (out[ds] = out[ds] || []).push({ kind:'bill', id:b.id, label:(b.name||'Bill'), time:'', done:isBillPaid(b.id,bcy,bcm), onclick:`showPage('budget',null)` });
+      const dd = billDueDay(b); if (dd==null) return;
+      let ds, py, pm;
+      if (billRecurs(b)){ ds = ymd(budDateAt(bcy,bcm,dd)); py=bcy; pm=bcm; }
+      else { if (!b.date) return; ds = b.date; const [dy,dm]=b.date.split('-').map(Number); py=dy; pm=dm-1; }
+      (out[ds] = out[ds] || []).push({ kind:'bill', id:b.id, label:(b.name||'Bill'), time:'', done:isBillPaid(b.id,py,pm), onclick:`showPage('budget',null)` });
     });
   }
   return out;

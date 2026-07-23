@@ -409,10 +409,14 @@ alter table profiles add column if not exists hourly_rate numeric;
 --                  before (default) / Monday after / stays put)}. paydaysForMonth()
 --                  projects the actual paydays for the shown month; biweekly/weekly
 --                  auto-produce an extra (3rd) paycheck in the months that have one.
---   budget_bills  [{id,name,due(1-31 day),amount,reimbursed,notes}] — the recurring
---                  bill list. Each bill is dropped on the LAST payday on/before its
---                  due date; paycheck totals use the FULL amount (cash needed), and
---                  `reimbursed` (the part someone pays back) drives the net "you pay".
+--   budget_bills  [{id,name,due(1-31 day),date('YYYY-MM-DD'),recurring(bool),amount,
+--                  reimbursed,notes}] — the bill list. recurring=true (or a legacy bill
+--                  with no flag) repeats monthly and uses `due`; recurring=false is a
+--                  ONE-TIME bill that shows only in `date`'s month (new bills default
+--                  to one-time). Each bill is dropped on the LAST payday on/before its
+--                  due date; a paycheck's total is YOUR share (amount − reimbursed),
+--                  and `reimbursed` (the part someone pays back) also drives the net
+--                  "you pay" hero + the "· $X back" note.
 --   reimburse_label  generic label for the reimbursed portion (e.g. "Kids"); default
 --                    "Reimbursed". Bills saved by rewriting the whole array + upsert
 --                    (same pattern as expense_categories), so the app works before the
