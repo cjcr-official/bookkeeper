@@ -404,9 +404,11 @@ alter table profiles add column if not exists hourly_rate numeric;
 -- Budget (paycheck bill planner). All on profiles (jsonb), no separate table:
 --   pay_schedule  {freq:'biweekly'|'semimonthly'|'weekly'|'monthly', anchor:'YYYY-MM-DD'
 --                  (weekly/biweekly reference payday), days:[d1,d2] (semimonthly),
---                  day:d (monthly)}. paydaysForMonth() projects the actual paydays
---                  for the shown month; biweekly/weekly auto-produce an extra (3rd)
---                  paycheck in the months that have one.
+--                  day:d (monthly), weekend:'before'|'after'|'none' (fixed-day
+--                  schedules only — a payday landing on a weekend moves to the Friday
+--                  before (default) / Monday after / stays put)}. paydaysForMonth()
+--                  projects the actual paydays for the shown month; biweekly/weekly
+--                  auto-produce an extra (3rd) paycheck in the months that have one.
 --   budget_bills  [{id,name,due(1-31 day),amount,reimbursed,notes}] — the recurring
 --                  bill list. Each bill is dropped on the LAST payday on/before its
 --                  due date; paycheck totals use the FULL amount (cash needed), and
