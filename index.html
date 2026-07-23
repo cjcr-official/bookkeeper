@@ -5395,11 +5395,11 @@ function renderBudget(){
 
   // First run: no schedule yet → prompt to set paydays.
   if (!sched){
-    host.innerHTML = nav + `<div class="card" style="text-align:center;padding:2rem 1.25rem">
-      <div style="font-size:34px;margin-bottom:.4rem">🗓️</div>
-      <h3 style="margin:0 0 .4rem">Set up your paydays</h3>
-      <p style="color:var(--text3);font-size:13px;line-height:1.6;margin:0 0 1.1rem">Tell the budget how often you're paid. Every bill lands on the paycheck that covers it, so each payday you know exactly what to pay.</p>
-      <button class="btn btn-primary" onclick="openPayScheduleModal()"><i class="ti ti-calendar-plus"></i> Set pay schedule</button>
+    host.innerHTML = nav + `<div class="card" style="text-align:center;padding:2.6rem 1.5rem 2.3rem">
+      <div style="width:76px;height:76px;border-radius:50%;background:var(--accent-bg);color:var(--accent-text);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 1.25rem;box-shadow:0 8px 22px var(--accent-glow)"><i class="ti ti-calendar"></i></div>
+      <h3 style="margin:0 0 .55rem;font-size:19px;letter-spacing:-.3px">Set up your paydays</h3>
+      <p style="color:var(--text3);font-size:13.5px;line-height:1.65;margin:0 auto 1.5rem;max-width:290px">Tell the budget how often you're paid. Every bill lands on the paycheck that covers it, so each payday you know exactly what to pay.</p>
+      <button class="btn btn-primary" onclick="openPayScheduleModal()" style="font-size:15px;padding:.7rem 1.3rem"><i class="ti ti-calendar"></i> Set pay schedule</button>
     </div>`;
     return;
   }
