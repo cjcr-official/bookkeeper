@@ -695,12 +695,8 @@ body.modal-open .main{overflow:hidden}
   .nav-item span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .nav-item.active{border-top:2px solid var(--accent);background:var(--accent-bg);box-shadow:none}
   .nav-item i{font-size:24px}
-  /* Two-group bottom bar: Home + primary tabs + More by default; tapping More
-     swaps to Home + overflow tabs. Home (no group class) shows in both. */
-  .nav-more{display:flex}
-  .nav-more[data-empty="1"]{display:none}
-  .sidebar-nav-scroll:not(.show-more) .nav-overflow{display:none!important}
-  .sidebar-nav-scroll.show-more .nav-primary{display:none!important}
+  /* Bottom-bar tab display (which tabs / the More button) is computed in JS
+     (layoutBottomNav) via inline styles — true overflow, only when tabs don't fit. */
 
   /* ── LAYOUT ── */
   .app{flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
@@ -2295,7 +2291,7 @@ window.addEventListener('resize', () => {
   clearTimeout(_viewResizeTimer);
   _viewResizeTimer = setTimeout(() => {
     const m = window.innerWidth <= 768;
-    if (m !== _lastIsMobile) { _lastIsMobile = m; rerenderCurrentView(); }
+    if (m !== _lastIsMobile) { _lastIsMobile = m; layoutBottomNav(); rerenderCurrentView(); }
   }, 150);
 });
 window.addEventListener('orientationchange', () => {
@@ -2806,14 +2802,6 @@ const MODULES = [
   { id:'budget',     label:'Budget',               icon:'ti-pig-money',    desc:'Monthly spending budgets by category.',              pages:['budget'] },
   { id:'statements', label:'Statements',           icon:'ti-file-dollar',  desc:'Bank statements and reconciliation.',                pages:['accounts'] },
 ];
-// Pages that live behind the mobile "More" button (the desktop sidebar still lists
-// them). Order here = order in the More sheet. Kept in sync with the .nav-overflow
-// tabs in the sidebar markup.
-const MORE_PAGES = [
-  { page:'mileage',  label:'Mileage',     icon:'ti-car' },
-  { page:'time',     label:'Time Clock',  icon:'ti-clock' },
-  { page:'budget',   label:'Budget',      icon:'ti-pig-money' },
-];
 function getHiddenModules() {
   try { const v = JSON.parse(lsGet('bk-hidden-modules')||'[]'); return Array.isArray(v) ? v.filter(id=>MODULES.some(m=>m.id===id)) : []; }
   catch(e) { return []; }
@@ -2829,8 +2817,7 @@ function isModuleHidden(id) { return getHiddenModules().includes(id); }
 // Reflect the hidden set onto the nav tabs + dashboard cards; bounce off a page
 // that just became hidden.
 function applyModuleVisibility() {
-  const hidPages = hiddenPagesSet(), hid = getHiddenModules();
-  document.querySelectorAll('.nav-item[data-page]').forEach(n => { n.style.display = hidPages.has(n.dataset.page) ? 'none' : ''; });
+  const hid = getHiddenModules();
   // data-module lists one or more module ids (space-separated); the element hides
   // if ANY listed module is off (e.g. the income-vs-expenses chart hides when
   // either Invoices or Expenses is off).
@@ -2842,14 +2829,7 @@ function applyModuleVisibility() {
   document.querySelectorAll('[data-module-all]').forEach(el => {
     el.style.display = el.dataset.moduleAll.split(/\s+/).every(id => hid.includes(id)) ? 'none' : '';
   });
-  // Hide the mobile "More" button when every tab it would reveal is hidden — and if
-  // we're currently showing that (now-empty) group, fall back to the primary tabs.
-  const moreEl = document.querySelector('.nav-more');
-  if (moreEl) {
-    const anyOverflow = MORE_PAGES.some(p => !hidPages.has(p.page));
-    moreEl.dataset.empty = anyOverflow ? '' : '1';
-    if (!anyOverflow && _navMore) setNavMore(false);
-  }
+  layoutBottomNav();   // recompute which tabs are on the bar vs behind More
   if (isPageHidden(currentPage)) showPage('dashboard', null);
 }
 function toggleModule(id) {
@@ -2890,8 +2870,9 @@ function showPage(page, el) {
   document.getElementById('page-'+page).classList.add('active');
   // Mobile bottom bar: switch to the group that holds this page so its tab is
   // actually on the bar, then highlight it. Settings/Profile (no bar tab, opened
-  // from the top bar) leave the current group as-is.
-  if (page !== 'settings' && page !== 'profile') setNavMore(MORE_PAGES.some(p => p.page === page));
+  // from the top bar) just re-apply the current layout.
+  if (page !== 'settings' && page !== 'profile') _navMore = navSplit().overflow.includes(page);
+  layoutBottomNav();
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const sideTab = document.querySelector('.nav-item[data-page="'+page+'"]');
   if (sideTab) sideTab.classList.add('active');   // desktop sidebar + whichever mobile group is showing
@@ -2915,18 +2896,42 @@ function showPage(page, el) {
   rerenderCurrentView();
 }
 
-// Mobile bottom bar has two groups: the primary tabs and the overflow tabs, with
-// Home pinned in both. The "More" button swaps between them in place (no sheet).
-// Desktop sidebar ignores this — it lists every tab.
+// Mobile bottom bar is TRUE overflow: it shows Home + as many section tabs as fit;
+// only when there are too many does the last slot become "More", which swaps the
+// bar in place to reveal the rest (Home pinned in both). If everything fits, there
+// is no More button at all. Desktop sidebar always lists every visible tab.
+// Bar capacity: Home + up to 5 sections directly (6 slots); beyond that, Home + 4 +
+// More. Order = tab order in the sidebar; the last sections overflow first.
 let _navMore = false;
-function setNavMore(state) {
-  _navMore = !!state;
-  const bar = document.querySelector('.sidebar-nav-scroll');
-  if (bar) bar.classList.toggle('show-more', _navMore);
-  const ico = document.getElementById('nav-more-ico'), lbl = document.getElementById('nav-more-lbl');
-  if (ico) ico.className = 'ti ' + (_navMore ? 'ti-arrow-left' : 'ti-dots');
-  if (lbl) lbl.textContent = _navMore ? 'Back' : 'More';
+const NAV_ORDER = ['invoices','customers','expenses','accounts','mileage','time','budget'];
+function navSplit() {
+  const hidPages = hiddenPagesSet();
+  const candidates = NAV_ORDER.filter(p => !hidPages.has(p));
+  if (window.innerWidth > 768 || candidates.length <= 5) return { onBar: candidates, overflow: [] };
+  return { onBar: candidates.slice(0,4), overflow: candidates.slice(4) };
 }
+// Apply the split to the DOM: show/hide each tab for the current group + breakpoint,
+// and show the More button only when something actually overflows.
+function layoutBottomNav() {
+  const { onBar, overflow } = navSplit();
+  const isMobile = window.innerWidth <= 768;
+  const hidPages = hiddenPagesSet();
+  if (!overflow.length) _navMore = false;              // nothing to expand → stay on the base bar
+  const setDisp = (page, show) => { const el = document.querySelector('.nav-item[data-page="'+page+'"]'); if (el) el.style.display = show ? '' : 'none'; };
+  setDisp('dashboard', true);
+  NAV_ORDER.forEach(p => {
+    if (hidPages.has(p)) { setDisp(p, false); return; }
+    setDisp(p, !isMobile ? true : (_navMore ? overflow.includes(p) : onBar.includes(p)));
+  });
+  const moreBtn = document.getElementById('nav-more-btn');
+  if (moreBtn) {
+    moreBtn.style.display = (isMobile && overflow.length) ? 'flex' : 'none';
+    const ico = document.getElementById('nav-more-ico'), lbl = document.getElementById('nav-more-lbl');
+    if (ico) ico.className = 'ti ' + (_navMore ? 'ti-arrow-left' : 'ti-dots');
+    if (lbl) lbl.textContent = _navMore ? 'Back' : 'More';
+  }
+}
+function setNavMore(state) { _navMore = !!state; layoutBottomNav(); }
 function toggleNavMore() { setNavMore(!_navMore); }
 
 // Floating + (mobile): runs the current tab's New action — the topbar + is out
