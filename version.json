@@ -1,1 +1,1 @@
-{"version":404,"note":"v404: Budget amounts now follow the app's color rule — bill amounts (debits) show red, and reimbursements (money coming back) show green. Applies to the bill rows ($65 red, '$5 back' green, 'you $60' red), the paycheck header's '· $5 back', and the hero's 'reimbursed back'."}
+{"version":405,"note":"v405: Budget bill total is back to white (neutral). Only the reimbursement stays green ('$5 back') and the net 'you $60' stays red — the full bill amount is no longer tinted red."}
