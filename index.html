@@ -5473,7 +5473,10 @@ function renderBudget(){
   } else {
     sections = paydays.map((pd,i)=>{
       const list = buckets[i].concat(i===0 ? early : []);   // early bills ride the first check
-      const need = list.reduce((s,b)=>s+amt(b),0);
+      // "need" is YOUR share — the full bills minus anything reimbursed back — so the
+      // paycheck total and "left" match the hero and the reimbursement comes off.
+      const need = list.reduce((s,b)=>s+net(b),0);
+      const reimbNeed = list.reduce((s,b)=>s+reimb(b),0);
       const rows = list.length ? list.map(billRow).join('')
         : `<div style="color:var(--text3);font-size:12px;padding:.5rem .1rem">Nothing due to this paycheck.</div>`;
       const dateKey = ymd(pd);
@@ -5494,7 +5497,7 @@ function renderBudget(){
       return `<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.6rem;padding-bottom:.55rem;border-bottom:1px solid var(--border)">
           <div><div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--accent-text)">Paycheck ${i+1}${paydays.length>2&&i===paydays.length-1?' · extra':''}</div><div style="font-weight:700;font-size:15px">${payFmt(pd)}</div></div>
-          <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px">${fmt(need)}</div><div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">to pay</div></div>
+          <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px">${fmt(need)}</div><div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">to pay${reimbNeed>0?` · ${fmt(reimbNeed)} back`:''}</div></div>
         </div>
         ${payBar}
         ${rows}
