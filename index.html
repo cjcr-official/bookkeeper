@@ -5478,9 +5478,17 @@ function renderBudget(){
     else noDue.push(b);
   });
 
+  const isPaid = b => isBillPaid(b.id,y,m);
   const totBills = monthBills.reduce((s,b)=>s+amt(b),0);
   const totReimb = monthBills.reduce((s,b)=>s+reimb(b),0);
   const totNet = monthBills.reduce((s,b)=>s+net(b),0);
+  const paidMonth = monthBills.reduce((s,b)=>s+(isPaid(b)?net(b):0),0);
+  const monthProg = totNet>0 ? Math.min(100, Math.round(paidMonth/totNet*100)) : 0;
+
+  const heroProg = totNet>0 ? `<div style="position:relative;z-index:1;margin-top:.95rem">
+      <div class="cat-track" style="height:8px"><div class="cat-fill" style="width:${monthProg}%;background:var(--green)"></div></div>
+      <div style="display:flex;justify-content:space-between;margin-top:.4rem;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.3px"><span style="color:var(--green)">${fmt(paidMonth)} paid</span><span style="color:var(--text3)">${fmt(Math.max(0,totNet-paidMonth))} left</span></div>
+    </div>` : '';
 
   const hero = `<div class="overview" style="margin-bottom:1rem">
     <div class="ov-hero">
@@ -5491,7 +5499,8 @@ function renderBudget(){
       </div>
       <button class="btn btn-sm" aria-label="Edit pay schedule" title="Edit pay schedule" onclick="openPayScheduleModal()" style="flex-shrink:0"><i class="ti ti-calendar-cog"></i></button>
     </div>
-    <div style="position:relative;z-index:1;margin-top:.55rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${escHtml(schedSummary())}</div>
+    <div style="position:relative;z-index:1;margin-top:.5rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${escHtml(schedSummary())}</div>
+    ${heroProg}
   </div>`;
 
   let sections='';
@@ -5506,8 +5515,16 @@ function renderBudget(){
       // paycheck total and "left" match the hero and the reimbursement comes off.
       const need = list.reduce((s,b)=>s+net(b),0);
       const reimbNeed = list.reduce((s,b)=>s+reimb(b),0);
+      const paidAmt = list.reduce((s,b)=>s+(isPaid(b)?net(b):0),0);
+      const paidCount = list.filter(isPaid).length;
+      const allPaid = list.length>0 && paidCount===list.length;
+      const prog = need>0 ? Math.min(100, Math.round(paidAmt/need*100)) : (allPaid?100:0);
       const rows = list.length ? list.map(billRow).join('')
-        : `<div style="color:var(--text3);font-size:12px;padding:.5rem .1rem">Nothing due to this paycheck.</div>`;
+        : `<div style="text-align:center;color:var(--text3);font-size:11px;padding:.9rem 0;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px">Nothing due to this paycheck</div>`;
+      const progRow = list.length ? `<div style="margin-bottom:.7rem">
+        <div class="cat-track" style="height:6px"><div class="cat-fill" style="width:${prog}%;background:var(--green)"></div></div>
+        <div style="margin-top:.35rem;font-size:10px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;color:${allPaid?'var(--green)':'var(--text3)'}">${allPaid?'<i class="ti ti-circle-check-filled"></i> All paid':`${paidCount} of ${list.length} paid`}</div>
+      </div>` : '';
       const dateKey = ymd(pd);
       const got = getPaycheckAmount(dateKey);
       const left = got!=null ? got - need : null;
@@ -5524,10 +5541,11 @@ function renderBudget(){
         <span id="pcleft-${dateKey}" style="font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0;color:${leftColor}">${leftHtml}</span>
       </div>`;
       return `<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.6rem;padding-bottom:.55rem;border-bottom:1px solid var(--border)">
-          <div><div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--accent-text)">Paycheck ${i+1}${paydays.length>2&&i===paydays.length-1?' · extra':''}</div><div style="font-weight:700;font-size:15px">${payFmt(pd)}</div></div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.7rem;padding-bottom:.6rem;border-bottom:1px solid var(--border)">
+          <div><div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:${allPaid?'var(--green)':'var(--accent-text)'}">Paycheck ${i+1}${paydays.length>2&&i===paydays.length-1?' · extra':''}</div><div style="font-weight:700;font-size:15px">${payFmt(pd)}</div></div>
           <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px">${fmt(need)}</div><div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">to pay${reimbNeed>0?` · ${fmt(reimbNeed)} back`:''}</div></div>
         </div>
+        ${progRow}
         ${payBar}
         ${rows}
       </div>`;
