@@ -2124,22 +2124,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
-<!-- PAYCHECK AMOUNT MODAL (Budget) -->
-<div class="modal-overlay" id="modal-paycheck">
-  <div class="modal" style="max-width:380px">
-    <div class="modal-header"><h2 id="paycheck-modal-title">Paycheck</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-paycheck')"><i class="ti ti-x"></i></button></div>
-    <div class="modal-body">
-      <div class="form-group"><label>Amount you were paid</label><input id="paycheck-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updatePaycheckLeft()" style="text-align:right"></div>
-      <div id="paycheck-left" style="font-size:12.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:right;min-height:1em"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-danger" id="paycheck-clear-btn" onclick="withBusy(this,clearPaycheckAmount)" style="margin-right:auto;display:none"><i class="ti ti-x"></i> Clear</button>
-      <button class="btn" onclick="closeModal('modal-paycheck')">Cancel</button>
-      <button class="btn btn-primary" onclick="withBusy(this,savePaycheckFromModal)"><i class="ti ti-check"></i> Save</button>
-    </div>
-  </div>
-</div>
-
 <!-- TIME ENTRY MODAL (manual add / edit) -->
 <div class="modal-overlay" id="modal-time">
   <div class="modal" style="max-width:420px">
@@ -5495,12 +5479,18 @@ function renderBudget(){
       const dateKey = ymd(pd);
       const got = getPaycheckAmount(dateKey);
       const left = got!=null ? got - need : null;
-      // Tappable bar: enter what you were actually paid → shows what's left after this check's bills.
-      const payBar = `<button onclick="openPaycheckModal('${dateKey}','${payFmt(pd).replace(/'/g,'')}',${need})" style="width:100%;font-family:inherit;color:inherit;text-align:left;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.5rem .7rem;margin-bottom:.6rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:.5rem">
-        ${got!=null
-          ? `<span style="font-size:12px;color:var(--text3);font-family:'JetBrains Mono',monospace">Paid ${fmt(got)}</span><span style="font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;color:${left>=0?'var(--green)':'var(--red)'}">${fmt(left)} left</span>`
-          : `<span style="font-size:12px;color:var(--accent-text);font-weight:600"><i class="ti ti-plus"></i> Enter what you were paid</span><span style="font-size:16px;color:var(--text3)">›</span>`}
-      </button>`;
+      // Inline "what you were paid" field, right in the card — type and it saves on
+      // blur; the "left after bills" updates live as you type. No popup.
+      const leftHtml = (got!=null) ? fmt(left)+' left' : '';
+      const leftColor = (got!=null) ? (left>=0?'var(--green)':'var(--red)') : 'var(--text3)';
+      const payBar = `<div style="display:flex;align-items:center;gap:.55rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.3rem .65rem;margin-bottom:.65rem">
+        <span style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0">Paid</span>
+        <span style="color:var(--text3);font-size:14px;flex-shrink:0">$</span>
+        <input type="number" min="0" step="0.01" inputmode="decimal" value="${got!=null?got:''}" placeholder="0.00" aria-label="Amount you were paid"
+          oninput="paycheckLeftLive('${dateKey}',this.value,${need})" onchange="savePaycheckInline('${dateKey}',this.value)"
+          style="flex:1;min-width:0;border:none;background:transparent;padding:.25rem 0;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;color:var(--text);outline:none;box-shadow:none">
+        <span id="pcleft-${dateKey}" style="font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0;color:${leftColor}">${leftHtml}</span>
+      </div>`;
       return `<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.6rem;padding-bottom:.55rem;border-bottom:1px solid var(--border)">
           <div><div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--accent-text)">Paycheck ${i+1}${paydays.length>2&&i===paydays.length-1?' · extra':''}</div><div style="font-weight:700;font-size:15px">${payFmt(pd)}</div></div>
@@ -5636,32 +5626,19 @@ async function deleteBill(){
   showToast('Deleted'); closeModal('modal-bill'); renderBudget();
 }
 
-// ── Paycheck amount modal (enter what you were actually paid) ──
-let _payEditKey=null, _payEditNeed=0;
-function openPaycheckModal(dateKey, label, need){
-  _payEditKey=dateKey; _payEditNeed=parseFloat(need)||0;
-  document.getElementById('paycheck-modal-title').textContent = 'Paycheck · ' + label;
-  const cur = paycheckAmounts()[dateKey];
-  document.getElementById('paycheck-amount').value = (cur!=null ? cur : '');
-  document.getElementById('paycheck-clear-btn').style.display = (cur!=null) ? '' : 'none';
-  updatePaycheckLeft();
-  openModal('modal-paycheck');
+// ── Inline paycheck amount (typed right in the card) ──
+// Live update of the "$X left" figure while typing (no re-render → keyboard stays up).
+function paycheckLeftLive(dateKey, val, need){
+  const el=document.getElementById('pcleft-'+dateKey); if(!el) return;
+  const a=parseFloat(val);
+  if (isNaN(a)){ el.textContent=''; return; }
+  const left=a-(parseFloat(need)||0);
+  el.textContent = fmt(left)+' left';
+  el.style.color = left>=0 ? 'var(--green)' : 'var(--red)';
 }
-function updatePaycheckLeft(){
-  const el=document.getElementById('paycheck-left'); if(!el) return;
-  const a=parseFloat(document.getElementById('paycheck-amount').value);
-  if (isNaN(a)){ el.innerHTML = `Bills on this check: <b>${fmt(_payEditNeed)}</b>`; return; }
-  const left=a-_payEditNeed;
-  el.innerHTML = `Bills on this check: ${fmt(_payEditNeed)} · <b style="color:${left>=0?'var(--green)':'var(--red)'}">${fmt(left)} left</b>`;
-}
-async function savePaycheckFromModal(){
-  const raw=document.getElementById('paycheck-amount').value;
-  await savePaycheckAmount(_payEditKey, raw==='' ? null : parseFloat(raw));
-  closeModal('modal-paycheck'); renderBudget();
-}
-async function clearPaycheckAmount(){
-  await savePaycheckAmount(_payEditKey, null);
-  closeModal('modal-paycheck'); renderBudget();
+// Persist on blur/change — no full re-render, so focus/scroll aren't disturbed.
+async function savePaycheckInline(dateKey, val){
+  await savePaycheckAmount(dateKey, val==='' ? null : parseFloat(val));
 }
 
 // ====== CALENDAR (month grid view of jobs + invoice due dates + recurring runs) ======
