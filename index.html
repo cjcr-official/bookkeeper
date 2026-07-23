@@ -1255,6 +1255,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="nav-item" role="button" tabindex="0" data-page="expenses" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
     <div class="nav-item" role="button" tabindex="0" data-page="accounts" onclick="showPage('accounts',this)"><i class="ti ti-file-dollar"></i><span>Statements</span></div>
     <div class="nav-item" role="button" tabindex="0" data-page="mileage" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
+    <div class="nav-item" role="button" tabindex="0" data-page="time" onclick="showPage('time',this)"><i class="ti ti-clock"></i><span>Time</span></div>
     </div>
     <div style="margin-top:auto" class="sidebar-bottom">
       <div class="nav-item" role="button" tabindex="0" onclick="showPage('settings',this)"><i class="ti ti-settings"></i> Settings</div>
@@ -1663,6 +1664,23 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div id="mileage-table"></div>
       </div>
 
+      <div id="page-time" class="page">
+        <!-- Standalone punch clock: Clock In stores a start timestamp, Clock Out the
+             end; duration is derived, so it's correct even if the phone slept between
+             punches (nothing runs in the background). Tracked hours can be billed onto
+             a new invoice at an hourly rate. -->
+        <div class="card" id="time-punch" style="margin-bottom:1rem"></div>
+        <div class="card">
+          <div class="card-header"><h3>Time Log</h3></div>
+          <div style="display:flex;gap:.6rem;align-items:flex-end;flex-wrap:wrap;padding:.75rem 1rem">
+            <div style="flex:1;min-width:100px"><label style="display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.25rem">Hourly rate</label><input type="number" id="time-rate" min="0" step="0.01" inputmode="decimal" placeholder="0.00" onchange="saveHourlyRate()" style="width:100%;padding:.4rem .5rem;font-size:12px;text-align:right"></div>
+            <div style="flex:1;min-width:100px"><label style="display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.25rem">From</label><input type="date" id="time-from" onchange="renderTimeList()" style="width:100%;padding:.4rem .5rem;font-size:12px"></div>
+            <div style="flex:1;min-width:100px"><label style="display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.25rem">To</label><input type="date" id="time-to" onchange="renderTimeList()" style="width:100%;padding:.4rem .5rem;font-size:12px"></div>
+          </div>
+        </div>
+        <div id="time-list"></div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -2035,6 +2053,28 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
+<!-- TIME ENTRY MODAL (manual add / edit) -->
+<div class="modal-overlay" id="modal-time">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header"><h2 id="time-modal-title">Edit Time Entry</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-time')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <input type="hidden" id="time-entry-id">
+      <div class="form-group"><label>Description <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="time-e-label" type="text" placeholder="What you worked on"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Start</label><input id="time-e-in" type="datetime-local" oninput="updateTimeEntrySummary()"></div>
+        <div class="form-group"><label>End</label><input id="time-e-out" type="datetime-local" oninput="updateTimeEntrySummary()"></div>
+      </div>
+      <div class="form-group"><label>Hourly rate <span style="color:var(--text3);font-weight:400;font-size:11px">(for billing)</span></label><input id="time-e-rate" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateTimeEntrySummary()" style="text-align:right"></div>
+      <div id="time-e-summary" style="font-size:12.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:right"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="time-delete-btn" onclick="withBusy(this,deleteTimeEntry)" style="margin-right:auto;display:none"><i class="ti ti-trash"></i> Delete</button>
+      <button class="btn" onclick="closeModal('modal-time')">Cancel</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveTimeEntry)"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- EXPENSE MODAL -->
 <div class="modal-overlay" id="modal-expense">
   <div class="modal">
@@ -2152,12 +2192,12 @@ const VAPID_PUBLIC_KEY = 'BERMR7TzR5rf0fQt_BcTOyOwiHIujwdr_S5dbutJhl1o_FyntPXRe7
 // ====== STATE ======
 let currentUser = null;
 let profile = {};
-let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[],store_credits:[]};
+let cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[],store_credits:[],time_entries:[]};
 let currentPage = 'dashboard';
 
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
-const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, settings: loadSettingsForm, profile: loadProfileForm };
+const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, time: renderTime, settings: loadSettingsForm, profile: loadProfileForm };
 function renderAccountsPage() {
   renderOwnerTx(); renderStoreCredits();
   // Reconciliation is inline (Plaid only): keep the audit grid visible and refresh
@@ -2405,7 +2445,7 @@ function applyHashDeepLink() {
 async function doLogout() {
   await sb.auth.signOut();
   setIconBadge(0);
-  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[],store_credits:[]};
+  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[],store_credits:[],time_entries:[]};
   document.getElementById('app').style.display = 'none';
   resetAuthView();
   document.getElementById('auth-wrap').style.display = 'flex';
@@ -2625,7 +2665,7 @@ async function loadAllData() {
     q.then(r=>r).catch(e=>({data:null,error:e})),
     new Promise(res=>setTimeout(()=>res({data:null,error:{message:'timeout',_timeout:true}}), 20000)),
   ]);
-  const [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx, storeCredits] = await Promise.all([
+  const [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx, storeCredits, timeEntries] = await Promise.all([
     safe(sb.from('profiles').select('*').eq('id', currentUser.id).single()),
     safe(sb.from('customers').select('*').eq('user_id', currentUser.id).order('name')),
     safe(sb.from('invoices').select('*').eq('user_id', currentUser.id).order('created_at', {ascending:false})),
@@ -2636,6 +2676,7 @@ async function loadAllData() {
     safe(sb.from('jobs').select('*').eq('user_id', currentUser.id).order('date')),
     safe(sb.from('owner_transactions').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
     safe(sb.from('store_credits').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
+    safe(sb.from('time_entries').select('*').eq('user_id', currentUser.id).order('clock_in', {ascending:false})),
   ]);
   profile = prof.data || {};
   // Sync the hidden-sections mirror from the (durable) profile, then hide nav tabs.
@@ -2650,13 +2691,14 @@ async function loadAllData() {
   cache.jobs = jobs.data || [];
   cache.owner_transactions = ownerTx.data || [];
   cache.store_credits = storeCredits.data || [];
+  cache.time_entries = timeEntries.data || [];
 
   // Detect a real "couldn't reach Supabase" failure so the app can tell the user
   // instead of silently showing an empty ledger. A missing table or a brand-new
   // account with no profile row still returns an error per-query, so only flag
   // when it looks like a connection/timeout problem: the profile query timed out
   // or failed on the network, OR every single query errored at once.
-  const results = [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx, storeCredits];
+  const results = [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx, storeCredits, timeEntries];
   const netErr = (e) => !!e && (e._timeout || /fetch|network|load failed|timeout/i.test(e.message||''));
   _dataLoadFailed = netErr(prof.error) || results.every(r => r && r.error);
   if (_dataLoadFailed) showDataLoadError();
@@ -2685,6 +2727,7 @@ const MODULES = [
   { id:'invoicing',  label:'Invoices & Customers', icon:'ti-file-invoice', desc:'Billing, the customer list, and recurring invoices.', pages:['invoices','customers'] },
   { id:'expenses',   label:'Expenses',             icon:'ti-receipt',      desc:'Spending, receipts, and recurring expenses.',        pages:['expenses'] },
   { id:'mileage',    label:'Mileage',              icon:'ti-car',          desc:'The trip log and mileage tracking.',                 pages:['mileage'] },
+  { id:'time',       label:'Time Clock',           icon:'ti-clock',        desc:'Punch in/out and bill tracked hours.',               pages:['time'] },
   { id:'statements', label:'Statements',           icon:'ti-file-dollar',  desc:'Bank statements and reconciliation.',                pages:['accounts'] },
 ];
 function getHiddenModules() {
@@ -2754,7 +2797,7 @@ function showPage(page, el) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   if (el) { document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); el.classList.add('active'); }
-  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',settings:'Settings',profile:'Business Profile'};
+  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',time:'Time Clock',settings:'Settings',profile:'Business Profile'};
   document.getElementById('page-title').textContent = titles[page]||page;
   updateTopbarLogo();
   const bc = document.getElementById('topbar-breadcrumb-page');
@@ -2766,6 +2809,7 @@ function showPage(page, el) {
     customers:`<button class="btn btn-primary" aria-label="New customer" onclick="openCustomerModal()"><i class="ti ti-plus"></i> <span>New Customer</span></button>`,
     expenses:`<button class="btn" aria-label="Recurring expenses" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New expense" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
     mileage:`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
+    time:`<button class="btn btn-primary" aria-label="Add time entry" onclick="openTimeEntry(null)"><i class="ti ti-plus"></i> <span>Add Entry</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   refreshNotifBadge();
@@ -4871,6 +4915,253 @@ async function deleteJobFromModal() {
   if (error) { showToast(error.message,'error'); return; }
   cache.jobs = (cache.jobs||[]).filter(j=>j.id!==id);
   showToast('Job deleted'); closeModal('modal-job'); renderUpcoming(); renderCalendar();
+}
+
+// ====== TIME CLOCK ======
+// A punch clock is just two timestamps: Clock In records the start, Clock Out the
+// end, and the duration is derived (end − start). Nothing runs while the phone
+// sleeps — the elapsed time is recomputed from the stored start on every render —
+// so a punch stays accurate across sleep, reload, or a dead battery. An open entry
+// (clock_out = null) is the "currently clocked in" state and survives reloads.
+// Tracked hours can be billed onto a new invoice at an hourly rate.
+let _timeTicker = null;
+
+function activeTimeEntry() { return (cache.time_entries||[]).find(t => !t.clock_out) || null; }
+// Hours between two ISO timestamps (open end → now). Never negative.
+function hoursBetween(inISO, outISO) {
+  const a = new Date(inISO).getTime();
+  const b = outISO ? new Date(outISO).getTime() : Date.now();
+  return Math.max(0, (b - a) / 3600000);
+}
+function fmtDur(hrs) {                      // H:MM:SS running clock
+  const s = Math.max(0, Math.round(hrs * 3600));
+  return Math.floor(s/3600) + ':' + String(Math.floor((s%3600)/60)).padStart(2,'0') + ':' + String(s%60).padStart(2,'0');
+}
+function fmtHrs(hrs) { return (Math.round(hrs*100)/100).toFixed(2); }
+function fmtClockTime(iso) {                // reuse the app's 12/24h preference
+  const d = new Date(iso);
+  return fmtTime(String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0'));
+}
+function fmtDayShort(iso) { return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+function currentHourlyRate() { const r = parseFloat(profile && profile.hourly_rate); return isNaN(r) ? 0 : r; }
+function entryRate(t) { return (t.rate!=null ? parseFloat(t.rate) : currentHourlyRate()) || 0; }
+// datetime-local (local wall time) ↔ ISO (UTC) round-trip
+function toLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso), pad = n => String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+function fromLocalInput(v) { return v ? new Date(v).toISOString() : null; }
+
+function renderTime() {
+  renderTimePunch();
+  const rateEl = document.getElementById('time-rate');
+  if (rateEl && document.activeElement !== rateEl) rateEl.value = currentHourlyRate() ? currentHourlyRate() : '';
+  renderTimeList();
+  startTimeTicker();
+}
+
+function renderTimePunch() {
+  const el = document.getElementById('time-punch'); if (!el) return;
+  const act = activeTimeEntry();
+  if (act) {
+    el.innerHTML = `
+      <div style="text-align:center;padding:.5rem 0">
+        <div style="font-size:11px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;color:var(--text3)">Clocked in${act.label?' · '+escHtml(act.label):''}</div>
+        <div id="time-elapsed" style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:700;margin:.35rem 0;letter-spacing:1px;font-variant-numeric:tabular-nums">${fmtDur(hoursBetween(act.clock_in,null))}</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:1rem">Started ${fmtClockTime(act.clock_in)} · ${fmtDayShort(act.clock_in)}</div>
+        <button class="btn btn-danger btn-full" onclick="withBusy(this,clockOut)" style="max-width:320px;margin:0 auto;font-size:16px;padding:.8rem"><i class="ti ti-player-stop-filled"></i> Clock Out</button>
+        <div style="margin-top:.6rem"><button class="btn btn-sm" onclick="discardActiveTime()" style="color:var(--text3)">Discard</button></div>
+      </div>`;
+  } else {
+    el.innerHTML = `
+      <div style="padding:.4rem 0">
+        <input type="text" id="time-label" placeholder="What are you working on? (optional)" style="width:100%;margin-bottom:.7rem;padding:.55rem .7rem;font-size:14px">
+        <button class="btn btn-primary btn-full" onclick="withBusy(this,clockIn)" style="font-size:16px;padding:.8rem"><i class="ti ti-player-play-filled"></i> Clock In</button>
+      </div>`;
+  }
+}
+
+function startTimeTicker() {
+  if (_timeTicker) { clearInterval(_timeTicker); _timeTicker = null; }
+  if (currentPage !== 'time' || !activeTimeEntry()) return;
+  _timeTicker = setInterval(() => {
+    const act = activeTimeEntry(), el = document.getElementById('time-elapsed');
+    if (currentPage !== 'time' || !act || !el) { clearInterval(_timeTicker); _timeTicker = null; return; }
+    el.textContent = fmtDur(hoursBetween(act.clock_in, null));
+  }, 1000);
+}
+
+async function clockIn() {
+  if (activeTimeEntry()) { renderTime(); return; }   // already running
+  const labelEl = document.getElementById('time-label');
+  const row = { user_id: currentUser.id, clock_in: new Date().toISOString(), clock_out: null,
+                label: (labelEl && labelEl.value.trim()) || null, rate: currentHourlyRate() || null };
+  const r = await sb.from('time_entries').insert(row).select().single();
+  if (r.error) { showToast(r.error.message,'error'); return; }
+  cache.time_entries.unshift(r.data);
+  showToast('Clocked in','success'); renderTime();
+}
+
+async function clockOut() {
+  const act = activeTimeEntry();
+  if (!act) { renderTime(); return; }
+  const out = new Date().toISOString();
+  const r = await sb.from('time_entries').update({ clock_out: out }).eq('id', act.id);
+  if (r.error) { showToast(r.error.message,'error'); return; }
+  act.clock_out = out;
+  showToast('Clocked out · ' + fmtHrs(hoursBetween(act.clock_in, out)) + ' hrs','success');
+  renderTime();
+}
+
+async function discardActiveTime() {
+  const act = activeTimeEntry();
+  if (!act) return;
+  if (!confirm('Discard this clock-in without recording any time?')) return;
+  const r = await sb.from('time_entries').delete().eq('id', act.id);
+  if (r.error) { showToast(r.error.message,'error'); return; }
+  cache.time_entries = cache.time_entries.filter(t => t.id !== act.id);
+  showToast('Discarded'); renderTime();
+}
+
+async function saveHourlyRate() {
+  const v = parseFloat(document.getElementById('time-rate').value);
+  const rate = isNaN(v) ? 0 : v;
+  profile.hourly_rate = rate;
+  renderTimeList();
+  if (currentUser) { const { error } = await sb.from('profiles').upsert({ id: currentUser.id, hourly_rate: rate });
+    if (error && !/hourly_rate/i.test(error.message||'')) showToast(error.message,'error'); }
+}
+
+// Completed entries only (the active one lives in the punch card), newest first,
+// filtered by the optional From/To dates (compared on the clock-in day).
+function timeFiltered() {
+  const from = (document.getElementById('time-from')||{}).value || '';
+  const to = (document.getElementById('time-to')||{}).value || '';
+  return (cache.time_entries||[])
+    .filter(t => t.clock_out)
+    .filter(t => { const d = t.clock_in.slice(0,10); return (!from || d >= from) && (!to || d <= to); })
+    .sort((a,b) => b.clock_in.localeCompare(a.clock_in));
+}
+
+function renderTimeList() {
+  const wrap = document.getElementById('time-list'); if (!wrap) return;
+  const rows = timeFiltered();
+  const canBill = !isModuleHidden('invoicing');
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="card" style="text-align:center;color:var(--text3);padding:2rem 1rem">No completed time entries yet. Tap <b>Clock In</b> above to start, or <b>Add Entry</b> to log time by hand.</div>`;
+    updateTimeSelBar(); return;
+  }
+  const totalHrs = rows.reduce((s,t) => s + hoursBetween(t.clock_in, t.clock_out), 0);
+  const totalAmt = rows.reduce((s,t) => s + hoursBetween(t.clock_in, t.clock_out) * entryRate(t), 0);
+  const cards = rows.map(t => {
+    const hrs = hoursBetween(t.clock_in, t.clock_out), rate = entryRate(t);
+    return `<div class="card" style="display:flex;align-items:center;gap:.6rem;padding:.7rem .85rem;margin-bottom:.5rem">
+      ${canBill ? `<input type="checkbox" class="time-sel" data-id="${t.id}" onchange="updateTimeSelBar()" aria-label="Select for billing" style="width:18px;height:18px;flex-shrink:0">` : ''}
+      <div style="flex:1;min-width:0;cursor:pointer" onclick="editTimeEntry('${t.id}')">
+        <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.label||'Time entry')}</div>
+        <div style="font-size:12px;color:var(--text3);font-family:'JetBrains Mono',monospace">${fmtDayShort(t.clock_in)} · ${fmtClockTime(t.clock_in)}–${fmtClockTime(t.clock_out)}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px">${fmtHrs(hrs)}<span style="font-size:10px;color:var(--text3)"> hrs</span></div>
+        ${rate ? `<div style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace">${fmt(hrs*rate)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div class="card" style="display:flex;justify-content:space-between;padding:.6rem .85rem;margin-bottom:.6rem;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text3)">
+      <span>${rows.length} ${rows.length===1?'entry':'entries'}</span>
+      <span>${fmtHrs(totalHrs)} hrs${totalAmt ? ' · ' + fmt(totalAmt) : ''}</span>
+    </div>
+    ${cards}
+    ${canBill ? `<div id="time-sel-bar" style="display:none;position:sticky;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 8px);z-index:5"></div>` : ''}`;
+  updateTimeSelBar();
+}
+
+function selectedTimeIds() { return [...document.querySelectorAll('.time-sel:checked')].map(c => c.dataset.id); }
+
+function updateTimeSelBar() {
+  const bar = document.getElementById('time-sel-bar'); if (!bar) return;
+  const ids = selectedTimeIds();
+  if (!ids.length) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const sel = (cache.time_entries||[]).filter(t => ids.includes(t.id));
+  const hrs = sel.reduce((s,t) => s + hoursBetween(t.clock_in, t.clock_out), 0);
+  const amt = sel.reduce((s,t) => s + hoursBetween(t.clock_in, t.clock_out) * entryRate(t), 0);
+  bar.style.display = '';
+  bar.innerHTML = `<div class="card" style="display:flex;align-items:center;gap:.6rem;justify-content:space-between;padding:.6rem .85rem;margin:0;box-shadow:var(--shadow);border-color:var(--accent-bg)">
+    <div style="font-size:13px"><b>${ids.length}</b> selected · <span style="font-family:'JetBrains Mono',monospace">${fmtHrs(hrs)} hrs</span>${amt ? ` · <span style="font-family:'JetBrains Mono',monospace">${fmt(amt)}</span>` : ''}</div>
+    <button class="btn btn-primary btn-sm" onclick="invoiceFromTime()"><i class="ti ti-file-invoice"></i> Create invoice</button>
+  </div>`;
+}
+
+// Build a new invoice from the selected entries: one line each (hours × rate).
+function invoiceFromTime() {
+  const ids = selectedTimeIds();
+  if (!ids.length) { showToast('Select time entries to bill','error'); return; }
+  const sel = (cache.time_entries||[]).filter(t => ids.includes(t.id)).sort((a,b) => a.clock_in.localeCompare(b.clock_in));
+  const lines = sel.map(t => {
+    const hrs = Math.round(hoursBetween(t.clock_in, t.clock_out) * 100) / 100, rate = entryRate(t);
+    return { desc: (t.label || 'Labor') + ' — ' + fmtDayShort(t.clock_in), qty: hrs, rate, amount: Math.round(hrs*rate*100)/100 };
+  });
+  openInvoiceModal();                 // fresh New Invoice, then swap in the time lines
+  editingInvLines = lines;
+  renderInvLines();
+  showToast('Review and save the invoice','success');
+}
+
+function openTimeEntry(entry) {
+  const t = entry || {}, isNew = !t.id;
+  document.getElementById('time-modal-title').textContent = isNew ? 'Add Time Entry' : 'Edit Time Entry';
+  document.getElementById('time-entry-id').value = t.id || '';
+  document.getElementById('time-e-label').value = t.label || '';
+  let inISO = t.clock_in, outISO = t.clock_out;
+  if (isNew) { const now = Date.now(); inISO = new Date(now - 3600000).toISOString(); outISO = new Date(now).toISOString(); }
+  document.getElementById('time-e-in').value = toLocalInput(inISO);
+  document.getElementById('time-e-out').value = toLocalInput(outISO);
+  document.getElementById('time-e-rate').value = (t.rate != null ? t.rate : currentHourlyRate()) || '';
+  document.getElementById('time-delete-btn').style.display = isNew ? 'none' : '';
+  updateTimeEntrySummary();
+  openModal('modal-time');
+}
+function editTimeEntry(id) { openTimeEntry((cache.time_entries||[]).find(t => t.id === id)); }
+
+function updateTimeEntrySummary() {
+  const el = document.getElementById('time-e-summary'); if (!el) return;
+  const inV = document.getElementById('time-e-in').value, outV = document.getElementById('time-e-out').value;
+  if (!inV || !outV) { el.textContent = ''; return; }
+  const hrs = hoursBetween(fromLocalInput(inV), fromLocalInput(outV));
+  const rateV = parseFloat(document.getElementById('time-e-rate').value), rate = isNaN(rateV) ? 0 : rateV;
+  el.textContent = fmtHrs(hrs) + ' hrs' + (rate ? ' · ' + fmt(hrs * rate) : '');
+}
+
+async function saveTimeEntry() {
+  const id = document.getElementById('time-entry-id').value;
+  const inV = document.getElementById('time-e-in').value, outV = document.getElementById('time-e-out').value;
+  if (!inV) { showToast('Start time is required','error'); return; }
+  if (!outV) { showToast('End time is required','error'); return; }
+  const inISO = fromLocalInput(inV), outISO = fromLocalInput(outV);
+  if (new Date(outISO).getTime() <= new Date(inISO).getTime()) { showToast('End must be after start','error'); return; }
+  const rateV = parseFloat(document.getElementById('time-e-rate').value);
+  const row = { user_id: currentUser.id, clock_in: inISO, clock_out: outISO,
+                label: document.getElementById('time-e-label').value.trim() || null,
+                rate: isNaN(rateV) ? null : rateV };
+  let err;
+  if (id) { const r = await sb.from('time_entries').update(row).eq('id', id); err = r.error;
+    if (!err) { const i = cache.time_entries.findIndex(x => x.id === id); if (i > -1) cache.time_entries[i] = { ...cache.time_entries[i], ...row }; } }
+  else { const r = await sb.from('time_entries').insert(row).select().single(); err = r.error;
+    if (!err && r.data) cache.time_entries.unshift(r.data); }
+  if (err) { showToast(err.message,'error'); return; }
+  showToast('Saved','success'); closeModal('modal-time'); renderTime();
+}
+
+async function deleteTimeEntry() {
+  const id = document.getElementById('time-entry-id').value;
+  if (!id) return;
+  if (!confirm('Delete this time entry?')) return;
+  const r = await sb.from('time_entries').delete().eq('id', id);
+  if (r.error) { showToast(r.error.message,'error'); return; }
+  cache.time_entries = (cache.time_entries||[]).filter(t => t.id !== id);
+  showToast('Deleted'); closeModal('modal-time'); renderTime();
 }
 
 // ====== CALENDAR (month grid view of jobs + invoice due dates + recurring runs) ======
