@@ -5575,7 +5575,7 @@ function billRow(b){
       <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${(()=>{const dd=billDueDay(b);return dd!=null?('due '+ordinal(dd)+(billRecurs(b)?'':' · one-time')):'no due date';})()}${b.notes?' · '+escHtml(b.notes):''}</div>
     </div>
     <div style="text-align:right;flex-shrink:0;cursor:pointer${dim}" onclick="openBillModal('${b.id}')">
-      <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;color:var(--red)">${fmt(amt)}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px">${fmt(amt)}</div>
       ${r?`<div style="font-size:10px;font-family:'JetBrains Mono',monospace"><span style="color:var(--green)">${fmt(r)} back</span> · <span style="color:var(--red)">you ${fmt(net)}</span></div>`:''}
     </div>
   </div>`;
