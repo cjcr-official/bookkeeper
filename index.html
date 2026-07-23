@@ -22,6 +22,10 @@
 
 /* ── DARK THEME (default) ── */
 :root{
+  /* Tells the browser which way its OWN widgets should paint (date-picker panels,
+     number spinners, placeholder grey). Without it the native bits render light
+     inside a dark app. Flipped to `light` on the light theme below. */
+  color-scheme:dark;
   --bg:#0a0b10;
   --bg2:#0f1117;
   --surface:#15171f;
@@ -68,6 +72,7 @@
 
 /* ── LIGHT THEME ── */
 [data-theme="light"]{
+  color-scheme:light;
   --bg:#f0f1fb;
   --bg2:#e8eaf7;
   --surface:#ffffff;
@@ -533,6 +538,9 @@ input[type="date"]::-webkit-date-and-time-value{text-align:left;margin:0}
 input[type="date"]::-webkit-calendar-picker-indicator{margin-left:auto;flex-shrink:0}
 input[type="date"]::-webkit-datetime-edit{padding:0}
 
+/* Placeholders are a real affordance (on a borderless field they're the only hint
+   it IS a field), so they get a token, not the UA default grey. */
+input::placeholder,textarea::placeholder{color:var(--text3);opacity:1}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
 button:focus-visible,.btn:focus-visible,.nav-item:focus-visible,.theme-toggle:focus-visible,a:focus-visible,summary:focus-visible,[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
@@ -1141,6 +1149,59 @@ input,select,textarea{border-radius:var(--radius-sm)}
   .cat-wrap{flex-direction:column;gap:1.1rem}
   .cat-bars{width:100%}
 }
+
+/* ── BUDGET (paycheck bill planner) ──────────────────────────────────────────
+   One column of paycheck cards. `.content` runs to 1200px on desktop, so without
+   a cap a bill row puts the name and its amount a foot apart. */
+#page-budget{max-width:660px;margin-inline:auto}
+.bud-nav{display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:1rem}
+.bud-nav h2{font-size:15px;font-weight:700;letter-spacing:-.2px}
+.bud-tag{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;letter-spacing:.5px;text-transform:uppercase;margin-top:.15rem}
+.bud-hint{font-size:11px;color:var(--text3);margin-top:.3rem}
+.bud-sched{position:relative;z-index:1;margin-top:.5rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+.bud-prog{position:relative;z-index:1;margin-top:.95rem}
+.bud-prog-row{display:flex;justify-content:space-between;margin-top:.4rem;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.3px}
+.bud-empty{text-align:center;color:var(--text3);padding:2rem 1.25rem;line-height:1.6}
+.bud-subhead{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);margin-bottom:.5rem}
+
+/* ── paycheck card ── */
+.pc-card{padding:.9rem 1rem;margin-bottom:.7rem}
+.pc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.7rem;padding-bottom:.6rem;border-bottom:1px solid var(--border)}
+.pc-eyebrow{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--accent-text)}
+.pc-card.is-done .pc-eyebrow{color:var(--green)}
+.pc-date{font-size:15px;font-weight:700;letter-spacing:-.2px}
+.pc-need{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px}
+.pc-need-sub{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace}
+.pc-status{margin-top:.35rem;font-size:10px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;color:var(--text3)}
+.pc-card.is-done .pc-status{color:var(--green)}
+.pc-none{text-align:center;color:var(--text3);font-size:11px;padding:.9rem 0;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px}
+/* "What you were paid": borderless by intent, so the focus ring moves to the
+   wrapper via :focus-within — a bare input with outline:none has none at all. */
+.pc-payline{display:flex;align-items:center;gap:.55rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.3rem .65rem;margin-bottom:.65rem;transition:border-color .15s,box-shadow .15s}
+.pc-payline:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+.pc-paylabel{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0}
+.pc-payinput{flex:1;min-width:0;border:none;background:transparent;padding:.25rem 0;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;color:var(--text)}
+.pc-payinput:focus{border-color:transparent;box-shadow:none;outline:none}
+.pc-left{font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0;color:var(--text3)}
+
+/* ── one bill line ── */
+.bill-row{display:flex;align-items:center;gap:.65rem}
+/* 24px circle inside a 44px thumb target; negative margins keep the ring
+   optically flush with the card edge without shrinking the tap area. */
+.bill-check{flex-shrink:0;width:44px;height:44px;margin:0 -10px;border:none;background:none;display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer;border-radius:50%}
+.bill-check i{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:14px;color:transparent;transition:background .15s,border-color .15s}
+.bill-check[aria-pressed="true"] i{background:var(--green);border-color:var(--green);color:#fff}
+.bill-main{flex:1;min-width:0;display:flex;align-items:center;gap:.65rem;padding:.55rem .1rem;background:none;border:none;font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:var(--radius-sm)}
+.bill-name{display:block;font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bill-sub{display:block;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bill-amt{display:block;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px}
+.bill-amt-sub{display:block;font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text3)}
+/* Paid: strikethrough + the filled check carry the state. NOT opacity — dimming
+   the row put the due line at 2.1:1 in both themes (WCAG 1.4.3 fail). */
+.bill-row.is-paid .bill-name{text-decoration:line-through;color:var(--text2)}
+/* Past due: amber is this app's due/overdue colour (invoices, calendar chips).
+   The word "past due" carries it too, so it never rests on colour alone. */
+.bill-row.is-late .bill-sub{color:var(--amber)}
 </style>
 </head>
 <body>
@@ -1695,9 +1756,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
       </div>
 
       <div id="page-budget" class="page">
-        <!-- Visual scaffold. Spend-by-category is real (from expenses); the budget
-             TARGETS + progress-vs-budget are placeholders until the functionality
-             is defined. renderBudget() fills this. -->
+        <!-- Paycheck bill planner: every bill lands on the last payday on or before
+             its due date, so each check shows exactly what it has to cover.
+             renderBudget() fills this. -->
         <div id="budget-body"></div>
       </div>
 
@@ -2078,7 +2139,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal" style="max-width:420px">
     <div class="modal-header"><h2>Pay schedule</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-payschedule')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
-      <div class="form-group"><label>How often are you paid?</label>
+      <div class="form-group"><label for="pay-freq">How often are you paid?</label>
         <select id="pay-freq" onchange="renderPayFields()">
           <option value="biweekly">Every 2 weeks</option>
           <option value="semimonthly">Twice a month</option>
@@ -2087,7 +2148,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         </select>
       </div>
       <div id="pay-fields"></div>
-      <div class="form-group" style="margin-top:.6rem"><label>Reimbursement label <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="pay-reimb-label" type="text" placeholder="e.g. Kids"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">What to call the part of a bill someone pays back to you. Leave blank for "Reimbursed".</div></div>
+      <div class="form-group" style="margin-top:.6rem"><label for="pay-reimb-label">Reimbursement label <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="pay-reimb-label" type="text" placeholder="e.g. Kids"><div class="bud-hint">What to call the part of a bill someone pays back to you. Leave blank for "Reimbursed".</div></div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-payschedule')">Cancel</button>
@@ -2102,19 +2163,29 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-header"><h2 id="bill-modal-title">Add Bill</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-bill')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
       <input type="hidden" id="bill-id">
-      <div class="form-group"><label>Bill name</label><input id="bill-name" type="text" placeholder="e.g. Electric, Rent, Car payment"></div>
-      <div class="form-group"><label>Due date</label><input id="bill-due" type="date"></div>
+      <div class="form-group"><label for="bill-name">Bill name</label><input id="bill-name" type="text" placeholder="e.g. Electric, Rent, Car payment"></div>
       <label style="display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.35rem 0 .6rem;font-weight:500">
-        <input type="checkbox" id="bill-recurring" style="width:18px;height:18px;flex-shrink:0">
+        <input type="checkbox" id="bill-recurring" onchange="toggleBillDueField()" style="width:18px;height:18px;flex-shrink:0">
         <span>Repeats every month <span style="color:var(--text3);font-weight:400;font-size:12px">(leave off for a one-time bill)</span></span>
       </label>
-      <div class="form-row">
-        <div class="form-group"><label>Amount</label><input id="bill-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
-        <div class="form-group"><label id="bill-reimb-label">Reimbursed</label><input id="bill-reimbursed" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
+      <!-- A repeating bill stores only a DAY (1–31), so it gets a day field. Using a
+           date picker here silently rewrote the day whenever the viewed month was
+           shorter than it (a bill due the 31st became the 28th in February). Both
+           fields stay in the DOM and toggle by display, so switching the checkbox
+           never discards what was already typed. -->
+      <div class="form-group" id="bill-day-wrap">
+        <label for="bill-day">Due day of the month</label>
+        <input id="bill-day" type="number" min="1" max="31" step="1" inputmode="numeric" placeholder="e.g. 15">
+        <div class="bud-hint">Bills on this day every month. In a shorter month it falls on the last day.</div>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:-.4rem">Reimbursed = the part of the bill someone pays back (leave blank if none).</div>
+      <div class="form-group" id="bill-date-wrap"><label for="bill-date">Due date</label><input id="bill-date" type="date"></div>
+      <div class="form-row">
+        <div class="form-group"><label for="bill-amount">Amount</label><input id="bill-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
+        <div class="form-group"><label id="bill-reimb-label" for="bill-reimbursed">Reimbursed</label><input id="bill-reimbursed" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
+      </div>
+      <div class="bud-hint" style="margin-top:-.4rem">Reimbursed = the part of the bill someone pays back (leave blank if none).</div>
       <div id="bill-net" style="font-size:12.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:right;min-height:1em"></div>
-      <div class="form-group"><label>Notes <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="bill-notes" type="text"></div>
+      <div class="form-group"><label for="bill-notes">Notes <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="bill-notes" type="text"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-danger" id="bill-delete-btn" onclick="withBusy(this,deleteBill)" style="margin-right:auto;display:none"><i class="ti ti-trash"></i> Delete</button>
@@ -5435,13 +5506,13 @@ function renderBudget(){
   const now = new Date(), isThisMonth = (now.getFullYear()===y && now.getMonth()===m);
   const sched = paySchedule(), bills = getBills();
 
-  const nav = `<div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:1rem">
+  const nav = `<div class="bud-nav">
     <button class="btn btn-sm" aria-label="Previous month" onclick="budgetNavMonth(-1)"><i class="ti ti-chevron-left"></i></button>
     <div style="text-align:center;min-width:0">
-      <div style="font-weight:700;font-size:15px">${monthLabel}</div>
+      <h2>${escHtml(monthLabel)}</h2>
       ${isThisMonth
-        ? `<div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;letter-spacing:.5px;text-transform:uppercase;margin-top:.15rem">This month</div>`
-        : `<button class="btn btn-sm" onclick="budgetNavThisMonth()" style="font-size:11px;padding:.15rem .55rem;margin-top:.15rem">Back to this month</button>`}
+        ? `<div class="bud-tag">This month</div>`
+        : `<button class="btn btn-sm" onclick="budgetNavThisMonth()" style="font-size:11px;margin-top:.15rem">Back to this month</button>`}
     </div>
     <button class="btn btn-sm" aria-label="Next month" onclick="budgetNavMonth(1)"><i class="ti ti-chevron-right"></i></button>
   </div>`;
@@ -5485,32 +5556,42 @@ function renderBudget(){
   const paidMonth = monthBills.reduce((s,b)=>s+(isPaid(b)?net(b):0),0);
   const monthProg = totNet>0 ? Math.min(100, Math.round(paidMonth/totNet*100)) : 0;
 
-  const heroProg = totNet>0 ? `<div style="position:relative;z-index:1;margin-top:.95rem">
-      <div class="cat-track" style="height:8px"><div class="cat-fill" style="width:${monthProg}%;background:var(--green)"></div></div>
-      <div style="display:flex;justify-content:space-between;margin-top:.4rem;font-size:10px;font-family:'JetBrains Mono',monospace;letter-spacing:.3px"><span style="color:var(--green)">${fmt(paidMonth)} paid</span><span style="color:var(--text3)">${fmt(Math.max(0,totNet-paidMonth))} left</span></div>
+  const heroProg = totNet>0 ? `<div class="bud-prog">
+      <div class="cat-track" style="height:8px" role="progressbar" aria-valuenow="${monthProg}" aria-valuemin="0" aria-valuemax="100" aria-label="Bills paid this month"><div class="cat-fill" data-bar="month" data-pct="${monthProg}" style="width:${monthProg}%;background:var(--green)"></div></div>
+      <div class="bud-prog-row"><span style="color:var(--green)">${fmt(paidMonth)} paid</span><span style="color:var(--text3)">${fmt(Math.max(0,totNet-paidMonth))} left</span></div>
     </div>` : '';
+
+  // The custom label is a proper noun the user typed ("Kids"), so it keeps its
+  // case; with no label set the copy avoids the awkward "Reimbursed back".
+  const rl = (profile && (profile.reimburse_label||'').trim());
+  const backNote = totReimb ? ` · <span style="color:var(--green)">${fmt(totReimb)} ${rl?('back from '+escHtml(rl)):'coming back'}</span>` : '';
 
   const hero = `<div class="overview" style="margin-bottom:1rem">
     <div class="ov-hero">
       <div style="min-width:0">
         <div class="ov-hero-label">You pay in ${escHtml(monthShort)}</div>
         <div class="ov-hero-value" style="color:var(--red)">${fmt(totNet)}</div>
-        <div class="stat-sub">${fmt(totBills)} in bills${totReimb?` · <span style="color:var(--green)">${fmt(totReimb)} ${escHtml(reimburseLabel().toLowerCase())} back</span>`:''}</div>
+        <div class="stat-sub">${fmt(totBills)} in bills${backNote}</div>
       </div>
       <button class="btn btn-sm" aria-label="Edit pay schedule" title="Edit pay schedule" onclick="openPayScheduleModal()" style="flex-shrink:0"><i class="ti ti-calendar-cog"></i></button>
     </div>
-    <div style="position:relative;z-index:1;margin-top:.5rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${escHtml(schedSummary())}</div>
+    <div class="bud-sched">${escHtml(schedSummary())}</div>
     ${heroProg}
   </div>`;
 
   let sections='';
   if (!bills.length){
-    sections = `<div class="card" style="text-align:center;color:var(--text3);padding:2rem 1.25rem;line-height:1.6">No bills yet.<br>Tap <b>Add Bill</b> up top to start building the month.</div>`;
+    sections = `<div class="card bud-empty">No bills yet.<br>Tap <b>Add Bill</b> up top to start building the month.</div>`;
   } else if (!paydays.length){
-    sections = `<div class="card" style="text-align:center;color:var(--text3);padding:1.5rem 1.25rem;line-height:1.6">No paydays land in ${escHtml(monthLabel)} for your schedule.<br><button class="btn btn-sm" style="margin-top:.6rem" onclick="openPayScheduleModal()">Check pay schedule</button></div>`;
+    sections = `<div class="card bud-empty" style="padding:1.5rem 1.25rem">No paydays land in ${escHtml(monthLabel)} for your schedule.<br><button class="btn btn-sm" style="margin-top:.6rem" onclick="openPayScheduleModal()">Check pay schedule</button></div>`;
   } else {
     sections = paydays.map((pd,i)=>{
-      const list = buckets[i].concat(i===0 ? early : []);   // early bills ride the first check
+      // Early bills ride the first check — but they were already due when it
+      // landed, so the row says so. Sorted by due day, or an early bill tacked on
+      // the end reads as "due 8th, due 12th, due 1st".
+      const earlyIds = (i===0 && early.length) ? new Set(early.map(b=>b.id)) : null;
+      const list = buckets[i].concat(i===0 ? early : [])
+        .sort((a,b)=>(billDueDay(a)||99)-(billDueDay(b)||99));   // due day is never 0
       // "need" is YOUR share — the full bills minus anything reimbursed back — so the
       // paycheck total and "left" match the hero and the reimbursement comes off.
       const need = list.reduce((s,b)=>s+net(b),0);
@@ -5519,11 +5600,11 @@ function renderBudget(){
       const paidCount = list.filter(isPaid).length;
       const allPaid = list.length>0 && paidCount===list.length;
       const prog = need>0 ? Math.min(100, Math.round(paidAmt/need*100)) : (allPaid?100:0);
-      const rows = list.length ? list.map(billRow).join('')
-        : `<div style="text-align:center;color:var(--text3);font-size:11px;padding:.9rem 0;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px">Nothing due to this paycheck</div>`;
+      const rows = list.length ? list.map(b=>billRow(b, !!(earlyIds && earlyIds.has(b.id)))).join('')
+        : `<div class="pc-none">Nothing due to this paycheck</div>`;
       const progRow = list.length ? `<div style="margin-bottom:.7rem">
-        <div class="cat-track" style="height:6px"><div class="cat-fill" style="width:${prog}%;background:var(--green)"></div></div>
-        <div style="margin-top:.35rem;font-size:10px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;color:${allPaid?'var(--green)':'var(--text3)'}">${allPaid?'<i class="ti ti-circle-check-filled"></i> All paid':`${paidCount} of ${list.length} paid`}</div>
+        <div class="cat-track" style="height:6px" role="progressbar" aria-valuenow="${prog}" aria-valuemin="0" aria-valuemax="100" aria-label="Bills paid from this paycheck"><div class="cat-fill" data-bar="pc${i}" data-pct="${prog}" style="width:${prog}%;background:var(--green)"></div></div>
+        <div class="pc-status">${allPaid?'<i class="ti ti-circle-check-filled"></i> All paid':`${paidCount} of ${list.length} paid`}</div>
       </div>` : '';
       const dateKey = ymd(pd);
       const got = getPaycheckAmount(dateKey);
@@ -5532,18 +5613,17 @@ function renderBudget(){
       // blur; the "left after bills" updates live as you type. No popup.
       const leftHtml = (got!=null) ? fmt(left)+' left' : '';
       const leftColor = (got!=null) ? (left>=0?'var(--green)':'var(--red)') : 'var(--text3)';
-      const payBar = `<div style="display:flex;align-items:center;gap:.55rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.3rem .65rem;margin-bottom:.65rem">
-        <span style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px;flex-shrink:0">Paid</span>
+      const payBar = `<div class="pc-payline">
+        <span class="pc-paylabel">Paid</span>
         <span style="color:var(--text3);font-size:14px;flex-shrink:0">$</span>
-        <input type="number" min="0" step="0.01" inputmode="decimal" value="${got!=null?got:''}" placeholder="0.00" aria-label="Amount you were paid"
-          oninput="paycheckLeftLive('${dateKey}',this.value,${need})" onchange="savePaycheckInline('${dateKey}',this.value)"
-          style="flex:1;min-width:0;border:none;background:transparent;padding:.25rem 0;font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px;color:var(--text);outline:none;box-shadow:none">
-        <span id="pcleft-${dateKey}" style="font-size:12px;font-family:'JetBrains Mono',monospace;font-weight:700;flex-shrink:0;color:${leftColor}">${leftHtml}</span>
+        <input class="pc-payinput" type="number" min="0" step="0.01" inputmode="decimal" value="${got!=null?got:''}" placeholder="0.00" aria-label="Amount you were paid on ${escHtml(payFmt(pd))}"
+          oninput="paycheckLeftLive('${dateKey}',this.value,${need})" onchange="savePaycheckInline('${dateKey}',this.value)">
+        <span id="pcleft-${dateKey}" class="pc-left" style="color:${leftColor}">${leftHtml}</span>
       </div>`;
-      return `<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.7rem;padding-bottom:.6rem;border-bottom:1px solid var(--border)">
-          <div><div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:${allPaid?'var(--green)':'var(--accent-text)'}">Paycheck ${i+1}${paydays.length>2&&i===paydays.length-1?' · extra':''}</div><div style="font-weight:700;font-size:15px">${payFmt(pd)}</div></div>
-          <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px">${fmt(need)}</div><div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">to pay${reimbNeed>0?` · <span style="color:var(--green)">${fmt(reimbNeed)} back</span>`:''}</div></div>
+      return `<div class="card pc-card${allPaid?' is-done':''}">
+        <div class="pc-head">
+          <div><div class="pc-eyebrow">Paycheck ${i+1}${paydays.length>2&&i===paydays.length-1?' · extra':''}</div><h3 class="pc-date">${payFmt(pd)}</h3></div>
+          <div style="text-align:right"><div class="pc-need">${fmt(need)}</div><div class="pc-need-sub">to pay${reimbNeed>0?` · <span style="color:var(--green)">${fmt(reimbNeed)} back</span>`:''}</div></div>
         </div>
         ${progRow}
         ${payBar}
@@ -5551,33 +5631,67 @@ function renderBudget(){
       </div>`;
     }).join('');
     if (noDue.length){
-      sections += `<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem">
-        <div style="font-weight:700;font-size:13px;margin-bottom:.5rem;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px">No due date</div>
-        ${noDue.map(billRow).join('')}
+      sections += `<div class="card pc-card">
+        <h3 class="bud-subhead">No due date</h3>
+        ${noDue.map(b=>billRow(b)).join('')}
       </div>`;
     }
   }
 
   host.innerHTML = nav + hero + sections;
+  paintBudgetBars();
+  // innerHTML wipes the roles/tabindex enhanceA11y() retrofits onto non-native
+  // controls, and this page re-renders on nearly every tap — so re-run it here
+  // rather than relying on showPage()/rerenderCurrentView() alone.
+  enhanceA11y(host);
+}
+
+// Progress bars are rebuilt by innerHTML on every render, so their CSS width
+// transition never plays — a brand-new element has nothing to animate FROM.
+// Remember each bar's last width and, when it changed, start it there and let
+// the transition carry it. First paint sets the real width with no motion, and
+// the global prefers-reduced-motion rule flattens the rest.
+const _budBarPrev = {};
+function paintBudgetBars(){
+  document.querySelectorAll('#budget-body .cat-fill[data-bar]').forEach(el=>{
+    const k=el.dataset.bar, to=el.dataset.pct+'%', from=_budBarPrev[k];
+    if (from!=null && from!==to){
+      el.style.width = from;
+      void el.offsetWidth;                       // flush the start value
+      requestAnimationFrame(()=>{ el.style.width = to; });
+    }
+    _budBarPrev[k] = to;
+  });
 }
 
 // One bill line inside a paycheck card. The left circle toggles paid (per month);
-// tapping the rest opens the editor.
-function billRow(b){
+// the rest is ONE button that opens the editor — name and amount used to be two
+// separate click targets, which gave every bill two identical tab stops.
+function billRow(b, early){
   const amt=parseFloat(b.amount||0), r=parseFloat(b.reimbursed||0), net=Math.max(0,amt-r);
   const y=budgetCursor.getFullYear(), m=budgetCursor.getMonth();
-  const paid=isBillPaid(b.id,y,m);
-  const dim = paid ? ';opacity:.5' : '';
-  return `<div style="display:flex;align-items:center;gap:.65rem;padding:.55rem .1rem">
-    <button onclick="event.stopPropagation();toggleBillPaid('${b.id}',${y},${m})" aria-label="${paid?'Mark unpaid':'Mark paid'}" title="${paid?'Paid — tap to undo':'Mark paid'}" style="flex-shrink:0;width:24px;height:24px;border-radius:50%;border:1.5px solid ${paid?'var(--green)':'var(--border2)'};background:${paid?'var(--green)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">${paid?'<i class="ti ti-check" style="font-size:14px"></i>':''}</button>
-    <div style="flex:1;min-width:0;cursor:pointer${dim}" onclick="openBillModal('${b.id}')">
-      <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis${paid?';text-decoration:line-through':''}">${escHtml(b.name||'Bill')}</div>
-      <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${(()=>{const dd=billDueDay(b);return dd!=null?('due '+ordinal(dd)+(billRecurs(b)?'':' · one-time')):'no due date';})()}${b.notes?' · '+escHtml(b.notes):''}</div>
-    </div>
-    <div style="text-align:right;flex-shrink:0;cursor:pointer${dim}" onclick="openBillModal('${b.id}')">
-      <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px">${fmt(amt)}</div>
-      ${r?`<div style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text3)"><span style="color:var(--green)">${fmt(r)} back</span> · you ${fmt(net)}</div>`:''}
-    </div>
+  const paid=isBillPaid(b.id,y,m), dd=billDueDay(b), name=b.name||'Bill';
+  // Past due = unpaid and its date in the VIEWED month has already gone by. Works
+  // out of the box for old months (all still-unpaid bills are late) and future
+  // ones (nothing is).
+  const now=new Date(), today=new Date(now.getFullYear(),now.getMonth(),now.getDate(),12);
+  const late = !paid && dd!=null && budDateAt(y,m,dd) < today;
+  let sub = dd!=null ? ('due '+ordinal(dd)+(billRecurs(b)?'':' · one-time')) : 'no due date';
+  if (late) sub += ' · past due';
+  else if (early) sub += ' · was due before this payday';
+  if (b.notes) sub += ' · '+escHtml(b.notes);
+  return `<div class="bill-row${paid?' is-paid':''}${late?' is-late':''}">
+    <button class="bill-check" aria-pressed="${paid}" aria-label="${escHtml(name)} — ${paid?'paid, tap to undo':'mark paid'}" onclick="toggleBillPaid('${b.id}',${y},${m})"><i class="ti ti-check"></i></button>
+    <button class="bill-main" onclick="openBillModal('${b.id}')">
+      <span style="flex:1;min-width:0">
+        <span class="bill-name">${escHtml(name)}</span>
+        <span class="bill-sub">${sub}</span>
+      </span>
+      <span style="text-align:right;flex-shrink:0">
+        <span class="bill-amt">${fmt(amt)}</span>
+        ${r?`<span class="bill-amt-sub"><span style="color:var(--green)">${fmt(r)} back</span> · you ${fmt(net)}</span>`:''}
+      </span>
+    </button>
   </div>`;
 }
 
@@ -5594,23 +5708,23 @@ function renderPayFields(){
   const host=document.getElementById('pay-fields'); if(!host) return;
   const s=paySchedule()||{};
   const wk = s.weekend || 'before';
-  const wkSel = `<div class="form-group" style="margin-top:.6rem"><label>If a payday lands on a weekend</label>
+  const wkSel = `<div class="form-group" style="margin-top:.6rem"><label for="pay-weekend">If a payday lands on a weekend</label>
     <select id="pay-weekend">
       <option value="before"${wk==='before'?' selected':''}>Pay the Friday before</option>
       <option value="after"${wk==='after'?' selected':''}>Pay the Monday after</option>
       <option value="none"${wk==='none'?' selected':''}>Use the exact date</option>
     </select></div>`;
   if (f==='monthly'){
-    host.innerHTML = `<div class="form-group"><label>Day of the month</label><input id="pay-day" type="number" min="1" max="31" inputmode="numeric" value="${s.freq==='monthly'&&s.day?s.day:''}" placeholder="e.g. 1"></div>` + wkSel;
+    host.innerHTML = `<div class="form-group"><label for="pay-day">Day of the month</label><input id="pay-day" type="number" min="1" max="31" inputmode="numeric" value="${s.freq==='monthly'&&s.day?s.day:''}" placeholder="e.g. 1"></div>` + wkSel;
   } else if (f==='semimonthly'){
     const d=(s.freq==='semimonthly'&&s.days)||[];
     host.innerHTML = `<div class="form-row">
-      <div class="form-group"><label>First payday</label><input id="pay-day1" type="number" min="1" max="31" inputmode="numeric" value="${d[0]||''}" placeholder="e.g. 7"></div>
-      <div class="form-group"><label>Second payday</label><input id="pay-day2" type="number" min="1" max="31" inputmode="numeric" value="${d[1]||''}" placeholder="e.g. 21"></div>
-    </div><div style="font-size:11px;color:var(--text3);margin-top:-.4rem">Days of the month you're paid.</div>` + wkSel;
+      <div class="form-group"><label for="pay-day1">First payday</label><input id="pay-day1" type="number" min="1" max="31" inputmode="numeric" value="${d[0]||''}" placeholder="e.g. 7"></div>
+      <div class="form-group"><label for="pay-day2">Second payday</label><input id="pay-day2" type="number" min="1" max="31" inputmode="numeric" value="${d[1]||''}" placeholder="e.g. 21"></div>
+    </div><div class="bud-hint" style="margin-top:-.4rem">Days of the month you're paid.</div>` + wkSel;
   } else {
     const a=(s.freq===f&&s.anchor)?s.anchor:'';
-    host.innerHTML = `<div class="form-group"><label>A recent payday</label><input id="pay-anchor" type="date" value="${a}"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">Pick any day you were paid — the calendar counts ${f==='weekly'?'every week':'every 2 weeks'} from there and fills in the rest (including an extra paycheck when a month has one).</div></div>`;
+    host.innerHTML = `<div class="form-group"><label for="pay-anchor">A recent payday</label><input id="pay-anchor" type="date" value="${a}"><div class="bud-hint">Pick any day you were paid — the calendar counts ${f==='weekly'?'every week':'every 2 weeks'} from there and fills in the rest (including an extra paycheck when a month has one).</div></div>`;
   }
 }
 async function savePaySchedule(){
@@ -5625,25 +5739,25 @@ async function savePaySchedule(){
 }
 
 // ── Bill modal ──
-// The due field is a native date picker for convenience, but a bill recurs monthly
-// so only the DAY is stored (b.due, 1–31). Show the day inside the month currently
-// being viewed; on save we read the day back out of whatever date was picked.
-function billDueInputValue(day){
-  if (day==null || day==='') return '';
-  const y=budgetCursor.getFullYear(), m=budgetCursor.getMonth();
-  const d=budDateAt(y,m,parseInt(day)||1), pad=n=>String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+// A repeating bill stores only a DAY (b.due, 1–31); a one-time bill stores a full
+// date (b.date). Each gets its own field — the two swap by display so switching
+// the checkbox never throws away what was already typed.
+function toggleBillDueField(){
+  const rec = document.getElementById('bill-recurring').checked;
+  document.getElementById('bill-day-wrap').style.display = rec ? '' : 'none';
+  document.getElementById('bill-date-wrap').style.display = rec ? 'none' : '';
 }
 function openBillModal(id){
   const b = id ? getBills().find(x=>x.id===id) : null;
   document.getElementById('bill-modal-title').textContent = b ? 'Edit Bill' : 'Add Bill';
   document.getElementById('bill-id').value = b ? b.id : '';
   document.getElementById('bill-name').value = b ? (b.name||'') : '';
-  // New bills default to one-time (unchecked). Recurring bills seed the picker with
-  // their day in the viewed month; one-time bills use their stored full date.
+  // New bills default to one-time (unchecked).
   const rec = b ? billRecurs(b) : false;
   document.getElementById('bill-recurring').checked = rec;
-  document.getElementById('bill-due').value = b ? (rec ? (b.due!=null?billDueInputValue(b.due):'') : (b.date||'')) : '';
+  document.getElementById('bill-day').value  = (b && rec && b.due!=null) ? b.due : '';
+  document.getElementById('bill-date').value = (b && !rec) ? (b.date||'') : '';
+  toggleBillDueField();
   document.getElementById('bill-amount').value = (b && b.amount!=null) ? b.amount : '';
   document.getElementById('bill-reimbursed').value = (b && b.reimbursed) ? b.reimbursed : '';
   document.getElementById('bill-notes').value = b ? (b.notes||'') : '';
@@ -5663,13 +5777,18 @@ async function saveBill(){
   const name=document.getElementById('bill-name').value.trim();
   if(!name){ showToast('Bill name is required','error'); return; }
   const recurring=document.getElementById('bill-recurring').checked;
-  const dueRaw=document.getElementById('bill-due').value;   // 'YYYY-MM-DD' from the date picker
-  if (!recurring && dueRaw===''){ showToast('Pick a due date for a one-time bill','error'); return; }
-  // Recurring: keep the day-of-month (repeats), no fixed date. One-time: keep the
-  // full date (shows only that month), day derived from it.
-  const day = dueRaw==='' ? null : (parseInt(dueRaw.split('-')[2],10) || null);
-  const due = recurring ? day : null;
-  const date = recurring ? null : dueRaw;
+  // Recurring: store the day-of-month only, read straight from its own field — the
+  // day never round-trips through a calendar date, so a bill due the 31st can't be
+  // silently rewritten to the 28th just because February was on screen.
+  let due=null, date=null;
+  if (recurring){
+    const d=parseInt(document.getElementById('bill-day').value,10);
+    if (!d || d<1 || d>31){ showToast('Enter a due day between 1 and 31','error'); return; }
+    due = d;
+  } else {
+    date = document.getElementById('bill-date').value;   // 'YYYY-MM-DD'
+    if (date===''){ showToast('Pick a due date for a one-time bill','error'); return; }
+  }
   const amount=parseFloat(document.getElementById('bill-amount').value)||0;
   const reimbursed=parseFloat(document.getElementById('bill-reimbursed').value)||0;
   const notes=document.getElementById('bill-notes').value.trim();
