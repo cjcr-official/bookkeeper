@@ -401,6 +401,24 @@ create policy "time_entries_own" on time_entries for all using (auth.uid() = use
 -- default hourly rate for the Time Clock (set on the Time page; prefills new punches)
 alter table profiles add column if not exists hourly_rate numeric;
 
+-- Budget (paycheck bill planner). All on profiles (jsonb), no separate table:
+--   pay_schedule  {freq:'biweekly'|'semimonthly'|'weekly'|'monthly', anchor:'YYYY-MM-DD'
+--                  (weekly/biweekly reference payday), days:[d1,d2] (semimonthly),
+--                  day:d (monthly)}. paydaysForMonth() projects the actual paydays
+--                  for the shown month; biweekly/weekly auto-produce an extra (3rd)
+--                  paycheck in the months that have one.
+--   budget_bills  [{id,name,due(1-31 day),amount,reimbursed,notes}] — the recurring
+--                  bill list. Each bill is dropped on the LAST payday on/before its
+--                  due date; paycheck totals use the FULL amount (cash needed), and
+--                  `reimbursed` (the part someone pays back) drives the net "you pay".
+--   reimburse_label  generic label for the reimbursed portion (e.g. "Kids"); default
+--                    "Reimbursed". Bills saved by rewriting the whole array + upsert
+--                    (same pattern as expense_categories), so the app works before the
+--                    migration runs (getBills() → []).
+alter table profiles add column if not exists pay_schedule jsonb;
+alter table profiles add column if not exists budget_bills jsonb;
+alter table profiles add column if not exists reimburse_label text;
+
 -- Storage: private buckets "receipts" and "statements" + RLS policies scoped to
 -- (storage.foldername(name))[1] = auth.uid()::text  (select/insert/delete).
 -- "statements" archives reconciled bank-statement PDFs; the reconcile modal can
