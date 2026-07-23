@@ -2106,11 +2106,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-body">
       <input type="hidden" id="bill-id">
       <div class="form-group"><label>Bill name</label><input id="bill-name" type="text" placeholder="e.g. Electric, Rent, Car payment"></div>
+      <div class="form-group"><label>Due date <span style="color:var(--text3);font-weight:400;font-size:11px">(repeats monthly)</span></label><input id="bill-due" type="date"></div>
       <div class="form-row">
-        <div class="form-group"><label>Due day <span style="color:var(--text3);font-weight:400;font-size:11px">(1–31)</span></label><input id="bill-due" type="number" min="1" max="31" inputmode="numeric" placeholder="e.g. 15"></div>
         <div class="form-group"><label>Amount</label><input id="bill-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
+        <div class="form-group"><label id="bill-reimb-label">Reimbursed</label><input id="bill-reimbursed" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
       </div>
-      <div class="form-group"><label id="bill-reimb-label">Reimbursed</label><input id="bill-reimbursed" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">Part of the bill someone pays back (leave blank if none).</div></div>
+      <div style="font-size:11px;color:var(--text3);margin-top:-.4rem">Reimbursed = the part of the bill someone pays back (leave blank if none).</div>
       <div id="bill-net" style="font-size:12.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:right;min-height:1em"></div>
       <div class="form-group"><label>Notes <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="bill-notes" type="text"></div>
     </div>
@@ -5525,12 +5526,21 @@ async function savePaySchedule(){
 }
 
 // ── Bill modal ──
+// The due field is a native date picker for convenience, but a bill recurs monthly
+// so only the DAY is stored (b.due, 1–31). Show the day inside the month currently
+// being viewed; on save we read the day back out of whatever date was picked.
+function billDueInputValue(day){
+  if (day==null || day==='') return '';
+  const y=budgetCursor.getFullYear(), m=budgetCursor.getMonth();
+  const d=budDateAt(y,m,parseInt(day)||1), pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+}
 function openBillModal(id){
   const b = id ? getBills().find(x=>x.id===id) : null;
   document.getElementById('bill-modal-title').textContent = b ? 'Edit Bill' : 'Add Bill';
   document.getElementById('bill-id').value = b ? b.id : '';
   document.getElementById('bill-name').value = b ? (b.name||'') : '';
-  document.getElementById('bill-due').value = (b && b.due!=null) ? b.due : '';
+  document.getElementById('bill-due').value = (b && b.due!=null) ? billDueInputValue(b.due) : '';
   document.getElementById('bill-amount').value = (b && b.amount!=null) ? b.amount : '';
   document.getElementById('bill-reimbursed').value = (b && b.reimbursed) ? b.reimbursed : '';
   document.getElementById('bill-notes').value = b ? (b.notes||'') : '';
@@ -5549,8 +5559,8 @@ async function saveBill(){
   const id=document.getElementById('bill-id').value;
   const name=document.getElementById('bill-name').value.trim();
   if(!name){ showToast('Bill name is required','error'); return; }
-  const dueRaw=document.getElementById('bill-due').value;
-  const due = dueRaw==='' ? null : Math.max(1,Math.min(31,parseInt(dueRaw)||1));
+  const dueRaw=document.getElementById('bill-due').value;   // 'YYYY-MM-DD' from the date picker
+  const due = dueRaw==='' ? null : (parseInt(dueRaw.split('-')[2],10) || null);   // store day-of-month only (recurs monthly)
   const amount=parseFloat(document.getElementById('bill-amount').value)||0;
   const reimbursed=parseFloat(document.getElementById('bill-reimbursed').value)||0;
   const notes=document.getElementById('bill-notes').value.trim();
