@@ -2076,6 +2076,52 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
+<!-- PAY SCHEDULE MODAL (Budget) -->
+<div class="modal-overlay" id="modal-payschedule">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header"><h2>Pay schedule</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-payschedule')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>How often are you paid?</label>
+        <select id="pay-freq" onchange="renderPayFields()">
+          <option value="biweekly">Every 2 weeks</option>
+          <option value="semimonthly">Twice a month</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Once a month</option>
+        </select>
+      </div>
+      <div id="pay-fields"></div>
+      <div class="form-group" style="margin-top:.6rem"><label>Reimbursement label <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="pay-reimb-label" type="text" placeholder="e.g. Kids"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">What to call the part of a bill someone pays back to you. Leave blank for "Reimbursed".</div></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-payschedule')">Cancel</button>
+      <button class="btn btn-primary" onclick="withBusy(this,savePaySchedule)"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- BILL MODAL (Budget) -->
+<div class="modal-overlay" id="modal-bill">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header"><h2 id="bill-modal-title">Add Bill</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-bill')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <input type="hidden" id="bill-id">
+      <div class="form-group"><label>Bill name</label><input id="bill-name" type="text" placeholder="e.g. Electric, Rent, Car payment"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Due day <span style="color:var(--text3);font-weight:400;font-size:11px">(1–31)</span></label><input id="bill-due" type="number" min="1" max="31" inputmode="numeric" placeholder="e.g. 15"></div>
+        <div class="form-group"><label>Amount</label><input id="bill-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
+      </div>
+      <div class="form-group"><label id="bill-reimb-label">Reimbursed</label><input id="bill-reimbursed" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">Part of the bill someone pays back (leave blank if none).</div></div>
+      <div id="bill-net" style="font-size:12.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:right;min-height:1em"></div>
+      <div class="form-group"><label>Notes <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="bill-notes" type="text"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="bill-delete-btn" onclick="withBusy(this,deleteBill)" style="margin-right:auto;display:none"><i class="ti ti-trash"></i> Delete</button>
+      <button class="btn" onclick="closeModal('modal-bill')">Cancel</button>
+      <button class="btn btn-primary" onclick="withBusy(this,saveBill)"><i class="ti ti-check"></i> Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- TIME ENTRY MODAL (manual add / edit) -->
 <div class="modal-overlay" id="modal-time">
   <div class="modal" style="max-width:420px">
@@ -2856,7 +2902,7 @@ function showPage(page, el) {
     expenses:`<button class="btn" aria-label="Recurring expenses" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New expense" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
     mileage:`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
     time:`<button class="btn btn-primary" aria-label="Add time entry" onclick="openTimeEntry(null)"><i class="ti ti-plus"></i> <span>Add Entry</span></button>`,
-    budget:`<button class="btn btn-primary" aria-label="Set budgets" onclick="budgetComingSoon()"><i class="ti ti-target"></i> <span>Set Budgets</span></button>`,
+    budget:`<button class="btn" aria-label="Pay schedule" onclick="openPayScheduleModal()"><i class="ti ti-calendar"></i> <span>Paydays</span></button> <button class="btn btn-primary" aria-label="Add bill" onclick="openBillModal(null)"><i class="ti ti-plus"></i> <span>Add Bill</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   refreshNotifBadge();
@@ -5251,17 +5297,70 @@ async function deleteTimeRow(id, ev) {        // from a list-row trash button
   if (await removeTimeEntry(id)) { showToast('Deleted'); renderTime(); }
 }
 
-// ====== BUDGET ======
-// VISUAL SCAFFOLD ONLY (functionality to come). Spend-by-category is real, pulled
-// from expenses for the selected month. The budget TARGETS, the spent-vs-budget
-// progress, and the "Set Budgets" action are placeholders — the category bars
-// currently show each category's SHARE of the month's spend so the layout reads as
-// a finished budgeting view. When targets are defined later, the bars become
-// spent÷target with over/under coloring and the hero shows budget − spent.
+// ====== BUDGET (paycheck bill planner) ======
+// Model: a recurring list of bills (name, due day, amount, and how much gets
+// reimbursed by someone else) + a pay schedule. For the selected month the app
+// computes the actual paydays and drops each bill on the LAST payday on/before its
+// due date — so each paycheck shows exactly what to pay. Paycheck totals use the
+// FULL bill amount (the cash you need); the reimbursed part is tracked so the hero
+// can show your true net cost. All stored on profile (jsonb), loaded with the rest:
+//   profile.pay_schedule   {freq:'biweekly'|'semimonthly'|'weekly'|'monthly', anchor, days, day}
+//   profile.budget_bills   [{id,name,due,amount,reimbursed,notes}]
+//   profile.reimburse_label  generic label for the reimbursed portion (e.g. "Kids")
 let budgetCursor = (() => { const d = new Date(); d.setDate(1); return d; })();
 function budgetNavMonth(delta){ budgetCursor.setMonth(budgetCursor.getMonth()+delta); renderBudget(); }
 function budgetNavThisMonth(){ const d=new Date(); budgetCursor=new Date(d.getFullYear(),d.getMonth(),1); renderBudget(); }
-function budgetComingSoon(){ showToast('Budget targets are coming next — tell me how you want them to work','' ); }
+
+function getBills(){ return Array.isArray(profile.budget_bills) ? profile.budget_bills : []; }
+function paySchedule(){ return (profile && profile.pay_schedule) || null; }
+function reimburseLabel(){ return (profile && (profile.reimburse_label||'').trim()) || 'Reimbursed'; }
+function ordinal(n){ n=parseInt(n)||0; const s=['th','st','nd','rd'], v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+
+async function saveBills(arr){
+  profile.budget_bills = arr;
+  if (currentUser){ const {error}=await sb.from('profiles').upsert({id:currentUser.id, budget_bills:arr});
+    if (error && !/budget_bills/i.test(error.message||'')) showToast(error.message,'error'); }
+}
+async function savePayScheduleObj(sched, label){
+  profile.pay_schedule = sched;
+  const row = {id:currentUser.id, pay_schedule:sched};
+  if (label!=null){ profile.reimburse_label = label; row.reimburse_label = label; }
+  if (currentUser){ const {error}=await sb.from('profiles').upsert(row);
+    if (error && !/pay_schedule|reimburse_label/i.test(error.message||'')) showToast(error.message,'error'); }
+}
+
+// A date at noon (avoids TZ/DST edge cases), day-of-month clamped to the month.
+function budDateAt(y,m,day){ const last=new Date(y,m+1,0).getDate(); return new Date(y,m,Math.min(Math.max(1,day),last),12); }
+
+// Payday Date objects that fall within month (y,m) for the current schedule.
+function paydaysForMonth(y,m){
+  const s=paySchedule(); if(!s) return [];
+  const last=new Date(y,m+1,0).getDate();
+  if (s.freq==='monthly') return [budDateAt(y,m,parseInt(s.day)||1)];
+  if (s.freq==='semimonthly') return (s.days||[]).map(x=>parseInt(x)).filter(x=>x>=1).sort((a,b)=>a-b).map(d=>budDateAt(y,m,d));
+  // weekly / biweekly: project from a known payday (anchor)
+  if (!s.anchor) return [];
+  const step = s.freq==='weekly' ? 7 : 14;
+  const [ay,am,ad] = s.anchor.split('-').map(Number);
+  let d = new Date(ay, am-1, ad, 12);
+  const monthStart=new Date(y,m,1,12), monthEnd=new Date(y,m,last,12);
+  // coarse-jump close to the month, then fine-tune with setDate (DST-safe at noon)
+  const approx = Math.round((monthStart.getTime()-d.getTime())/86400000/step);
+  if (approx) d.setDate(d.getDate()+approx*step);
+  while (d>monthStart) d.setDate(d.getDate()-step);
+  const out=[]; let guard=0;
+  while (d<=monthEnd && guard++<500){ if (d.getMonth()===m && d.getFullYear()===y) out.push(new Date(d)); d.setDate(d.getDate()+step); }
+  return out;
+}
+function payFmt(d){ return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
+function schedSummary(){
+  const s=paySchedule(); if(!s) return '';
+  if (s.freq==='monthly') return `Paid monthly on the ${ordinal(s.day)}`;
+  if (s.freq==='semimonthly') return `Paid twice a month · ${(s.days||[]).map(ordinal).join(' & ')}`;
+  if (s.freq==='weekly') return 'Paid weekly';
+  if (s.freq==='biweekly') return 'Paid every 2 weeks';
+  return '';
+}
 
 function renderBudget(){
   const host = document.getElementById('budget-body'); if (!host) return;
@@ -5269,21 +5368,7 @@ function renderBudget(){
   const monthLabel = budgetCursor.toLocaleDateString('en-US',{month:'long',year:'numeric'});
   const monthShort = budgetCursor.toLocaleDateString('en-US',{month:'long'});
   const now = new Date(), isThisMonth = (now.getFullYear()===y && now.getMonth()===m);
-
-  // Real spend this month, by category (excludes reimbursed pass-throughs).
-  const catItems = {};
-  (cache.expenses||[]).forEach(e=>{
-    if (e.reimbursed) return;
-    const d = parseDate(e.date);
-    if (d.getFullYear()!==y || d.getMonth()!==m) return;
-    const k = e.category || 'Uncategorized';
-    (catItems[k]=catItems[k]||[]).push(e);
-  });
-  let cats = Object.keys(catItems)
-    .map(k=>({ name:k, val:catItems[k].reduce((s,e)=>s+parseFloat(e.amount||0),0) }))
-    .filter(c=>c.val>0).sort((a,b)=>b.val-a.val)
-    .map((c,i)=>({ ...c, color:CAT_COLORS[i%CAT_COLORS.length] }));
-  const totalSpent = cats.reduce((s,c)=>s+c.val,0);
+  const sched = paySchedule(), bills = getBills();
 
   const nav = `<div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:1rem">
     <button class="btn btn-sm" aria-label="Previous month" onclick="budgetNavMonth(-1)"><i class="ti ti-chevron-left"></i></button>
@@ -5296,52 +5381,171 @@ function renderBudget(){
     <button class="btn btn-sm" aria-label="Next month" onclick="budgetNavMonth(1)"><i class="ti ti-chevron-right"></i></button>
   </div>`;
 
+  // First run: no schedule yet → prompt to set paydays.
+  if (!sched){
+    host.innerHTML = nav + `<div class="card" style="text-align:center;padding:2rem 1.25rem">
+      <div style="font-size:34px;margin-bottom:.4rem">🗓️</div>
+      <h3 style="margin:0 0 .4rem">Set up your paydays</h3>
+      <p style="color:var(--text3);font-size:13px;line-height:1.6;margin:0 0 1.1rem">Tell the budget how often you're paid. Every bill lands on the paycheck that covers it, so each payday you know exactly what to pay.</p>
+      <button class="btn btn-primary" onclick="openPayScheduleModal()"><i class="ti ti-calendar-plus"></i> Set pay schedule</button>
+    </div>`;
+    return;
+  }
+
+  const paydays = paydaysForMonth(y,m);
+  const amt = b=>parseFloat(b.amount||0), reimb = b=>parseFloat(b.reimbursed||0), net = b=>Math.max(0, amt(b)-reimb(b));
+
+  // Assign each bill to the last payday on/before its due date (bills due before the
+  // first payday, or with no due date, fall into their own buckets).
+  const buckets = paydays.map(()=>[]);
+  const early = [], noDue = [];
+  bills.forEach(b=>{
+    if (b.due==null || b.due===''){ noDue.push(b); return; }
+    const due = budDateAt(y,m,parseInt(b.due)||1);
+    let idx=-1;
+    for (let i=0;i<paydays.length;i++){ if (paydays[i]<=due) idx=i; }
+    if (idx>=0) buckets[idx].push(b);
+    else if (paydays.length) early.push(b);   // due before this month's first payday
+    else noDue.push(b);
+  });
+
+  const totBills = bills.reduce((s,b)=>s+amt(b),0);
+  const totReimb = bills.reduce((s,b)=>s+reimb(b),0);
+  const totNet = bills.reduce((s,b)=>s+net(b),0);
+
   const hero = `<div class="overview" style="margin-bottom:1rem">
     <div class="ov-hero">
       <div style="min-width:0">
-        <div class="ov-hero-label">Spent in ${escHtml(monthShort)}</div>
-        <div class="ov-hero-value" style="color:var(--red)">${fmt(totalSpent)}</div>
-        <div class="stat-sub">across ${cats.length} categor${cats.length===1?'y':'ies'}</div>
+        <div class="ov-hero-label">You pay in ${escHtml(monthShort)}</div>
+        <div class="ov-hero-value" style="color:var(--red)">${fmt(totNet)}</div>
+        <div class="stat-sub">${fmt(totBills)} in bills${totReimb?` · ${fmt(totReimb)} ${escHtml(reimburseLabel().toLowerCase())} back`:''}</div>
       </div>
-      <div class="ov-margin" style="background:var(--surface2);color:var(--text3)"><i class="ti ti-target"></i> No budget yet</div>
+      <button class="btn btn-sm" aria-label="Edit pay schedule" title="Edit pay schedule" onclick="openPayScheduleModal()" style="flex-shrink:0"><i class="ti ti-calendar-cog"></i></button>
     </div>
-    <div style="position:relative;z-index:1;margin-top:1.2rem">
-      <div class="cat-track" style="height:12px"><div class="cat-fill" style="width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2))"></div></div>
-      <div style="text-align:center;margin-top:.6rem;font-size:11px;color:var(--text3)">
-        Set a monthly budget to track spending against a target.
-        <div style="margin-top:.7rem"><button class="btn btn-sm btn-primary" onclick="budgetComingSoon()"><i class="ti ti-target"></i> Set a budget</button></div>
-      </div>
-    </div>
+    <div style="position:relative;z-index:1;margin-top:.55rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${escHtml(schedSummary())}</div>
   </div>`;
 
-  let body;
-  if (!totalSpent){
-    body = `<div class="card" style="text-align:center;color:var(--text3);padding:2.25rem 1.25rem;line-height:1.6">No spending recorded in ${escHtml(monthLabel)}.<br>Once you log expenses, they'll break down here by category.</div>`;
+  let sections='';
+  if (!bills.length){
+    sections = `<div class="card" style="text-align:center;color:var(--text3);padding:2rem 1.25rem;line-height:1.6">No bills yet.<br>Tap <b>Add Bill</b> up top to start building the month.</div>`;
+  } else if (!paydays.length){
+    sections = `<div class="card" style="text-align:center;color:var(--text3);padding:1.5rem 1.25rem;line-height:1.6">No paydays land in ${escHtml(monthLabel)} for your schedule.<br><button class="btn btn-sm" style="margin-top:.6rem" onclick="openPayScheduleModal()">Check pay schedule</button></div>`;
   } else {
-    body = `<div class="card" style="padding:1rem 1.1rem">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;margin-bottom:1.1rem">
-        <h3 style="margin:0;font-size:16px">By category</h3>
-        <span style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">of ${fmt(totalSpent)}</span>
-      </div>
-      <div class="cat-bars">
-        ${cats.map(c=>{
-          const pct = totalSpent ? Math.round(c.val/totalSpent*100) : 0;
-          return `<div style="display:flex;flex-direction:column;gap:.45rem">
-            <div class="cat-row-top">
-              <span class="cat-dot" style="background:${c.color}"></span>
-              <span class="cat-name">${escHtml(c.name)}</span>
-              <span class="cat-amt" style="color:var(--red)">${fmt(c.val)}</span>
-              <span class="cat-pct">${pct}%</span>
-            </div>
-            <div class="cat-track"><div class="cat-fill" style="width:${pct}%;background:${c.color}"></div></div>
-            <div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;letter-spacing:.3px">BUDGET — not set</div>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`;
+    sections = paydays.map((pd,i)=>{
+      const list = buckets[i].concat(i===0 ? early : []);   // early bills ride the first check
+      const need = list.reduce((s,b)=>s+amt(b),0);
+      const rows = list.length ? list.map(billRow).join('')
+        : `<div style="color:var(--text3);font-size:12px;padding:.5rem .1rem">Nothing due to this paycheck.</div>`;
+      return `<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.5rem;padding-bottom:.55rem;border-bottom:1px solid var(--border)">
+          <div><div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:var(--accent-text)">Paycheck ${i+1}${paydays.length>2&&i===paydays.length-1?' · extra':''}</div><div style="font-weight:700;font-size:15px">${payFmt(pd)}</div></div>
+          <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px">${fmt(need)}</div><div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">to pay</div></div>
+        </div>
+        ${rows}
+      </div>`;
+    }).join('');
+    if (noDue.length){
+      sections += `<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem">
+        <div style="font-weight:700;font-size:13px;margin-bottom:.5rem;color:var(--text3);font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:.5px">No due date</div>
+        ${noDue.map(billRow).join('')}
+      </div>`;
+    }
   }
 
-  host.innerHTML = nav + hero + body;
+  host.innerHTML = nav + hero + sections;
+}
+
+// One bill line inside a paycheck card. Tapping it opens the editor.
+function billRow(b){
+  const amt=parseFloat(b.amount||0), r=parseFloat(b.reimbursed||0), net=Math.max(0,amt-r);
+  return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .1rem;cursor:pointer" onclick="openBillModal('${b.id}')">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(b.name||'Bill')}</div>
+      <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${b.due?('due '+ordinal(b.due)):'no due date'}${b.notes?' · '+escHtml(b.notes):''}</div>
+    </div>
+    <div style="text-align:right;flex-shrink:0">
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px">${fmt(amt)}</div>
+      ${r?`<div style="font-size:10px;color:var(--green);font-family:'JetBrains Mono',monospace">${fmt(r)} back · you ${fmt(net)}</div>`:''}
+    </div>
+  </div>`;
+}
+
+// ── Pay schedule modal ──
+function openPayScheduleModal(){
+  const s=paySchedule()||{};
+  document.getElementById('pay-freq').value = s.freq || 'biweekly';
+  document.getElementById('pay-reimb-label').value = (profile && profile.reimburse_label) || '';
+  renderPayFields();
+  openModal('modal-payschedule');
+}
+function renderPayFields(){
+  const f=document.getElementById('pay-freq').value;
+  const host=document.getElementById('pay-fields'); if(!host) return;
+  const s=paySchedule()||{};
+  if (f==='monthly'){
+    host.innerHTML = `<div class="form-group"><label>Day of the month</label><input id="pay-day" type="number" min="1" max="31" inputmode="numeric" value="${s.freq==='monthly'&&s.day?s.day:''}" placeholder="e.g. 1"></div>`;
+  } else if (f==='semimonthly'){
+    const d=(s.freq==='semimonthly'&&s.days)||[];
+    host.innerHTML = `<div class="form-row">
+      <div class="form-group"><label>First payday</label><input id="pay-day1" type="number" min="1" max="31" inputmode="numeric" value="${d[0]||''}" placeholder="e.g. 7"></div>
+      <div class="form-group"><label>Second payday</label><input id="pay-day2" type="number" min="1" max="31" inputmode="numeric" value="${d[1]||''}" placeholder="e.g. 21"></div>
+    </div><div style="font-size:11px;color:var(--text3);margin-top:-.4rem">Days of the month you're paid.</div>`;
+  } else {
+    const a=(s.freq===f&&s.anchor)?s.anchor:'';
+    host.innerHTML = `<div class="form-group"><label>A recent payday</label><input id="pay-anchor" type="date" value="${a}"><div style="font-size:11px;color:var(--text3);margin-top:.3rem">Pick any day you were paid — the calendar counts ${f==='weekly'?'every week':'every 2 weeks'} from there and fills in the rest (including an extra paycheck when a month has one).</div></div>`;
+  }
+}
+async function savePaySchedule(){
+  const f=document.getElementById('pay-freq').value;
+  const sched={freq:f};
+  if (f==='monthly'){ const d=parseInt(document.getElementById('pay-day').value); if(!d){showToast('Enter the day of the month','error');return;} sched.day=d; }
+  else if (f==='semimonthly'){ const d1=parseInt(document.getElementById('pay-day1').value), d2=parseInt(document.getElementById('pay-day2').value); if(!d1||!d2){showToast('Enter both paydays','error');return;} sched.days=[d1,d2].sort((a,b)=>a-b); }
+  else { const a=document.getElementById('pay-anchor').value; if(!a){showToast('Pick a recent payday','error');return;} sched.anchor=a; }
+  await savePayScheduleObj(sched, document.getElementById('pay-reimb-label').value.trim());
+  showToast('Pay schedule saved','success'); closeModal('modal-payschedule'); renderBudget();
+}
+
+// ── Bill modal ──
+function openBillModal(id){
+  const b = id ? getBills().find(x=>x.id===id) : null;
+  document.getElementById('bill-modal-title').textContent = b ? 'Edit Bill' : 'Add Bill';
+  document.getElementById('bill-id').value = b ? b.id : '';
+  document.getElementById('bill-name').value = b ? (b.name||'') : '';
+  document.getElementById('bill-due').value = (b && b.due!=null) ? b.due : '';
+  document.getElementById('bill-amount').value = (b && b.amount!=null) ? b.amount : '';
+  document.getElementById('bill-reimbursed').value = (b && b.reimbursed) ? b.reimbursed : '';
+  document.getElementById('bill-notes').value = b ? (b.notes||'') : '';
+  document.getElementById('bill-reimb-label').textContent = reimburseLabel() + ' pays';
+  document.getElementById('bill-delete-btn').style.display = b ? '' : 'none';
+  updateBillNet();
+  openModal('modal-bill');
+}
+function updateBillNet(){
+  const el=document.getElementById('bill-net'); if(!el) return;
+  const a=parseFloat(document.getElementById('bill-amount').value)||0;
+  const r=parseFloat(document.getElementById('bill-reimbursed').value)||0;
+  el.textContent = r ? ('You pay ' + fmt(Math.max(0,a-r))) : '';
+}
+async function saveBill(){
+  const id=document.getElementById('bill-id').value;
+  const name=document.getElementById('bill-name').value.trim();
+  if(!name){ showToast('Bill name is required','error'); return; }
+  const dueRaw=document.getElementById('bill-due').value;
+  const due = dueRaw==='' ? null : Math.max(1,Math.min(31,parseInt(dueRaw)||1));
+  const amount=parseFloat(document.getElementById('bill-amount').value)||0;
+  const reimbursed=parseFloat(document.getElementById('bill-reimbursed').value)||0;
+  const notes=document.getElementById('bill-notes').value.trim();
+  const bills=getBills().slice();
+  if (id){ const i=bills.findIndex(x=>x.id===id); if(i>-1) bills[i]={...bills[i],name,due,amount,reimbursed,notes}; }
+  else { const nid=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('b'+Date.now()+Math.random().toString(36).slice(2)); bills.push({id:nid,name,due,amount,reimbursed,notes}); }
+  await saveBills(bills);
+  showToast('Saved','success'); closeModal('modal-bill'); renderBudget();
+}
+async function deleteBill(){
+  const id=document.getElementById('bill-id').value; if(!id) return;
+  if(!confirm('Delete this bill?')) return;
+  await saveBills(getBills().filter(b=>b.id!==id));
+  showToast('Deleted'); closeModal('modal-bill'); renderBudget();
 }
 
 // ====== CALENDAR (month grid view of jobs + invoice due dates + recurring runs) ======
