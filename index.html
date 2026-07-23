@@ -694,10 +694,12 @@ body.modal-open .main{overflow:hidden}
   .nav-item span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
   .nav-item.active{border-top:2px solid var(--accent);background:var(--accent-bg);box-shadow:none}
   .nav-item i{font-size:24px}
-  /* Bottom bar shows core tabs + a "More" button; the rest live in the More sheet. */
-  .nav-overflow{display:none!important}
+  /* Two-group bottom bar: Home + primary tabs + More by default; tapping More
+     swaps to Home + overflow tabs. Home (no group class) shows in both. */
   .nav-more{display:flex}
   .nav-more[data-empty="1"]{display:none}
+  .sidebar-nav-scroll:not(.show-more) .nav-overflow{display:none!important}
+  .sidebar-nav-scroll.show-more .nav-primary{display:none!important}
 
   /* ── LAYOUT ── */
   .app{flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
@@ -1255,15 +1257,16 @@ input,select,textarea{border-radius:var(--radius-sm)}
     </div>
     <div class="sidebar-nav-scroll">
     <div class="nav-item active" role="button" tabindex="0" data-page="dashboard" onclick="showPage('dashboard',this)"><i class="ti ti-layout-dashboard"></i><span>Home</span></div>
-    <div class="nav-item" role="button" tabindex="0" data-page="invoices" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i><span>Invoices</span></div>
-    <div class="nav-item" role="button" tabindex="0" data-page="customers" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
-    <div class="nav-item" role="button" tabindex="0" data-page="expenses" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
+    <div class="nav-item nav-primary" role="button" tabindex="0" data-page="invoices" onclick="showPage('invoices',this)"><i class="ti ti-file-invoice"></i><span>Invoices</span></div>
+    <div class="nav-item nav-primary" role="button" tabindex="0" data-page="customers" onclick="showPage('customers',this)"><i class="ti ti-users"></i><span>Customers</span></div>
+    <div class="nav-item nav-primary" role="button" tabindex="0" data-page="expenses" onclick="showPage('expenses',this)"><i class="ti ti-receipt"></i><span>Expenses</span></div>
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="accounts" onclick="showPage('accounts',this)"><i class="ti ti-file-dollar"></i><span>Statements</span></div>
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="mileage" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="time" onclick="showPage('time',this)"><i class="ti ti-clock"></i><span>Time</span></div>
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="budget" onclick="showPage('budget',this)"><i class="ti ti-pig-money"></i><span>Budget</span></div>
-    <!-- Mobile bottom-bar only: overflow menu for the tabs above. Hidden on desktop (sidebar lists everything). -->
-    <div class="nav-item nav-more" role="button" tabindex="0" aria-label="More sections" onclick="openMoreMenu()"><i class="ti ti-dots"></i><span>More</span></div>
+    <!-- Mobile bottom-bar only: toggles the bar between the primary tabs and the
+         overflow tabs in place (Home stays in both). Hidden on desktop. -->
+    <div class="nav-item nav-more" id="nav-more-btn" role="button" tabindex="0" aria-label="More sections" onclick="toggleNavMore()"><i class="ti ti-dots" id="nav-more-ico"></i><span id="nav-more-lbl">More</span></div>
     </div>
     <div style="margin-top:auto" class="sidebar-bottom">
       <div class="nav-item" role="button" tabindex="0" onclick="showPage('settings',this)"><i class="ti ti-settings"></i> Settings</div>
@@ -2073,16 +2076,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
-<!-- MORE MENU (mobile bottom-bar overflow) -->
-<div class="modal-overlay" id="modal-more">
-  <div class="modal" style="max-width:420px">
-    <div class="modal-header"><h2>More</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-more')"><i class="ti ti-x"></i></button></div>
-    <div class="modal-body">
-      <div id="more-menu-list" style="display:flex;flex-direction:column;gap:.5rem"></div>
-    </div>
-  </div>
-</div>
-
 <!-- TIME ENTRY MODAL (manual add / edit) -->
 <div class="modal-overlay" id="modal-time">
   <div class="modal" style="max-width:420px">
@@ -2798,9 +2791,14 @@ function applyModuleVisibility() {
   document.querySelectorAll('[data-module-all]').forEach(el => {
     el.style.display = el.dataset.moduleAll.split(/\s+/).every(id => hid.includes(id)) ? 'none' : '';
   });
-  // Hide the mobile "More" button when every section it would list is hidden.
+  // Hide the mobile "More" button when every tab it would reveal is hidden — and if
+  // we're currently showing that (now-empty) group, fall back to the primary tabs.
   const moreEl = document.querySelector('.nav-more');
-  if (moreEl) moreEl.dataset.empty = MORE_PAGES.some(p => !hidPages.has(p.page)) ? '' : '1';
+  if (moreEl) {
+    const anyOverflow = MORE_PAGES.some(p => !hidPages.has(p.page));
+    moreEl.dataset.empty = anyOverflow ? '' : '1';
+    if (!anyOverflow && _navMore) setNavMore(false);
+  }
   if (isPageHidden(currentPage)) showPage('dashboard', null);
 }
 function toggleModule(id) {
@@ -2839,14 +2837,13 @@ function showPage(page, el) {
   currentPage = page;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
-  // Highlight the right bottom-bar/sidebar tab from the page itself (so navigating
-  // via the More sheet — which passes no element — still lights the correct tab).
+  // Mobile bottom bar: switch to the group that holds this page so its tab is
+  // actually on the bar, then highlight it. Settings/Profile (no bar tab, opened
+  // from the top bar) leave the current group as-is.
+  if (page !== 'settings' && page !== 'profile') setNavMore(MORE_PAGES.some(p => p.page === page));
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const sideTab = document.querySelector('.nav-item[data-page="'+page+'"]');
-  if (sideTab) sideTab.classList.add('active');   // desktop sidebar + mobile primary tabs
-  if (MORE_PAGES.some(p => p.page === page)) {     // overflow page → light the mobile More button
-    const moreEl = document.querySelector('.nav-more'); if (moreEl) moreEl.classList.add('active');
-  }
+  if (sideTab) sideTab.classList.add('active');   // desktop sidebar + whichever mobile group is showing
   const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',time:'Time Clock',budget:'Budget',settings:'Settings',profile:'Business Profile'};
   document.getElementById('page-title').textContent = titles[page]||page;
   updateTopbarLogo();
@@ -2867,19 +2864,19 @@ function showPage(page, el) {
   rerenderCurrentView();
 }
 
-// Mobile "More" overflow sheet: lists the sections not on the bottom bar (skipping
-// any the user has hidden), each opening its page.
-function openMoreMenu() {
-  const list = document.getElementById('more-menu-list'); if (!list) return;
-  const items = MORE_PAGES.filter(p => !isPageHidden(p.page));
-  list.innerHTML = items.map(p => `
-    <button class="btn btn-full" style="justify-content:flex-start;gap:.8rem;padding:.85rem 1rem;font-size:15px${p.page===currentPage?';border-color:var(--accent);color:var(--accent-text)':''}" onclick="goMore('${p.page}')">
-      <i class="ti ${p.icon}" style="font-size:20px"></i> ${escHtml(p.label)}
-    </button>`).join('') ||
-    `<div style="text-align:center;color:var(--text3);padding:1rem">Nothing here — all extra sections are hidden in Settings.</div>`;
-  openModal('modal-more');
+// Mobile bottom bar has two groups: the primary tabs and the overflow tabs, with
+// Home pinned in both. The "More" button swaps between them in place (no sheet).
+// Desktop sidebar ignores this — it lists every tab.
+let _navMore = false;
+function setNavMore(state) {
+  _navMore = !!state;
+  const bar = document.querySelector('.sidebar-nav-scroll');
+  if (bar) bar.classList.toggle('show-more', _navMore);
+  const ico = document.getElementById('nav-more-ico'), lbl = document.getElementById('nav-more-lbl');
+  if (ico) ico.className = 'ti ' + (_navMore ? 'ti-arrow-left' : 'ti-dots');
+  if (lbl) lbl.textContent = _navMore ? 'Back' : 'More';
 }
-function goMore(page) { closeModal('modal-more'); showPage(page, null); }
+function toggleNavMore() { setNavMore(!_navMore); }
 
 // Floating + (mobile): runs the current tab's New action — the topbar + is out
 // of thumb reach on a phone. Dashboard creates a job; Statements/Settings/Mileage
