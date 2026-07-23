@@ -5495,7 +5495,7 @@ function renderBudget(){
       <div style="min-width:0">
         <div class="ov-hero-label">You pay in ${escHtml(monthShort)}</div>
         <div class="ov-hero-value" style="color:var(--red)">${fmt(totNet)}</div>
-        <div class="stat-sub">${fmt(totBills)} in bills${totReimb?` · ${fmt(totReimb)} ${escHtml(reimburseLabel().toLowerCase())} back`:''}</div>
+        <div class="stat-sub">${fmt(totBills)} in bills${totReimb?` · <span style="color:var(--green)">${fmt(totReimb)} ${escHtml(reimburseLabel().toLowerCase())} back</span>`:''}</div>
       </div>
       <button class="btn btn-sm" aria-label="Edit pay schedule" title="Edit pay schedule" onclick="openPayScheduleModal()" style="flex-shrink:0"><i class="ti ti-calendar-cog"></i></button>
     </div>
@@ -5543,7 +5543,7 @@ function renderBudget(){
       return `<div class="card" style="padding:.9rem 1rem;margin-bottom:.7rem">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;margin-bottom:.7rem;padding-bottom:.6rem;border-bottom:1px solid var(--border)">
           <div><div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.5px;text-transform:uppercase;color:${allPaid?'var(--green)':'var(--accent-text)'}">Paycheck ${i+1}${paydays.length>2&&i===paydays.length-1?' · extra':''}</div><div style="font-weight:700;font-size:15px">${payFmt(pd)}</div></div>
-          <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px">${fmt(need)}</div><div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">to pay${reimbNeed>0?` · ${fmt(reimbNeed)} back`:''}</div></div>
+          <div style="text-align:right"><div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:16px">${fmt(need)}</div><div style="font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace">to pay${reimbNeed>0?` · <span style="color:var(--green)">${fmt(reimbNeed)} back</span>`:''}</div></div>
         </div>
         ${progRow}
         ${payBar}
@@ -5575,8 +5575,8 @@ function billRow(b){
       <div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace">${(()=>{const dd=billDueDay(b);return dd!=null?('due '+ordinal(dd)+(billRecurs(b)?'':' · one-time')):'no due date';})()}${b.notes?' · '+escHtml(b.notes):''}</div>
     </div>
     <div style="text-align:right;flex-shrink:0;cursor:pointer${dim}" onclick="openBillModal('${b.id}')">
-      <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px">${fmt(amt)}</div>
-      ${r?`<div style="font-size:10px;color:var(--green);font-family:'JetBrains Mono',monospace">${fmt(r)} back · you ${fmt(net)}</div>`:''}
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px;color:var(--red)">${fmt(amt)}</div>
+      ${r?`<div style="font-size:10px;font-family:'JetBrains Mono',monospace"><span style="color:var(--green)">${fmt(r)} back</span> · <span style="color:var(--red)">you ${fmt(net)}</span></div>`:''}
     </div>
   </div>`;
 }
