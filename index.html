@@ -5576,7 +5576,7 @@ function billRow(b){
     </div>
     <div style="text-align:right;flex-shrink:0;cursor:pointer${dim}" onclick="openBillModal('${b.id}')">
       <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:14px">${fmt(amt)}</div>
-      ${r?`<div style="font-size:10px;font-family:'JetBrains Mono',monospace"><span style="color:var(--green)">${fmt(r)} back</span> · <span style="color:var(--red)">you ${fmt(net)}</span></div>`:''}
+      ${r?`<div style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text3)"><span style="color:var(--green)">${fmt(r)} back</span> · you ${fmt(net)}</div>`:''}
     </div>
   </div>`;
 }
