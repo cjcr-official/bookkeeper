@@ -1800,6 +1800,31 @@ input,select,textarea{border-radius:var(--radius-sm)}
   </div>
 </div>
 
+<!-- LOGO CROP (Facebook-style square crop: drag to pan, pinch / slider to zoom) -->
+<div class="modal-overlay" id="modal-logo-crop">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header"><h2>Position your logo</h2><button class="btn btn-sm" aria-label="Close" onclick="cancelLogoCrop()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <p style="color:var(--text3);font-size:12.5px;line-height:1.5;margin:0 0 .9rem">Drag to move, pinch or use the slider to zoom. The square is exactly what shows on invoices, reports, the home screen and the app icon.</p>
+      <div style="display:flex;justify-content:center">
+        <div style="position:relative;width:min(78vw,300px);aspect-ratio:1;border-radius:20px;overflow:hidden;background:#0b0f18;box-shadow:0 2px 14px rgba(0,0,0,.25)">
+          <canvas id="logo-crop-canvas" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab;display:block"></canvas>
+          <div style="position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35);border-radius:20px"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.8rem;margin:1.15rem .25rem .25rem">
+        <i class="ti ti-photo" style="font-size:14px;color:var(--text3);flex-shrink:0"></i>
+        <input id="logo-crop-zoom" type="range" min="1" max="5" step="0.01" value="1" aria-label="Zoom" style="flex:1;accent-color:var(--accent)" oninput="logoCropZoom(this.value)">
+        <i class="ti ti-photo" style="font-size:22px;color:var(--text3);flex-shrink:0"></i>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" type="button" onclick="cancelLogoCrop()">Cancel</button>
+      <button class="btn btn-primary" type="button" onclick="saveLogoCrop()"><i class="ti ti-check"></i> Save logo</button>
+    </div>
+  </div>
+</div>
+
 <!-- INVOICE MODAL -->
 <div class="modal-overlay" id="modal-invoice" data-keep-open>
   <div class="modal">
@@ -8582,10 +8607,121 @@ async function fileToLogoDataURL(f) {
 async function onLogoPick(e) {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
-  showToast('Processing logo…');
-  let dataUrl;
-  try { dataUrl = await fileToLogoDataURL(f); }
+  showToast('Loading image…');
+  let src;
+  try { src = await decodeImageForCrop(f); }
   catch(err) { showToast('Could not read that image — try a PNG or JPG','error'); return; }
+  openLogoCropper(src);
+}
+
+// ---- Logo cropper: square crop with drag-to-pan + pinch/slider/wheel zoom. ----
+// The square always stays covered (min zoom = the shortest axis fills the box),
+// so a portrait/landscape photo can be framed instead of letterboxed, and the
+// saved logo is a clean square that squares nicely as the app icon.
+let _crop = null;
+const _cropPts = new Map();
+let _cropPinch = null, _cropWired = false;
+
+async function decodeImageForCrop(f) {
+  try { return await createImageBitmap(f); }   // handles iPhone HEIC too
+  catch(_) {
+    return await new Promise((res,rej)=>{
+      const r = new FileReader();
+      r.onload = () => { const img = new Image(); img.onload = ()=>res(img); img.onerror = rej; img.src = r.result; };
+      r.onerror = rej; r.readAsDataURL(f);
+    });
+  }
+}
+function _cropClampZ(z){ return Math.min(5, Math.max(1, z)); }
+function cropClamp(){
+  const c = _crop; if (!c) return;
+  const spanX = c.rx*c.z, spanY = c.ry*c.z;   // image size as a fraction of the box
+  c.fx = Math.min(0, Math.max(1-spanX, c.fx));
+  c.fy = Math.min(0, Math.max(1-spanY, c.fy));
+}
+// Draw the current crop into a square canvas of side S. fx/fy are the image's
+// top-left as a fraction of S, so this is resolution-independent (preview + export).
+function cropRender(ctx, S){
+  const c = _crop;
+  const scale = (S/Math.min(c.iw,c.ih))*c.z;
+  ctx.clearRect(0,0,S,S);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(c.src, c.fx*S, c.fy*S, c.iw*scale, c.ih*scale);
+}
+function cropDrawPreview(){
+  const cv = document.getElementById('logo-crop-canvas');
+  if (cv && _crop) cropRender(cv.getContext('2d'), cv.width);
+}
+// Zoom while keeping the image point under the box centre fixed.
+function cropSetZoom(z2){
+  const c = _crop; if (!c) return;
+  const fracX = (0.5-c.fx)/(c.rx*c.z), fracY = (0.5-c.fy)/(c.ry*c.z);
+  c.z = _cropClampZ(z2);
+  c.fx = 0.5 - fracX*(c.rx*c.z);
+  c.fy = 0.5 - fracY*(c.ry*c.z);
+  cropClamp();
+}
+function logoCropZoom(v){ cropSetZoom(parseFloat(v)); cropDrawPreview(); }
+function _cropSyncSlider(){ const s = document.getElementById('logo-crop-zoom'); if (s) s.value = _crop.z; }
+function _cropDist(){ const a=[..._cropPts.values()]; return a.length<2 ? 1 : Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y); }
+
+function _wireCropCanvas(){
+  if (_cropWired) return;
+  const cv = document.getElementById('logo-crop-canvas'); if (!cv) return;
+  _cropWired = true;
+  const boxW = () => cv.getBoundingClientRect().width || 1;
+  cv.addEventListener('pointerdown', e => {
+    if (!_crop) return;
+    e.preventDefault();
+    try { cv.setPointerCapture(e.pointerId); } catch(_){}
+    _cropPts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if (_cropPts.size===2) _cropPinch = {dist:_cropDist(), z:_crop.z};
+    cv.style.cursor = 'grabbing';
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!_crop || !_cropPts.has(e.pointerId)) return;
+    const prev = _cropPts.get(e.pointerId), w = boxW();
+    if (_cropPts.size===1) { _crop.fx += (e.clientX-prev.x)/w; _crop.fy += (e.clientY-prev.y)/w; cropClamp(); }
+    _cropPts.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if (_cropPts.size===2 && _cropPinch) { cropSetZoom(_cropPinch.z * _cropDist()/(_cropPinch.dist||1)); _cropSyncSlider(); }
+    cropDrawPreview();
+  });
+  const end = e => { _cropPts.delete(e.pointerId); if (_cropPts.size<2) _cropPinch=null; if (_cropPts.size===0) cv.style.cursor='grab'; };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
+  cv.addEventListener('wheel', e => {
+    if (!_crop) return;
+    e.preventDefault();
+    cropSetZoom(_crop.z * Math.exp(-e.deltaY*0.0015));
+    _cropSyncSlider(); cropDrawPreview();
+  }, {passive:false});
+}
+function openLogoCropper(src){
+  const iw = src.width, ih = src.height, m = Math.min(iw, ih);
+  _crop = { src, iw, ih, rx: iw/m, ry: ih/m, z: 1, fx: 0, fy: 0 };
+  _crop.fx = (1-_crop.rx)/2; _crop.fy = (1-_crop.ry)/2;   // start centred, covering the box
+  _wireCropCanvas();
+  openModal('modal-logo-crop');
+  setTimeout(() => {   // size the backing store to the laid-out box for a crisp preview
+    const cv = document.getElementById('logo-crop-canvas'); if (!cv) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = cv.height = Math.max(1, Math.round((cv.getBoundingClientRect().width || 300) * dpr));
+    _cropSyncSlider(); cropDrawPreview();
+  }, 60);
+}
+function _cropTeardown(){
+  try { if (_crop && _crop.src && _crop.src.close) _crop.src.close(); } catch(_){}
+  _crop = null; _cropPts.clear(); _cropPinch = null;
+  const fi = document.getElementById('s-logo-file'); if (fi) fi.value = '';
+}
+function cancelLogoCrop(){ _cropTeardown(); closeModal('modal-logo-crop'); }
+async function saveLogoCrop(){
+  if (!_crop) return;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 512;
+  cropRender(cv.getContext('2d'), 512);
+  const dataUrl = cv.toDataURL('image/png');
+  _cropTeardown(); closeModal('modal-logo-crop');
+  showToast('Saving logo…');
   const { error } = await sb.from('profiles').upsert({ id: currentUser.id, logo: dataUrl });
   if (error) { showToast('Logo save failed: '+error.message,'error'); return; }
   profile.logo = dataUrl;
