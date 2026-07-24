@@ -2986,7 +2986,7 @@ function showPage(page, el) {
     expenses:`<button class="btn" aria-label="Recurring expenses" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New expense" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
     mileage:`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
     time:`<button class="btn btn-primary" aria-label="Add time entry" onclick="openTimeEntry(null)"><i class="ti ti-plus"></i> <span>Add Entry</span></button>`,
-    budget:`<button class="btn" aria-label="Pay schedule" onclick="openPayScheduleModal()"><i class="ti ti-calendar"></i> <span>Paydays</span></button> <button class="btn btn-primary" aria-label="Add bill" onclick="openBillModal(null)"><i class="ti ti-plus"></i> <span>Add Bill</span></button>`,
+    budget:`<button class="btn" aria-label="Print budget report" onclick="printBudgetReport()"><i class="ti ti-printer"></i> <span>Print</span></button> <button class="btn" aria-label="Pay schedule" onclick="openPayScheduleModal()"><i class="ti ti-calendar"></i> <span>Paydays</span></button> <button class="btn btn-primary" aria-label="Add bill" onclick="openBillModal(null)"><i class="ti ti-plus"></i> <span>Add Bill</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   refreshNotifBadge();
@@ -6582,66 +6582,11 @@ function renderReport(r) {
     lastReportTitle = 'Expense Summary';
     el.innerHTML = reportScreen('Expense Summary — All Time');
   } else if (r==='budget') {
-    // Monthly budget report — the paycheck bill planner for the CURRENT month,
-    // laid out like the other reports (paycheck sections + a "you pay" total).
-    const now=new Date(), by=now.getFullYear(), bm=now.getMonth();
-    const monthLabel=now.toLocaleDateString('en-US',{month:'long',year:'numeric'});
-    const monthShort=now.toLocaleDateString('en-US',{month:'long'});
-    const sched=paySchedule(), bills=getBills();
-    const amt=b=>parseFloat(b.amount||0), reimb=b=>parseFloat(b.reimbursed||0), net=b=>Math.max(0,amt(b)-reimb(b));
-    let body='';
-    if (!sched) {
-      body = `<div class="rrow"><span>No pay schedule set up yet. Set one on the Budget page to build the report.</span></div>`;
-    } else {
-      const paydays=paydaysForMonth(by,bm);
-      const monthBills=bills.filter(b=>billInMonth(b,by,bm));
-      // Assign each bill to the last payday on/before its due date (same rule as the
-      // Budget page): early bills ride the first check, no-due-date bills group last.
-      const buckets=paydays.map(()=>[]); const early=[], noDue=[];
-      monthBills.forEach(b=>{
-        const dd=billDueDay(b);
-        if (dd==null){ noDue.push(b); return; }
-        const due=budDateAt(by,bm,dd); let idx=-1;
-        for (let i=0;i<paydays.length;i++){ if (paydays[i]<=due) idx=i; }
-        if (idx>=0) buckets[idx].push(b);
-        else if (paydays.length) early.push(b);
-        else noDue.push(b);
-      });
-      const billLine=b=>{
-        const dd=billDueDay(b), paid=isBillPaid(b.id,by,bm), r=reimb(b);
-        const sub=(dd!=null?'due '+ordinal(dd):'no due date')+(billRecurs(b)?'':' · one-time')+(paid?' · paid':'');
-        const back=r?` <span style="color:#0a7d34">(${fmt(r)} back)</span>`:'';
-        return `<div class="rrow sub"><span>${esc(b.name||'Bill')} <span style="color:#999;font-size:11px">${sub}</span></span><span class="mono">${fmt(net(b))}${back}</span></div>`;
-      };
-      const groups=[];
-      paydays.forEach((pd,i)=>{
-        const list=buckets[i].concat(i===0?early:[]).sort((a,b)=>(billDueDay(a)||99)-(billDueDay(b)||99));
-        const need=list.reduce((s,b)=>s+net(b),0);
-        const got=getPaycheckAmount(ymd(pd));
-        const paidLbl=got!=null?` · paid ${fmt(got)}, ${fmt(got-need)} left`:'';
-        groups.push(`<div class="rsec">PAYCHECK ${i+1}${paydays.length>2&&i===paydays.length-1?' · EXTRA':''} — ${esc(payFmt(pd)).toUpperCase()}</div>
-          ${list.length?list.map(billLine).join(''):'<div class="rrow sub"><span>Nothing due to this paycheck</span><span class="mono">$0.00</span></div>'}
-          <div class="rrow bold"><span>Paycheck total${paidLbl}</span><span class="mono">${fmt(need)}</span></div>`);
-      });
-      if (noDue.length){
-        const need=noDue.reduce((s,b)=>s+net(b),0);
-        groups.push(`<div class="rsec">NO DUE DATE</div>
-          ${noDue.map(billLine).join('')}
-          <div class="rrow bold"><span>Subtotal</span><span class="mono">${fmt(need)}</span></div>`);
-      }
-      const totBills=monthBills.reduce((s,b)=>s+amt(b),0);
-      const totReimb=monthBills.reduce((s,b)=>s+reimb(b),0);
-      const totNet=monthBills.reduce((s,b)=>s+net(b),0);
-      const backNote=totReimb?`<div class="rrow"><span>Reimbursed / coming back</span><span class="mono" style="color:#0a7d34">${fmt(totReimb)}</span></div>`:'';
-      body = `<div class="rrow"><span>${esc(schedSummary())}</span><span class="mono">${monthBills.length} bill${monthBills.length===1?'':'s'}</span></div>
-        ${groups.join('')||'<div class="rrow sub"><span>No bills this month</span><span class="mono">$0.00</span></div>'}
-        <div class="rsec">SUMMARY</div>
-        <div class="rrow"><span>Total bills</span><span class="mono">${fmt(totBills)}</span></div>
-        ${backNote}
-        <div class="rtotal"><span>YOU PAY IN ${esc(monthShort).toUpperCase()}</span><span class="mono">${fmt(totNet)}</span></div>`;
-    }
-    lastReportHTML = reportDoc(bizName, bizMeta, 'Budget', monthLabel, body);
-    lastReportTitle = 'Budget '+monthLabel;
+    // Monthly budget report — laid out like the other reports (paycheck sections
+    // + a "you pay" total). Built by the shared helper so the Budget page's own
+    // Print button can reuse it for the month being viewed.
+    const now=new Date();
+    const monthLabel=buildBudgetReportDoc(now.getFullYear(), now.getMonth());
     el.innerHTML = reportScreen('Budget — '+monthLabel);
   }
 }
@@ -6691,6 +6636,83 @@ function buildReportPDF() { return htmlToPDF(lastReportHTML, '#report-print-area
 
 function printReport() { printDocInIframe(lastReportHTML, lastReportTitle, '', printReportFallback); }
 function printReportFallback() { return openPDFBlob(buildReportPDF); }
+
+// Build the Budget report document for month (by,bm) into lastReportHTML/Title.
+// Shared by the dashboard "Budget" report tab and the Budget page's Print button.
+// Returns the month label (e.g. "July 2026").
+function buildBudgetReportDoc(by, bm) {
+  const p = profile || {}, esc = escHtml;
+  const bizName = esc(p.company||'My Business');
+  const bizAddr = fmtAddress(p.address);
+  const bizMeta = (bizAddr?bizAddr+'<br>':'') + (p.phone?'Phone: '+esc(fmtPhone(p.phone)):'') + (p.email?(p.phone?' · ':'')+esc((p.email||'').trim().toLowerCase()):'');
+  const ref = new Date(by, bm, 1);
+  const monthLabel = ref.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const monthShort = ref.toLocaleDateString('en-US',{month:'long'});
+  const sched=paySchedule(), bills=getBills();
+  const amt=b=>parseFloat(b.amount||0), reimb=b=>parseFloat(b.reimbursed||0), net=b=>Math.max(0,amt(b)-reimb(b));
+  let body='';
+  if (!sched) {
+    body = `<div class="rrow"><span>No pay schedule set up yet. Set one up on the Budget page to build the report.</span></div>`;
+  } else {
+    const paydays=paydaysForMonth(by,bm);
+    const monthBills=bills.filter(b=>billInMonth(b,by,bm));
+    // Assign each bill to the last payday on/before its due date (same rule as the
+    // Budget page): early bills ride the first check, no-due-date bills group last.
+    const buckets=paydays.map(()=>[]); const early=[], noDue=[];
+    monthBills.forEach(b=>{
+      const dd=billDueDay(b);
+      if (dd==null){ noDue.push(b); return; }
+      const due=budDateAt(by,bm,dd); let idx=-1;
+      for (let i=0;i<paydays.length;i++){ if (paydays[i]<=due) idx=i; }
+      if (idx>=0) buckets[idx].push(b);
+      else if (paydays.length) early.push(b);
+      else noDue.push(b);
+    });
+    const billLine=b=>{
+      const dd=billDueDay(b), paid=isBillPaid(b.id,by,bm), r=reimb(b);
+      const sub=(dd!=null?'due '+ordinal(dd):'no due date')+(billRecurs(b)?'':' · one-time')+(paid?' · paid':'');
+      const back=r?` <span style="color:#0a7d34">(${fmt(r)} back)</span>`:'';
+      return `<div class="rrow sub"><span>${esc(b.name||'Bill')} <span style="color:#999;font-size:11px">${sub}</span></span><span class="mono">${fmt(net(b))}${back}</span></div>`;
+    };
+    const groups=[];
+    paydays.forEach((pd,i)=>{
+      const list=buckets[i].concat(i===0?early:[]).sort((a,b)=>(billDueDay(a)||99)-(billDueDay(b)||99));
+      const need=list.reduce((s,b)=>s+net(b),0);
+      const got=getPaycheckAmount(ymd(pd));
+      const paidLbl=got!=null?` · paid ${fmt(got)}, ${fmt(got-need)} left`:'';
+      groups.push(`<div class="rsec">PAYCHECK ${i+1}${paydays.length>2&&i===paydays.length-1?' · EXTRA':''} — ${esc(payFmt(pd)).toUpperCase()}</div>
+        ${list.length?list.map(billLine).join(''):'<div class="rrow sub"><span>Nothing due to this paycheck</span><span class="mono">$0.00</span></div>'}
+        <div class="rrow bold"><span>Paycheck total${paidLbl}</span><span class="mono">${fmt(need)}</span></div>`);
+    });
+    if (noDue.length){
+      const need=noDue.reduce((s,b)=>s+net(b),0);
+      groups.push(`<div class="rsec">NO DUE DATE</div>
+        ${noDue.map(billLine).join('')}
+        <div class="rrow bold"><span>Subtotal</span><span class="mono">${fmt(need)}</span></div>`);
+    }
+    const totBills=monthBills.reduce((s,b)=>s+amt(b),0);
+    const totReimb=monthBills.reduce((s,b)=>s+reimb(b),0);
+    const totNet=monthBills.reduce((s,b)=>s+net(b),0);
+    const backNote=totReimb?`<div class="rrow"><span>Reimbursed / coming back</span><span class="mono" style="color:#0a7d34">${fmt(totReimb)}</span></div>`:'';
+    body = `<div class="rrow"><span>${esc(schedSummary())}</span><span class="mono">${monthBills.length} bill${monthBills.length===1?'':'s'}</span></div>
+      ${groups.join('')||'<div class="rrow sub"><span>No bills this month</span><span class="mono">$0.00</span></div>'}
+      <div class="rsec">SUMMARY</div>
+      <div class="rrow"><span>Total bills</span><span class="mono">${fmt(totBills)}</span></div>
+      ${backNote}
+      <div class="rtotal"><span>YOU PAY IN ${esc(monthShort).toUpperCase()}</span><span class="mono">${fmt(totNet)}</span></div>`;
+  }
+  lastReportHTML = reportDoc(bizName, bizMeta, 'Budget', monthLabel, body);
+  lastReportTitle = 'Budget '+monthLabel;
+  return monthLabel;
+}
+
+// Budget page Print button: build the report for the month currently in view and
+// print it (PDF fallback), same pipeline as the dashboard reports.
+function printBudgetReport() {
+  if (!paySchedule()) { showToast('Set up a pay schedule first','error'); return; }
+  buildBudgetReportDoc(budgetCursor.getFullYear(), budgetCursor.getMonth());
+  printReport();
+}
 
 // ====== BANK RECONCILIATION (Plaid only) ======
 let _plaidConnected = false;  // true once renderPlaidBlock sees a linked bank

@@ -1,1 +1,1 @@
-{"version":414,"note":"v414: New Budget report — the current month's paycheck bill planner rendered like the other reports (paycheck sections, reimbursed note, 'you pay this month' total), with the same Print / PDF pipeline."}
+{"version":415,"note":"v415: Budget report gets a Print button right on the Budget page top bar — prints/PDFs the paycheck bill planner for the month you're viewing, using the shared report pipeline (also still available as the dashboard Budget report tab)."}
