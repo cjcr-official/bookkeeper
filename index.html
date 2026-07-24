@@ -1288,7 +1288,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         </div>
         <div id="signup-pw-hint" style="display:none;font-size:11px;color:var(--text3);margin-top:.4rem;line-height:1.4">Save this password in your notes or password manager — you'll need it to sign in.</div>
       </div>
-      <div class="form-group"><label>Company Name</label><input id="signup-company" type="text" autocomplete="organization" placeholder="Acme Inc." disabled></div>
+      <div class="form-group"><label>Name <span style="color:var(--text3);font-weight:400;font-size:11px">(your name or business)</span></label><input id="signup-company" type="text" autocomplete="organization" placeholder="Your name or business" disabled></div>
       <button class="btn btn-primary btn-full" type="submit" id="signup-btn"><i class="ti ti-user-plus"></i> Create Account</button>
     </form>
     <div id="mfa-login-form" style="display:none">
@@ -1304,7 +1304,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 <!-- APP -->
 <div class="app" id="app">
   <nav class="sidebar">
-    <div class="sidebar-logo" onclick="showPage('profile',null)" role="button" tabindex="0" title="Business profile" style="cursor:pointer">
+    <div class="sidebar-logo" onclick="showPage('profile',null)" role="button" tabindex="0" title="Profile" style="cursor:pointer">
       <div style="display:flex;align-items:center;gap:10px;padding:0">
         <svg id="sidebar-logo-svg" width="32" height="32" viewBox="0 0 92 94"><use href="#bk-logo"/></svg>
         <img id="sidebar-logo-img" alt="logo" style="display:none;width:32px;height:32px;object-fit:contain;background:#fff;border:1px solid var(--border);border-radius:8px;padding:3px">
@@ -1336,7 +1336,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="main">
     <div class="topbar">
       <div class="topbar-left">
-        <button id="topbar-brand" onclick="showPage('profile',null)" title="Business profile" aria-label="Business profile" style="display:none"><svg id="topbar-brand-svg" width="30" height="30" viewBox="0 0 92 94"><use href="#bk-logo"/></svg><img id="topbar-brand-img" alt="" style="display:none"></button>
+        <button id="topbar-brand" onclick="showPage('profile',null)" title="Profile" aria-label="Profile" style="display:none"><svg id="topbar-brand-svg" width="30" height="30" viewBox="0 0 92 94"><use href="#bk-logo"/></svg><img id="topbar-brand-img" alt="" style="display:none"></button>
         <div>
           <div class="topbar-breadcrumb">Dashboard → <span id="topbar-breadcrumb-page">Overview</span></div>
           <div class="topbar-title" id="page-title">Dashboard</div>
@@ -1587,7 +1587,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
             </button>
             <button class="setting-row" id="reportlogo-switch-row" role="switch" aria-checked="true" aria-label="Logo on reports" onclick="toggleReportLogo()">
-              <span><span class="setting-row-title">Logo on reports</span><span class="setting-row-sub">Show your business logo at the top of printed reports.</span></span>
+              <span><span class="setting-row-title">Logo on reports</span><span class="setting-row-sub">Show your logo at the top of printed reports.</span></span>
               <span class="theme-switch on" id="reportlogo-switch"><span class="theme-switch-knob"></span></span>
             </button>
           </div>
@@ -1701,12 +1701,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
       <!-- PROFILE (business identity: company, logo, contact) — reached via the logo -->
       <div id="page-profile" class="page">
         <div class="card">
-          <div class="card-header"><h3>Business Profile</h3></div>
+          <div class="card-header"><h3>Profile</h3></div>
           <div class="modal-body">
             <div class="profile-grid">
               <div class="profile-col">
-                <div class="form-group"><label>Company Name</label><input id="s-company" type="text" placeholder="Acme Inc."></div>
-                <div class="form-group"><label>Business Logo <span style="color:var(--text3);font-weight:400;font-size:11px">(shown on invoices, reports &amp; home)</span></label>
+                <div class="form-group"><label>Name <span style="color:var(--text3);font-weight:400;font-size:11px">(your name or business)</span></label><input id="s-company" type="text" placeholder="Your name or business"></div>
+                <div class="form-group"><label>Logo <span style="color:var(--text3);font-weight:400;font-size:11px">(shown on invoices, reports &amp; home)</span></label>
                   <input type="file" id="s-logo-file" accept="image/*" onchange="onLogoPick(event)" style="display:none">
                   <div id="s-logo-state"></div>
                 </div>
@@ -1780,10 +1780,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div class="modal" style="max-width:420px">
     <div class="modal-header"><h2>Welcome to Bookkeeper 👋</h2></div>
     <div class="modal-body">
-      <p style="color:var(--text2);line-height:1.6;margin:0 0 1rem">Let's set up your business first. Add your company name, address, contact details, and logo — they'll appear on every invoice and report you send.</p>
-      <p style="color:var(--text3);font-size:12px;line-height:1.5;margin:0 0 1.25rem">You can change any of this later in your Business Profile.</p>
+      <p style="color:var(--text2);line-height:1.6;margin:0 0 1rem">Let's set up your profile. Add your name (or business), address, and contact details — they'll appear on any invoices and reports you send. Just here to budget? You can skip this.</p>
+      <p style="color:var(--text3);font-size:12px;line-height:1.5;margin:0 0 1.25rem">You can change any of this later in your Profile.</p>
       <div style="display:flex;flex-direction:column;gap:.6rem">
-        <button class="btn btn-primary btn-full" onclick="onboardStart()"><i class="ti ti-building-store"></i> Set up my business</button>
+        <button class="btn btn-primary btn-full" onclick="onboardStart()"><i class="ti ti-user"></i> Set up my profile</button>
         <button class="btn btn-full" onclick="onboardDismiss()">Maybe later</button>
       </div>
     </div>
@@ -2990,7 +2990,7 @@ function showPage(page, el) {
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const sideTab = document.querySelector('.nav-item[data-page="'+page+'"]');
   if (sideTab) sideTab.classList.add('active');   // desktop sidebar + whichever mobile group is showing
-  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',time:'Time Clock',budget:'Budget',settings:'Settings',profile:'Business Profile'};
+  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',time:'Time Clock',budget:'Budget',settings:'Settings',profile:'Profile'};
   document.getElementById('page-title').textContent = titles[page]||page;
   updateTopbarLogo();
   const bc = document.getElementById('topbar-breadcrumb-page');
@@ -8682,7 +8682,7 @@ function renderLogoState() {
   if (!el) return;
   if (profile.logo) {
     el.innerHTML = `<div class="logo-slot">
-        <div class="logo-slot-img"><img src="${profile.logo}" alt="Business logo"></div>
+        <div class="logo-slot-img"><img src="${profile.logo}" alt="Logo"></div>
         <div class="logo-slot-meta">
           <span class="logo-slot-name">Current logo</span>
           <div class="logo-slot-actions">
