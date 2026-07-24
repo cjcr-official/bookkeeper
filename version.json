@@ -1,1 +1,1 @@
-{"version":416,"note":"v416: Removed the Budget-page Print button; the dashboard Reports section now shows each report tab based on which modules are toggled on (Budget→Budget, Expense Summary→Expenses, P&L→Invoices or Expenses), and the whole card hides only when all are off."}
+{"version":417,"note":"v417: New Settings → Appearance toggle 'Logo on reports' — show or hide your business logo at the top of printed reports (P&L, Expense Summary, Budget). Default on; invoices are unaffected."}

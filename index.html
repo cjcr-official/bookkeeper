@@ -1586,6 +1586,10 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span><span class="setting-row-title">24-hour time</span><span class="setting-row-sub">Show times as 14:00 instead of 2:00 PM.</span></span>
               <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
             </button>
+            <button class="setting-row" id="reportlogo-switch-row" role="switch" aria-checked="true" aria-label="Logo on reports" onclick="toggleReportLogo()">
+              <span><span class="setting-row-title">Logo on reports</span><span class="setting-row-sub">Show your business logo at the top of printed reports.</span></span>
+              <span class="theme-switch on" id="reportlogo-switch"><span class="theme-switch-knob"></span></span>
+            </button>
           </div>
         </div>
         <div class="card settings-section" data-sec="sections">
@@ -6639,7 +6643,7 @@ function reportDoc(bizName, bizMeta, title, period, bodyHTML) {
   return `<div id="report-print-area" style="background:#fff;color:#1a1a1a;padding:1.25rem;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;line-height:1.5">
     <div style="display:flex;justify-content:space-between;gap:1.5rem;border-bottom:2px solid #1a1a1a;padding-bottom:1rem;margin-bottom:1.25rem">
       <div style="min-width:0">
-        ${profile.logo?`<img src="${profile.logo}" alt="logo" style="max-height:52px;max-width:200px;margin-bottom:.5rem;display:block">`:''}
+        ${(profile.logo && profile.report_logo!==false)?`<img src="${profile.logo}" alt="logo" style="max-height:52px;max-width:200px;margin-bottom:.5rem;display:block">`:''}
         <div style="font-weight:700;font-size:16px;line-height:1.3">${bizName}</div>
         <div style="font-size:12px;color:#444;margin-top:.35rem;line-height:1.6">${bizMeta}</div>
       </div>
@@ -8546,6 +8550,7 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
 function loadSettingsForm() {
   syncThemeUI();
   syncTimeFormatUI();
+  syncReportLogoUI();
   syncAccentUI();
   renderPushStatus();
   // Invoice defaults
@@ -9434,6 +9439,24 @@ async function toggleTimeFormat() {
   if (error) {
     if (/column .*time_format/i.test(error.message))
       showToast("Run: alter table profiles add column if not exists time_format text default '12';", 'error');
+    else showToast(error.message, 'error');
+  }
+}
+// Show/hide the business logo at the top of printed reports (P&L, Expense
+// Summary, Budget). Default on; stored on profile.report_logo (boolean).
+function syncReportLogoUI() {
+  const on = !(profile && profile.report_logo === false);   // default true
+  const sw = document.getElementById('reportlogo-switch'); if (sw) sw.classList.toggle('on', on);
+  const row = document.getElementById('reportlogo-switch-row'); if (row) row.setAttribute('aria-checked', String(on));
+}
+async function toggleReportLogo() {
+  const on = !(profile && profile.report_logo === false);
+  profile.report_logo = !on;   // flip
+  syncReportLogoUI();
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, report_logo: profile.report_logo });
+  if (error) {
+    if (/column .*report_logo/i.test(error.message))
+      showToast("Run: alter table profiles add column if not exists report_logo boolean default true;", 'error');
     else showToast(error.message, 'error');
   }
 }
