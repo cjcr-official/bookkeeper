@@ -4,6 +4,17 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
+// A fetch handler is REQUIRED for Android/Samsung Internet to treat the app as
+// installable — without it "Add to Home Screen" makes a plain bookmark (address
+// bar stays visible, generic icon) instead of a full-screen WebAPK. Nothing is
+// cached: this is a straight network pass-through, and only for top-level
+// navigations so it never interferes with the CDN / Supabase requests.
+self.addEventListener('fetch', event => {
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request));
+  }
+});
+
 self.addEventListener('push', event => {
   let data = {};
   try { if (event.data) data = event.data.json(); } catch (_) {}

@@ -2,6 +2,7 @@
   "name": "Bookkeeper",
   "short_name": "Bookkeeper",
   "description": "Free accounting — invoices, expenses, mileage & reports",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

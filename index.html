@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Bookkeeper">
 <meta name="theme-color" content="#0f1117">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <title>Bookkeeper — Free Accounting</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
@@ -9369,6 +9370,17 @@ window.addEventListener('pageshow', (e) => { if (e.persisted) { _notifFgShown = 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (e) => {
     if (e && e.data && e.data.type === 'bk-push') { _notifFgShown = false; showNotificationsOnOpen(200); }
+  });
+}
+
+// Register the service worker on every launch (not just when notifications are
+// enabled) so it controls the page. Android/Samsung Internet only offer a real
+// installable PWA — full-screen WebAPK with no address bar and the app's logo —
+// when a service worker with a fetch handler is already controlling the page;
+// otherwise "Add to Home Screen" makes a generic bookmark. Harmless on iOS.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
   });
 }
 
