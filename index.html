@@ -1453,9 +1453,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
         </div>
 
-        <!-- REPORTS (collapsible card on dashboard) — P&L is revenue-driven, so it
-             follows Invoices & Customers. -->
-        <div class="card" id="dash-card-reports" data-module="invoicing">
+        <!-- REPORTS (collapsible card on dashboard) — each report tab follows the
+             module(s) that feed it, and the whole card hides only when every
+             report's module is turned off. P&L is revenue+spending-driven, so it
+             shows while EITHER Invoices or Expenses is on; Expense Summary follows
+             Expenses; Budget follows Budget. -->
+        <div class="card" id="dash-card-reports" data-module-all="invoicing expenses budget">
           <div class="card-header" onclick="toggleReports()" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-chart-pie" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Reports</h3>
             <i class="ti ti-chevron-down dash-chev" id="reports-chevron" style="transform:rotate(-90deg)"></i>
@@ -1463,9 +1466,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <div id="reports-body" style="display:none">
             <div style="padding:.85rem 1rem 0">
               <div class="tabs tabs-full" id="report-tabs">
-                <div class="tab active" onclick="showReport('pl',this)">Profit & Loss</div>
-                <div class="tab" onclick="showReport('exp',this)">Expense Summary</div>
-                <div class="tab" onclick="showReport('budget',this)">Budget</div>
+                <div class="tab active" data-report="pl" data-module-all="invoicing expenses" onclick="showReport('pl',this)">Profit & Loss</div>
+                <div class="tab" data-report="exp" data-module="expenses" onclick="showReport('exp',this)">Expense Summary</div>
+                <div class="tab" data-report="budget" data-module="budget" onclick="showReport('budget',this)">Budget</div>
               </div>
             </div>
             <div id="report-content"></div>
@@ -2927,6 +2930,16 @@ function applyModuleVisibility() {
     el.style.display = el.dataset.moduleAll.split(/\s+/).every(id => hid.includes(id)) ? 'none' : '';
   });
   layoutBottomNav();   // recompute which tabs are on the bar vs behind More
+  // If the Reports section is open and its active tab's module just went off,
+  // switch to the first still-visible report so no hidden report stays on screen.
+  const rbody = document.getElementById('reports-body');
+  if (rbody && rbody.style.display !== 'none' && typeof reportAvailable === 'function') {
+    if (!reportAvailable(currentReport)) {
+      const next = firstVisibleReport();
+      if (next) { currentReport = next; renderReport(currentReport); }
+    }
+    syncReportTabActive();
+  }
   if (isPageHidden(currentPage)) showPage('dashboard', null);
 }
 function toggleModule(id) {
@@ -2986,7 +2999,7 @@ function showPage(page, el) {
     expenses:`<button class="btn" aria-label="Recurring expenses" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New expense" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
     mileage:`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
     time:`<button class="btn btn-primary" aria-label="Add time entry" onclick="openTimeEntry(null)"><i class="ti ti-plus"></i> <span>Add Entry</span></button>`,
-    budget:`<button class="btn" aria-label="Print budget report" onclick="printBudgetReport()"><i class="ti ti-printer"></i> <span>Print</span></button> <button class="btn" aria-label="Pay schedule" onclick="openPayScheduleModal()"><i class="ti ti-calendar"></i> <span>Paydays</span></button> <button class="btn btn-primary" aria-label="Add bill" onclick="openBillModal(null)"><i class="ti ti-plus"></i> <span>Add Bill</span></button>`,
+    budget:`<button class="btn" aria-label="Pay schedule" onclick="openPayScheduleModal()"><i class="ti ti-calendar"></i> <span>Paydays</span></button> <button class="btn btn-primary" aria-label="Add bill" onclick="openBillModal(null)"><i class="ti ti-plus"></i> <span>Add Bill</span></button>`,
   };
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   refreshNotifBadge();
@@ -6525,13 +6538,32 @@ function applyDashCollapsed(){
   });
 }
 
+// A report tab follows the module(s) that feed it (mirrors the data-module attrs
+// on the tabs): P&L shows while EITHER Invoices or Expenses is on; Expense Summary
+// follows Expenses; Budget follows Budget.
+function reportAvailable(r) {
+  if (r==='pl') return !isModuleHidden('invoicing') || !isModuleHidden('expenses');
+  if (r==='exp') return !isModuleHidden('expenses');
+  if (r==='budget') return !isModuleHidden('budget');
+  return true;
+}
+function firstVisibleReport() { return ['pl','exp','budget'].find(reportAvailable) || null; }
+function syncReportTabActive() {
+  document.querySelectorAll('#report-tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.report===currentReport));
+}
+
 function toggleReports() {
   const body = document.getElementById('reports-body');
   const chev = document.getElementById('reports-chevron');
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : 'block';
   if (chev) chev.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
-  if (!open) renderReport(currentReport); // render fresh when opening
+  if (!open) {
+    // Don't render (or leave active) a report whose module is turned off.
+    if (!reportAvailable(currentReport)) currentReport = firstVisibleReport() || currentReport;
+    syncReportTabActive();
+    renderReport(currentReport); // render fresh when opening
+  }
 }
 
 function toggleCalendar() {
@@ -6704,14 +6736,6 @@ function buildBudgetReportDoc(by, bm) {
   lastReportHTML = reportDoc(bizName, bizMeta, 'Budget', monthLabel, body);
   lastReportTitle = 'Budget '+monthLabel;
   return monthLabel;
-}
-
-// Budget page Print button: build the report for the month currently in view and
-// print it (PDF fallback), same pipeline as the dashboard reports.
-function printBudgetReport() {
-  if (!paySchedule()) { showToast('Set up a pay schedule first','error'); return; }
-  buildBudgetReportDoc(budgetCursor.getFullYear(), budgetCursor.getMonth());
-  printReport();
 }
 
 // ====== BANK RECONCILIATION (Plaid only) ======

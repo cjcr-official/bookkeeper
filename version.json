@@ -1,1 +1,1 @@
-{"version":415,"note":"v415: Budget report gets a Print button right on the Budget page top bar — prints/PDFs the paycheck bill planner for the month you're viewing, using the shared report pipeline (also still available as the dashboard Budget report tab)."}
+{"version":416,"note":"v416: Removed the Budget-page Print button; the dashboard Reports section now shows each report tab based on which modules are toggled on (Budget→Budget, Expense Summary→Expenses, P&L→Invoices or Expenses), and the whole card hides only when all are off."}
