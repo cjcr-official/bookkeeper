@@ -1,1 +1,1 @@
-{"version":412,"note":"v412: Business Logo now has a Facebook-style crop step. Pick any photo and drag to reposition, pinch / slider / scroll to zoom — the square always stays filled (zoom bottoms out where the shortest side fills the frame), so portrait or landscape images no longer letterbox or squish. Saves a clean 512px square that also squares correctly as the app icon."}
+{"version":413,"note":"v413: Logo preview no longer overflows its rounded frame — the current-logo thumbnail is clipped to a rounded square so a photo's corners stay inside the white frame."}
