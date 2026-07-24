@@ -1636,8 +1636,12 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <div class="form-group"><label>Start invoice # at <span style="color:var(--text3);font-weight:400;font-size:11px">(full number, e.g. 2648)</span></label><input id="s-inv-start" type="number" min="1" step="1" placeholder="auto"></div>
             </div>
             <div class="form-group"><label>Default notes / footer <span style="color:var(--text3);font-weight:400;font-size:11px">(prefilled on new invoices)</span></label><textarea id="s-inv-terms" rows="3" placeholder="Thank you for your business!"></textarea></div>
+            <button class="setting-row" id="payinv-switch-row" role="switch" aria-checked="true" aria-label="Show How to pay on invoices" onclick="togglePayOnInvoice()" style="margin:0 0 .25rem">
+              <span><span class="setting-row-title">Show &ldquo;How to pay&rdquo; on invoices</span><span class="setting-row-sub">Print the payment methods and note on invoices.</span></span>
+              <span class="theme-switch on" id="payinv-switch"><span class="theme-switch-knob"></span></span>
+            </button>
             <div class="form-group">
-              <label>How to pay <span style="color:var(--text3);font-weight:400;font-size:11px">(prints on every invoice)</span></label>
+              <label>How to pay <span style="color:var(--text3);font-weight:400;font-size:11px">(prints on invoices when the toggle above is on)</span></label>
               <div class="pm-list" id="pay-methods-editor"></div>
             </div>
             <div class="form-group"><label>Payment note <span style="color:var(--text3);font-weight:400;font-size:11px">(optional — prints under the methods)</span></label><textarea id="s-pay-instructions" rows="2" placeholder="e.g. No processing fees on any of these — thank you!"></textarea></div>
@@ -4406,6 +4410,7 @@ function escHtml(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</
 // they survive html2canvas. Falls back to the legacy free-text blob for users
 // who only ever set the note. Returns '' when there's nothing to show.
 function payHowToHTML(p, bizName) {
+  if (p && p.pay_on_invoice === false) return '';   // Settings toggle: hide the block entirely
   const esc = escHtml;
   const note = (p.pay_instructions||'').trim();
   const rows = [];
@@ -8551,6 +8556,7 @@ function loadSettingsForm() {
   syncThemeUI();
   syncTimeFormatUI();
   syncReportLogoUI();
+  syncPayOnInvoiceUI();
   syncAccentUI();
   renderPushStatus();
   // Invoice defaults
@@ -9457,6 +9463,23 @@ async function toggleReportLogo() {
   if (error) {
     if (/column .*report_logo/i.test(error.message))
       showToast("Run: alter table profiles add column if not exists report_logo boolean default true;", 'error');
+    else showToast(error.message, 'error');
+  }
+}
+// Show/hide the "How to pay" block on invoices. Default on; profile.pay_on_invoice.
+function syncPayOnInvoiceUI() {
+  const on = !(profile && profile.pay_on_invoice === false);   // default true
+  const sw = document.getElementById('payinv-switch'); if (sw) sw.classList.toggle('on', on);
+  const row = document.getElementById('payinv-switch-row'); if (row) row.setAttribute('aria-checked', String(on));
+}
+async function togglePayOnInvoice() {
+  const on = !(profile && profile.pay_on_invoice === false);
+  profile.pay_on_invoice = !on;   // flip
+  syncPayOnInvoiceUI();
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, pay_on_invoice: profile.pay_on_invoice });
+  if (error) {
+    if (/column .*pay_on_invoice/i.test(error.message))
+      showToast("Run: alter table profiles add column if not exists pay_on_invoice boolean default true;", 'error');
     else showToast(error.message, 'error');
   }
 }

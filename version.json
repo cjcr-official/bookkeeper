@@ -1,1 +1,1 @@
-{"version":419,"note":"v419: Neutral, personal-or-business wording. The Business Profile page is now just Profile, Company Name is Name (your name or business), Business Logo is Logo, and the welcome/onboarding copy reflects that the app works for personal budgeting too — not only a business."}
+{"version":420,"note":"v420: New Settings toggle (Invoice Defaults) to show or hide the \u201cHow to pay\u201d block on invoices. Default on; flip it off to omit the payment methods + note from invoices entirely."}
