@@ -1,1 +1,1 @@
-{"version":413,"note":"v413: Logo preview no longer overflows its rounded frame — the current-logo thumbnail is clipped to a rounded square so a photo's corners stay inside the white frame."}
+{"version":414,"note":"v414: New Budget report — the current month's paycheck bill planner rendered like the other reports (paycheck sections, reimbursed note, 'you pay this month' total), with the same Print / PDF pipeline."}
