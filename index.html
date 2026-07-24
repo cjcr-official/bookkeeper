@@ -2168,17 +2168,16 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <input type="checkbox" id="bill-recurring" onchange="toggleBillDueField()" style="width:18px;height:18px;flex-shrink:0">
         <span>Repeats every month <span style="color:var(--text3);font-weight:400;font-size:12px">(leave off for a one-time bill)</span></span>
       </label>
-      <!-- A repeating bill stores only a DAY (1–31), so it gets a day field. Using a
-           date picker here silently rewrote the day whenever the viewed month was
-           shorter than it (a bill due the 31st became the 28th in February). Both
-           fields stay in the DOM and toggle by display, so switching the checkbox
-           never discards what was already typed. -->
-      <div class="form-group" id="bill-day-wrap">
-        <label for="bill-day">Due day of the month</label>
-        <input id="bill-day" type="number" min="1" max="31" step="1" inputmode="numeric" placeholder="e.g. 15">
-        <div class="bud-hint">Bills on this day every month. In a shorter month it falls on the last day.</div>
+      <!-- Both one-time and repeating bills pick a date on the calendar. A repeating
+           bill stores only the DAY (1–31) of the picked date, read literally from the
+           'YYYY-MM-DD' string on save so it can never be clamped (a bill due the 31st
+           stays the 31st, not February's 28th) — it just falls on the last day in a
+           shorter month. -->
+      <div class="form-group" id="bill-date-wrap">
+        <label for="bill-date">Due date</label>
+        <input id="bill-date" type="date">
+        <div class="bud-hint" id="bill-date-hint"></div>
       </div>
-      <div class="form-group" id="bill-date-wrap"><label for="bill-date">Due date</label><input id="bill-date" type="date"></div>
       <div class="form-row">
         <div class="form-group"><label for="bill-amount">Amount</label><input id="bill-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
         <div class="form-group"><label id="bill-reimb-label" for="bill-reimbursed">Reimbursed</label><input id="bill-reimbursed" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" oninput="updateBillNet()" style="text-align:right"></div>
@@ -5744,8 +5743,27 @@ async function savePaySchedule(){
 // the checkbox never throws away what was already typed.
 function toggleBillDueField(){
   const rec = document.getElementById('bill-recurring').checked;
-  document.getElementById('bill-day-wrap').style.display = rec ? '' : 'none';
-  document.getElementById('bill-date-wrap').style.display = rec ? 'none' : '';
+  const hint = document.getElementById('bill-date-hint');
+  if (hint) hint.textContent = rec
+    ? 'Repeats on this day every month. In a shorter month it falls on the last day.'
+    : 'A one-time bill — shows only in the month of this date.';
+}
+// The next upcoming occurrence of a day-of-month, always placed in a month long
+// enough to hold the day (so day 31 is a valid date the picker won't clamp). Only
+// the day is ever read back (see saveBill), so this display date can't cause drift.
+function nextDueDateForDay(day){
+  day = Math.min(31, Math.max(1, parseInt(day,10)||1));
+  const now = new Date(); now.setHours(0,0,0,0);
+  let d = new Date(now.getFullYear(), now.getMonth(), 1);
+  for (let i=0;i<24;i++){
+    const dim = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();  // days in this month
+    if (dim >= day){
+      const cand = new Date(d.getFullYear(), d.getMonth(), day);
+      if (cand >= now) return ymd(cand);
+    }
+    d.setMonth(d.getMonth()+1);
+  }
+  return ymd(new Date(now.getFullYear()+1, 0, day));
 }
 function openBillModal(id){
   const b = id ? getBills().find(x=>x.id===id) : null;
@@ -5755,13 +5773,16 @@ function openBillModal(id){
   // New bills default to one-time (unchecked).
   const rec = b ? billRecurs(b) : false;
   document.getElementById('bill-recurring').checked = rec;
-  document.getElementById('bill-day').value  = (b && rec && b.due!=null) ? b.due : '';
-  document.getElementById('bill-date').value = (b && !rec) ? (b.date||'') : '';
+  // One-time bills show their stored date; recurring bills show the next occurrence
+  // of their stored day-of-month. Either way saveBill reads only the day/date back.
+  let dv = '';
+  if (b){ if (!rec) dv = b.date || ''; else if (b.due!=null) dv = nextDueDateForDay(b.due); }
+  document.getElementById('bill-date').value = dv;
   toggleBillDueField();
   document.getElementById('bill-amount').value = (b && b.amount!=null) ? b.amount : '';
   document.getElementById('bill-reimbursed').value = (b && b.reimbursed) ? b.reimbursed : '';
   document.getElementById('bill-notes').value = b ? (b.notes||'') : '';
-  document.getElementById('bill-reimb-label').textContent = reimburseLabel() + ' pays';
+  document.getElementById('bill-reimb-label').textContent = (profile && (profile.reimburse_label||'').trim()) || 'Reimbursement';
   document.getElementById('bill-delete-btn').style.display = b ? '' : 'none';
   updateBillNet();
   openModal('modal-bill');
@@ -5777,17 +5798,17 @@ async function saveBill(){
   const name=document.getElementById('bill-name').value.trim();
   if(!name){ showToast('Bill name is required','error'); return; }
   const recurring=document.getElementById('bill-recurring').checked;
-  // Recurring: store the day-of-month only, read straight from its own field — the
-  // day never round-trips through a calendar date, so a bill due the 31st can't be
-  // silently rewritten to the 28th just because February was on screen.
+  const ds=document.getElementById('bill-date').value;   // 'YYYY-MM-DD'
+  if (ds===''){ showToast('Pick a due date','error'); return; }
+  // Recurring: store the day-of-month only, read LITERALLY from the picked date's
+  // string (never through a Date), so a bill due the 31st can't be silently rewritten
+  // to the 28th. In a shorter month it just falls on that month's last day.
   let due=null, date=null;
   if (recurring){
-    const d=parseInt(document.getElementById('bill-day').value,10);
-    if (!d || d<1 || d>31){ showToast('Enter a due day between 1 and 31','error'); return; }
-    due = d;
+    due = parseInt(ds.slice(8,10),10);
+    if (!due || due<1 || due>31){ showToast('Pick a valid due date','error'); return; }
   } else {
-    date = document.getElementById('bill-date').value;   // 'YYYY-MM-DD'
-    if (date===''){ showToast('Pick a due date for a one-time bill','error'); return; }
+    date = ds;
   }
   const amount=parseFloat(document.getElementById('bill-amount').value)||0;
   const reimbursed=parseFloat(document.getElementById('bill-reimbursed').value)||0;
