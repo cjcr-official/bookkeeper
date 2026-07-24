@@ -295,6 +295,10 @@ alter table profiles add column if not exists pay_instructions text;
 -- time_format: how job/calendar times display app-wide — '12' (default, 12-hour
 -- AM/PM) or '24' (24-hour / military). Toggled in Settings → Appearance.
 alter table profiles add column if not exists time_format text default '12';
+-- report_logo: show the business logo at the top of printed reports (P&L,
+-- Expense Summary, Budget). Default on; toggled in Settings → Appearance. Only
+-- gates reportDoc's header logo — invoices are unaffected.
+alter table profiles add column if not exists report_logo boolean default true;
 
 -- App lock is fully on-device (no DB): localStorage bk-lock-pin (SHA-256 hash),
 -- bk-lock-len, bk-lock-cred (WebAuthn platform credential id for Face ID unlock).
