@@ -495,6 +495,23 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace;margin-bottom:.5rem}
 .stat-value{font-size:26px;font-weight:800;letter-spacing:-1.2px;line-height:1;font-variant-numeric:tabular-nums}
 .stat-sub{font-size:11px;color:var(--text3);margin-top:.4rem;font-family:'JetBrains Mono',monospace}
+/* ── LOAN CALCULATOR ── */
+.loan-lbl{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.3rem;font-family:'JetBrains Mono',monospace}
+.loan-field{display:flex;align-items:center;gap:.4rem;background:var(--surface2,var(--surface));border:1px solid var(--border);border-radius:var(--radius-sm);padding:0 .6rem}
+.loan-field:focus-within{border-color:var(--accent)}
+.loan-field input{flex:1;min-width:0;border:none;background:transparent;padding:.55rem 0;font-size:16px;font-family:'JetBrains Mono',monospace;color:var(--text)}
+.loan-field input:focus{outline:none}
+.loan-field .loan-pre,.loan-field .loan-post{font-size:14px;color:var(--text3);font-family:'JetBrains Mono',monospace;flex-shrink:0}
+.loan-field .loan-unit{border:none;background:transparent;font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace;flex-shrink:0;padding:.5rem 0}
+.loan-field .loan-unit:focus{outline:none}
+.loan-sched-wrap{overflow-x:auto}
+.loan-sched{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:12px;font-variant-numeric:tabular-nums}
+.loan-sched th{text-align:right;font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);padding:.5rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap}
+.loan-sched th:first-child{text-align:left}
+.loan-sched td{text-align:right;padding:.5rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap}
+.loan-sched td:first-child{text-align:left;color:var(--text3)}
+.loan-sched tr:last-child td{border-bottom:none}
+.loan-sched .loan-yr td{background:var(--accent-bg);font-weight:700;color:var(--text)}
 /* ── OVERVIEW (dashboard hero) ── */
 .overview{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);padding:1.3rem 1.4rem;margin-bottom:1.5rem}
 .overview::before{content:'';position:absolute;top:-55%;right:-12%;width:52%;height:175%;background:radial-gradient(closest-side,var(--accent-bg),transparent);opacity:.85;pointer-events:none}
@@ -1360,6 +1377,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="mileage" onclick="showPage('mileage',this)"><i class="ti ti-car"></i><span>Mileage</span></div>
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="time" onclick="showPage('time',this)"><i class="ti ti-clock"></i><span>Time</span></div>
     <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="budget" onclick="showPage('budget',this)"><i class="ti ti-pig-money"></i><span>Budget</span></div>
+    <div class="nav-item nav-overflow" role="button" tabindex="0" data-page="loan" onclick="showPage('loan',this)"><i class="ti ti-calculator"></i><span>Loan</span></div>
     <!-- Mobile bottom-bar only: toggles the bar between the primary tabs and the
          overflow tabs in place (Home stays in both). Hidden on desktop. -->
     <div class="nav-item nav-more" id="nav-more-btn" role="button" tabindex="0" aria-label="More sections" onclick="toggleNavMore()"><i class="ti ti-dots" id="nav-more-ico"></i><span id="nav-more-lbl">More</span></div>
@@ -1829,6 +1847,47 @@ input,select,textarea{border-radius:var(--radius-sm)}
              its due date, so each check shows exactly what it has to cover.
              renderBudget() fills this. -->
         <div id="budget-body"></div>
+      </div>
+
+      <div id="page-loan" class="page">
+        <!-- Standalone loan / amortization calculator. Pure math, no DB — inputs
+             are mirrored to localStorage (bk-loan) so they survive a reload.
+             renderLoan() computes the payment, totals, and schedule live. -->
+        <div class="card" style="margin-bottom:1rem">
+          <div class="card-header"><h3>Loan Details</h3></div>
+          <div style="padding:.5rem 1rem 1rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+              <div>
+                <label class="loan-lbl">Loan amount</label>
+                <div class="loan-field"><span class="loan-pre">$</span><input type="number" id="loan-amount" min="0" step="100" inputmode="decimal" placeholder="20,000" oninput="renderLoan()"></div>
+              </div>
+              <div>
+                <label class="loan-lbl">Interest rate</label>
+                <div class="loan-field"><input type="number" id="loan-rate" min="0" step="0.01" inputmode="decimal" placeholder="6.5" oninput="renderLoan()"><span class="loan-post">% / yr</span></div>
+              </div>
+              <div>
+                <label class="loan-lbl">Term</label>
+                <div class="loan-field"><input type="number" id="loan-term" min="0" step="1" inputmode="numeric" placeholder="5" oninput="renderLoan()"><select id="loan-term-unit" onchange="renderLoan()" class="loan-unit"><option value="years">years</option><option value="months">months</option></select></div>
+              </div>
+              <div>
+                <label class="loan-lbl">Extra / month <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+                <div class="loan-field"><span class="loan-pre">$</span><input type="number" id="loan-extra" min="0" step="10" inputmode="decimal" placeholder="0" oninput="renderLoan()"></div>
+              </div>
+              <div>
+                <label class="loan-lbl">First payment <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+                <div class="loan-field"><input type="date" id="loan-start" oninput="renderLoan()" style="padding-right:.55rem"></div>
+              </div>
+            </div>
+            <button class="btn btn-sm" style="margin-top:1rem" onclick="clearLoan()"><i class="ti ti-eraser"></i> Clear</button>
+          </div>
+        </div>
+        <div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">
+          <div class="stat-card"><div class="stat-label">Monthly Payment</div><div class="stat-value" id="loan-monthly">$0.00</div><div class="stat-sub" id="loan-monthly-sub">principal + interest</div></div>
+          <div class="stat-card"><div class="stat-label">Total Interest</div><div class="stat-value red" id="loan-interest">$0.00</div><div class="stat-sub" id="loan-interest-sub">over the loan</div></div>
+          <div class="stat-card"><div class="stat-label">Total Paid</div><div class="stat-value" id="loan-total">$0.00</div><div class="stat-sub">principal + interest</div></div>
+          <div class="stat-card"><div class="stat-label">Payoff</div><div class="stat-value" id="loan-payoff">—</div><div class="stat-sub" id="loan-payoff-sub">number of payments</div></div>
+        </div>
+        <div id="loan-schedule"></div>
       </div>
 
     </div>
@@ -2427,7 +2486,7 @@ let currentPage = 'dashboard';
 
 // Per-page render function used by showPage() AND by the resize/rotation rerender
 // (mobile/desktop layouts differ, so we redraw the active list on breakpoint change).
-const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, time: renderTime, budget: renderBudget, settings: loadSettingsForm, profile: loadProfileForm };
+const pageRenderers = { dashboard: renderDashboard, invoices: renderInvoices, customers: renderCustomers, expenses: renderExpenses, accounts: renderAccountsPage, mileage: renderMileage, time: renderTime, budget: renderBudget, loan: renderLoan, settings: loadSettingsForm, profile: loadProfileForm };
 function renderAccountsPage() {
   renderOwnerTx(); renderStoreCredits();
   // Reconciliation is inline (Plaid only): keep the audit grid visible and refresh
@@ -2981,6 +3040,7 @@ const MODULES = [
   { id:'time',       label:'Time Clock',           icon:'ti-clock',        desc:'Punch in/out and bill tracked hours.',               pages:['time'] },
   { id:'budget',     label:'Budget',               icon:'ti-pig-money',    desc:'Monthly spending budgets by category.',              pages:['budget'] },
   { id:'statements', label:'Statements',           icon:'ti-file-dollar',  desc:'Bank statements and reconciliation.',                pages:['accounts'] },
+  { id:'loan',       label:'Loan Calculator',      icon:'ti-calculator',   desc:'Estimate loan payments and interest.',               pages:['loan'] },
 ];
 function getHiddenModules() {
   try { const v = JSON.parse(lsGet('bk-hidden-modules')||'[]'); return Array.isArray(v) ? v.filter(id=>MODULES.some(m=>m.id===id)) : []; }
@@ -3076,7 +3136,7 @@ function showPage(page, el, fromBack) {
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const sideTab = document.querySelector('.nav-item[data-page="'+page+'"]');
   if (sideTab) sideTab.classList.add('active');   // desktop sidebar + whichever mobile group is showing
-  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',time:'Time Clock',budget:'Budget',settings:'Settings',profile:'Profile'};
+  const titles = {dashboard:'Dashboard',invoices:'Invoices',customers:'Customers',expenses:'Expenses',accounts:'Bank Statements',mileage:'Mileage',time:'Time Clock',budget:'Budget',loan:'Loan Calculator',settings:'Settings',profile:'Profile'};
   document.getElementById('page-title').textContent = titles[page]||page;
   updateTopbarLogo();
   const bc = document.getElementById('topbar-breadcrumb-page');
@@ -3104,7 +3164,7 @@ function showPage(page, el, fromBack) {
 // Bar capacity: Home + up to 5 sections directly (6 slots); beyond that, Home + 4 +
 // More. Order = tab order in the sidebar; the last sections overflow first.
 let _navMore = false;
-const NAV_ORDER = ['invoices','customers','expenses','accounts','mileage','time','budget'];
+const NAV_ORDER = ['invoices','customers','expenses','accounts','mileage','time','budget','loan'];
 function navSplit() {
   const hidPages = hiddenPagesSet();
   const candidates = NAV_ORDER.filter(p => !hidPages.has(p));
@@ -5631,6 +5691,142 @@ async function deleteTimeRow(id, ev) {        // from a list-row trash button
   if (ev) ev.stopPropagation();               // don't also open the editor
   if (!confirm('Delete this time entry?')) return;
   if (await removeTimeEntry(id)) { showToast('Deleted'); renderTime(); }
+}
+
+// ====== LOAN CALCULATOR ======
+// Standalone amortization calculator — pure math, no DB. Inputs mirror to
+// localStorage (bk-loan) so they survive a reload/close. renderLoan() computes
+// the standard fixed-payment amortization: monthly payment M = P·r/(1−(1+r)^−n)
+// where r is the monthly rate and n the number of payments. An optional extra
+// monthly payment shortens the term (schedule re-run month by month). A 0%
+// rate falls back to straight principal/n.
+let _loanRestored = false;
+function renderLoan() {
+  const amtEl = document.getElementById('loan-amount'); if (!amtEl) return;
+  // Restore saved inputs once (first render after login), before reading values.
+  if (!_loanRestored) {
+    _loanRestored = true;
+    try {
+      const s = JSON.parse(lsGet('bk-loan') || '{}');
+      if (s && typeof s === 'object') {
+        if (s.amount != null) amtEl.value = s.amount;
+        if (s.rate != null) document.getElementById('loan-rate').value = s.rate;
+        if (s.term != null) document.getElementById('loan-term').value = s.term;
+        if (s.unit) document.getElementById('loan-term-unit').value = s.unit;
+        if (s.extra != null) document.getElementById('loan-extra').value = s.extra;
+        if (s.start) document.getElementById('loan-start').value = s.start;
+      }
+    } catch(e){}
+  }
+  const P = Math.max(0, parseFloat(amtEl.value) || 0);
+  const annual = Math.max(0, parseFloat(document.getElementById('loan-rate').value) || 0);
+  const termNum = Math.max(0, parseFloat(document.getElementById('loan-term').value) || 0);
+  const unit = document.getElementById('loan-term-unit').value;
+  const extra = Math.max(0, parseFloat(document.getElementById('loan-extra').value) || 0);
+  const start = document.getElementById('loan-start').value;
+  const n = Math.round(unit === 'years' ? termNum * 12 : termNum);   // total scheduled payments
+  const r = annual / 100 / 12;                                       // monthly rate
+
+  // Persist inputs.
+  lsSet('bk-loan', JSON.stringify({ amount: amtEl.value, rate: document.getElementById('loan-rate').value, term: document.getElementById('loan-term').value, unit, extra: document.getElementById('loan-extra').value, start }));
+
+  const setTxt = (id, t) => { const e = document.getElementById(id); if (e) e.textContent = t; };
+  const sched = document.getElementById('loan-schedule');
+
+  if (P <= 0 || n <= 0) {
+    setTxt('loan-monthly', fmt(0)); setTxt('loan-interest', fmt(0));
+    setTxt('loan-total', fmt(0)); setTxt('loan-payoff', '—');
+    setTxt('loan-monthly-sub', 'principal + interest');
+    setTxt('loan-interest-sub', 'over the loan');
+    setTxt('loan-payoff-sub', 'number of payments');
+    if (sched) sched.innerHTML = '';
+    return;
+  }
+
+  // Base scheduled monthly payment (before any extra).
+  const basePay = r === 0 ? P / n : P * r / (1 - Math.pow(1 + r, -n));
+  const monthly = basePay + extra;
+
+  // Amortize month by month so an extra payment (or a rounding tail) is handled
+  // exactly and the true payoff month falls out of the loop.
+  let bal = P, totalInterest = 0, rows = [], k = 0;
+  const startDate = start ? new Date(start + 'T12:00:00') : null;
+  const MAX = 1200;   // safety cap (100 years) so a near-zero payment can't loop forever
+  while (bal > 0.005 && k < MAX) {
+    const interest = bal * r;
+    let principal = monthly - interest;
+    if (principal <= 0) break;                 // payment doesn't even cover interest — won't amortize
+    if (principal > bal) principal = bal;       // final (short) payment
+    const pay = principal + interest;
+    bal -= principal;
+    totalInterest += interest;
+    k++;
+    let label = '#' + k;
+    if (startDate) {
+      const d = new Date(startDate.getFullYear(), startDate.getMonth() + (k - 1), 1);
+      label = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    }
+    rows.push({ k, label, pay, principal, interest, bal: Math.max(0, bal) });
+  }
+  const payoffCount = k;
+  const noAmortize = payoffCount === 0 || (bal > 0.005 && k >= MAX);
+
+  if (noAmortize) {
+    // Monthly payment never covers the interest — loan never pays off.
+    setTxt('loan-monthly', fmt(monthly));
+    setTxt('loan-monthly-sub', extra > 0 ? 'incl. ' + fmt(extra) + ' extra' : 'principal + interest');
+    setTxt('loan-interest', '—'); setTxt('loan-interest-sub', "payment won't cover interest");
+    setTxt('loan-total', '—'); setTxt('loan-payoff', 'Never');
+    setTxt('loan-payoff-sub', 'raise the payment');
+    if (sched) sched.innerHTML = '';
+    return;
+  }
+
+  const totalPaid = P + totalInterest;
+  setTxt('loan-monthly', fmt(monthly));
+  setTxt('loan-monthly-sub', extra > 0 ? 'incl. ' + fmt(extra) + ' extra' : 'principal + interest');
+  setTxt('loan-interest', fmt(totalInterest));
+  setTxt('loan-interest-sub', 'over the loan');
+  setTxt('loan-total', fmt(totalPaid));
+  const years = Math.floor(payoffCount / 12), months = payoffCount % 12;
+  let payoffLabel = payoffCount + (payoffCount === 1 ? ' payment' : ' payments');
+  setTxt('loan-payoff', payoffLabel);
+  let sub = years > 0 ? years + 'y' + (months ? ' ' + months + 'm' : '') : payoffCount + ' months';
+  if (extra > 0 && payoffCount < n) sub += ' · ' + (n - payoffCount) + ' saved';
+  else if (startDate && rows.length) sub = 'paid off ' + rows[rows.length - 1].label;
+  setTxt('loan-payoff-sub', sub);
+
+  // Schedule: for a long loan this is huge, so show a yearly summary with the
+  // full month list tucked behind a <details>.
+  if (sched) {
+    // Yearly rollup.
+    const yearly = [];
+    rows.forEach(row => {
+      const yi = Math.floor((row.k - 1) / 12);
+      if (!yearly[yi]) yearly[yi] = { yr: yi + 1, pay: 0, principal: 0, interest: 0, bal: row.bal };
+      yearly[yi].pay += row.pay; yearly[yi].principal += row.principal;
+      yearly[yi].interest += row.interest; yearly[yi].bal = row.bal;
+    });
+    const yhead = '<tr><th>Year</th><th>Paid</th><th>Principal</th><th>Interest</th><th>Balance</th></tr>';
+    const yrows = yearly.map(y => '<tr class="loan-yr"><td>Year ' + y.yr + '</td><td>' + fmt(y.pay) + '</td><td>' + fmt(y.principal) + '</td><td>' + fmt(y.interest) + '</td><td>' + fmt(y.bal) + '</td></tr>').join('');
+    const mhead = '<tr><th>' + (startDate ? 'Month' : 'Payment') + '</th><th>Payment</th><th>Principal</th><th>Interest</th><th>Balance</th></tr>';
+    const mrows = rows.map(row => '<tr><td>' + row.label + '</td><td>' + fmt(row.pay) + '</td><td>' + fmt(row.principal) + '</td><td>' + fmt(row.interest) + '</td><td>' + fmt(row.bal) + '</td></tr>').join('');
+    sched.innerHTML =
+      '<div class="card" style="margin-top:1rem">' +
+        '<div class="card-header"><h3>Amortization</h3></div>' +
+        '<div class="loan-sched-wrap" style="padding:.25rem .5rem 1rem"><table class="loan-sched">' + yhead + yrows + '</table></div>' +
+        (rows.length > 12 ?
+          '<details style="padding:0 1rem 1rem"><summary style="cursor:pointer;font-size:12px;color:var(--accent-text);font-family:\'JetBrains Mono\',monospace">Show every payment (' + rows.length + ')</summary>' +
+          '<div class="loan-sched-wrap" style="margin-top:.6rem"><table class="loan-sched">' + mhead + mrows + '</table></div></details>'
+          : '') +
+      '</div>';
+  }
+}
+function clearLoan() {
+  ['loan-amount','loan-rate','loan-term','loan-extra','loan-start'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  const u = document.getElementById('loan-term-unit'); if (u) u.value = 'years';
+  lsRemove('bk-loan');
+  renderLoan();
 }
 
 // ====== BUDGET (paycheck bill planner) ======
