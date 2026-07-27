@@ -27,7 +27,13 @@ self.addEventListener('push', event => {
     self.registration.showNotification(title, {
       body,
       icon: 'icon.png',
+      // Android/Samsung draw `badge` as the small monochrome status-bar glyph and
+      // honour vibrate/renotify; iOS ignores all three, so they cost nothing there.
+      // renotify + a per-item tag = a second reminder re-alerts instead of
+      // silently replacing the first one in the shade.
       badge: 'icon-180.png',
+      vibrate: [120, 60, 120],
+      renotify: true,
       tag: data.tag || 'bookkeeper-daily',
       data: { url: data.url || '/' }
     }),
@@ -57,7 +63,10 @@ function notifyClients() {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || '/';
-  event.waitUntil(self.clients.matchAll({ type: 'window' }).then(list => {
+  // includeUncontrolled: on Android a freshly-launched WebAPK window can still be
+  // uncontrolled when the tap lands; without it matchAll() comes back empty and
+  // we open a SECOND copy of the app instead of focusing the one already running.
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
     for (const c of list) { if ('focus' in c) { try { c.navigate(url); } catch(_){} return c.focus(); } }
     if (self.clients.openWindow) return self.clients.openWindow(url);
   }));
