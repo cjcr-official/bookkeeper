@@ -4298,6 +4298,37 @@ function loadPdfLibs() {
   return _pdfLibsReady;
 }
 
+// Chrome on Android — Samsung hardware especially — enforces a far tighter canvas
+// budget than Safari, and past it hands back a silently BLANK canvas rather than
+// throwing. Reports are the tallest documents in the app (an invoice is usually
+// one page), so a long P&L at scale 2 could sail past the limit and rasterize to
+// nothing. Pick the largest scale that stays inside the budget instead of always 2.
+const PDF_MAX_AREA = 16777216;   // 2^24 total pixels
+const PDF_MAX_DIM  = 8192;       // per side
+function safeCanvasScale(w, h) {
+  if (!w || !h) return 1;
+  // Floor low enough that even an absurdly long report still satisfies the
+  // per-side cap — a small-but-readable PDF beats a blank one.
+  return Math.max(0.3, Math.min(2, Math.sqrt(PDF_MAX_AREA / (w * h)), PDF_MAX_DIM / w, PDF_MAX_DIM / h));
+}
+// Downscale the whole canvas into a thumbnail and check whether every pixel came
+// out identical — the signature of the blank canvas Android returns when it gives
+// up. Any real report averages text into greys, so this won't trip on live data.
+function canvasLooksBlank(cv) {
+  try {
+    const s = document.createElement('canvas');
+    s.width = 40; s.height = 100;
+    const ctx = s.getContext('2d');
+    if (!ctx) return false;
+    ctx.drawImage(cv, 0, 0, s.width, s.height);
+    const d = ctx.getImageData(0, 0, s.width, s.height).data;
+    for (let i = 4; i < d.length; i += 4) {
+      if (d[i] !== d[0] || d[i+1] !== d[1] || d[i+2] !== d[2] || d[i+3] !== d[3]) return false;
+    }
+    return true;
+  } catch (_) { return false; }   // unreadable — assume it rendered
+}
+
 // Render an HTML fragment off-screen at a fixed desktop width (780px so the print
 // table keeps its columns), rasterize it, and paginate into a letter-size PDF.
 async function htmlToPDF(html, anchorSelector) {
@@ -4309,11 +4340,27 @@ async function htmlToPDF(html, anchorSelector) {
   holder.innerHTML = '<div style="width:780px;background:#fff;padding:24px">' + html + '</div>';
   document.body.appendChild(holder);
   const node = (anchorSelector && holder.querySelector(anchorSelector)) || holder.firstChild;
-  let canvas;
+  let canvas = null, lastCanvas = null;
   try {
-    canvas = await html2canvas(node, { scale:2, backgroundColor:'#ffffff', useCORS:true, width:780, windowWidth:780 });
+    const h = Math.ceil(node.getBoundingClientRect().height) || node.scrollHeight || 1200;
+    // Best fitting scale first, then genuinely SMALLER steps if the device still
+    // handed back blank (fixed 1/0.5 steps would be an increase on a long report).
+    const best = safeCanvasScale(780, h);
+    const tries = [best, best * 0.6, best * 0.35];
+    for (const scale of tries) {
+      const c = await html2canvas(node, { scale, backgroundColor:'#ffffff', useCORS:true, width:780, windowWidth:780 });
+      if (c && c.width && c.height) {
+        lastCanvas = c;
+        if (!canvasLooksBlank(c)) { canvas = c; break; }
+      }
+    }
   } finally { document.body.removeChild(holder); }
+  // Never end up worse than before: if every attempt looked blank, still use the
+  // last real canvas rather than failing outright.
+  canvas = canvas || lastCanvas;
+  if (!canvas || !canvas.width || !canvas.height) return null;
   const imgData = canvas.toDataURL('image/jpeg', 0.95);
+  if (!imgData || imgData.length < 1000) return null;   // encoder ran out of memory
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ unit:'pt', format:'letter' });
   const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight(), margin = 36;
@@ -4386,32 +4433,75 @@ function printDocInIframe(html, title, extraStyle, fallback) {
   if (old) old.remove();
   const iframe = document.createElement('iframe');
   iframe.id = 'print-frame';
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  // REAL dimensions, parked off-screen — NOT width:0/height:0/visibility:hidden.
+  // Chrome and Samsung Internet never lay out or paint a zero-size hidden frame,
+  // so printing one yielded blank pages on Android while iOS Safari (which
+  // snapshots it anyway) printed fine.
+  iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:820px;height:1160px;border:0;pointer-events:none';
   document.body.appendChild(iframe);
   const docHTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+title+'</title>'
     + '<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">'
-    + '<style>*{box-sizing:border-box}html,body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}@page{margin:0.5in}.doc{width:100%}'
+    // print-color-adjust: Android drops background fills by default, which flattens
+    // the report's header band and badges to white-on-white.
+    + '<style>*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{margin:0;background:#fff;color:#1a1a1a;font-family:\'Plus Jakarta Sans\',sans-serif}@page{margin:0.5in}.doc{width:100%}'
     + (extraStyle||'')
     + '</style></head><body><div class="doc">'+html+'</div></body></html>';
   const idoc = iframe.contentWindow.document;
   idoc.open(); idoc.write(docHTML); idoc.close();
-  setTimeout(()=>{
-    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
-    catch(e) { if (fallback) fallback(); }
-    setTimeout(()=>{ const f=document.getElementById('print-frame'); if(f) f.remove(); }, 1000);
-  }, 700);
+
+  // Clean up when the print job is actually finished, NOT on a fixed timer.
+  // window.print() blocks on iOS/desktop until the dialog closes, so the old
+  // 1-second removal was harmless there — but on Android it returns immediately
+  // and the preview renders asynchronously, so tearing the frame out a second
+  // later pulled the document out from under the preview mid-render.
+  let done = false;
+  const cleanup = () => {
+    if (done) return; done = true;
+    const f = document.getElementById('print-frame'); if (f) f.remove();
+  };
+  try { iframe.contentWindow.addEventListener('afterprint', () => setTimeout(cleanup, 500)); } catch (_) {}
+  setTimeout(cleanup, 120000);   // last-resort sweep if afterprint never fires
+
+  // Wait for the document and its webfonts instead of guessing at 700ms — an
+  // early print() on Android renders a blank or unstyled page.
+  const ready = new Promise(resolve => {
+    const go = () => {
+      const fonts = iframe.contentWindow && iframe.contentWindow.document.fonts;
+      (fonts && fonts.ready ? fonts.ready.catch(() => {}) : Promise.resolve()).then(resolve);
+    };
+    if (iframe.contentWindow.document.readyState === 'complete') go();
+    else iframe.addEventListener('load', go, { once: true });
+    setTimeout(resolve, 3000);   // ceiling: never block printing on a slow font CDN
+  });
+  ready.then(() => {
+    // One more frame so layout has certainly flushed before the snapshot.
+    requestAnimationFrame(() => {
+      try {
+        // Some Android builds (and Samsung Internet on older One UI) expose no
+        // window.print at all — go straight to the PDF rather than no-op.
+        if (typeof iframe.contentWindow.print !== 'function') throw new Error('no print support');
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (e) { cleanup(); if (fallback) fallback(); }
+    });
+  });
 }
 
 // Open a generated PDF in a new tab (or download it if the popup is blocked).
-async function openPDFBlob(buildFn) {
+async function openPDFBlob(buildFn, name) {
   try {
     const pdf = await buildFn();
-    if (!pdf) return;
+    if (!pdf) { showToast('Could not build the PDF on this device', 'error'); return; }
     const url = URL.createObjectURL(pdf.output('blob'));
-    const w = window.open(url, '_blank');
-    if (!w) { const a=document.createElement('a'); a.href=url; a.target='_blank'; document.body.appendChild(a); a.click(); a.remove(); }
+    const fname = (name || 'Bookkeeper').replace(/[^a-z0-9]+/gi, '_') + '.pdf';
+    // Android blocks window.open for a blob URL opened after async work (the
+    // gesture has expired) and often can't display one in a tab anyway, so save
+    // the file there instead of leaving the user with a swallowed popup.
+    const save = () => { const a=document.createElement('a'); a.href=url; a.download=fname; document.body.appendChild(a); a.click(); a.remove(); showToast('Saved to your downloads','success'); };
+    if (isAndroidDevice()) save();
+    else { const w = window.open(url, '_blank'); if (!w) save(); }
     setTimeout(()=>URL.revokeObjectURL(url), 60000);
-  } catch(e) { console.error(e); }
+  } catch(e) { console.error(e); showToast('Could not build the PDF', 'error'); }
 }
 
 function printInvoice() {
@@ -4419,7 +4509,7 @@ function printInvoice() {
     + '#inv-print-area tr{display:table-row}#inv-print-area th,#inv-print-area td{display:table-cell}';
   printDocInIframe(lastInvoiceHTML, lastInvoiceTitle, invPrintCSS, printInvoiceFallback);
 }
-function printInvoiceFallback() { return openPDFBlob(buildInvoicePDF); }
+function printInvoiceFallback() { return openPDFBlob(buildInvoicePDF, lastInvoiceTitle); }
 
 function viewInvoice(id) {
   const inv = cache.invoices.find(i=>i.id===id); if(!inv) return;
@@ -6753,7 +6843,13 @@ function reportScreen(title) {
   return `<div style="max-width:840px;margin:0 auto">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem .25rem;gap:.5rem">
       <div style="font-size:12.5px;font-weight:700;color:var(--text)">${title}</div>
-      <button class="btn btn-sm btn-primary" id="report-print-btn" onclick="printReport()"><i class="ti ti-printer"></i> Print</button>
+      <div style="display:flex;gap:.4rem;flex-shrink:0">
+        <!-- Save PDF is the guaranteed path: Android's print stack varies by
+             device/vendor, so there has to be a way to get the report out that
+             doesn't depend on it. -->
+        <button class="btn btn-sm" id="report-pdf-btn" onclick="saveReportPDF(this)"><i class="ti ti-file-download"></i> Save PDF</button>
+        <button class="btn btn-sm btn-primary" id="report-print-btn" onclick="printReport()"><i class="ti ti-printer"></i> Print</button>
+      </div>
     </div>
     <div style="padding:0 1rem 1rem">${lastReportHTML}</div>
   </div>`;
@@ -6792,7 +6888,15 @@ function reportDoc(bizName, bizMeta, title, period, bodyHTML) {
 function buildReportPDF() { return htmlToPDF(lastReportHTML, '#report-print-area'); }
 
 function printReport() { printDocInIframe(lastReportHTML, lastReportTitle, '', printReportFallback); }
-function printReportFallback() { return openPDFBlob(buildReportPDF); }
+function printReportFallback() { return openPDFBlob(buildReportPDF, lastReportTitle); }
+// Rasterizing a long report takes a couple of seconds — show progress so the
+// button doesn't look dead, and guard against a double-tap starting two renders.
+async function saveReportPDF(btn) {
+  const html = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Building…'; }
+  try { await openPDFBlob(buildReportPDF, lastReportTitle); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = html; } }
+}
 
 // Build the Budget report document for month (by,bm) into lastReportHTML/Title.
 // Shared by the dashboard "Budget" report tab and the Budget page's Print button.
