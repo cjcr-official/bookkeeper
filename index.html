@@ -1873,7 +1873,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
               </div>
               <div>
                 <label class="loan-lbl">Term</label>
-                <div class="loan-field"><input type="number" id="loan-term" min="0" step="1" inputmode="numeric" placeholder="5" oninput="renderLoan()"><select id="loan-term-unit" onchange="renderLoan()" class="loan-unit"><option value="years">years</option><option value="months">months</option></select></div>
+                <div class="loan-field"><input type="number" id="loan-term" min="0" step="1" inputmode="numeric" placeholder="5" oninput="renderLoan()" style="min-width:3ch"><select id="loan-term-unit" onchange="renderLoan()" class="loan-unit"><option value="years">years</option><option value="months">months</option></select></div>
               </div>
               <div>
                 <label class="loan-lbl">Extra / month <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
@@ -1888,6 +1888,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
                  remaining balance at the new rate from the given payment onward. -->
             <div style="margin-top:1.1rem">
               <label class="loan-lbl">Rate changes <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional — for adjustable-rate loans)</span></label>
+              <div style="font-size:11px;color:var(--text3);margin:-.1rem 0 .5rem;line-height:1.4" id="loan-steps-hint">Set a <b>First payment</b> date above to enter the exact date each rate takes effect.</div>
               <div id="loan-steps"></div>
               <button class="btn btn-sm" style="margin-top:.25rem" onclick="addLoanStep()"><i class="ti ti-plus"></i> Add a rate change</button>
             </div>
@@ -5713,25 +5714,45 @@ async function deleteTimeRow(id, ev) {        // from a list-row trash button
 // where r is the monthly rate and n the number of payments. An optional extra
 // monthly payment shortens the term (schedule re-run month by month). A 0%
 // rate falls back to straight principal/n.
-let _loanRestored = false;
-// Rate changes (adjustable-rate loans). Each step = {month, rate}: from that
-// payment number onward the loan re-amortizes the remaining balance at the new
-// annual rate over its remaining scheduled term. Kept as its own array (not
-// rebuilt on every keystroke) so the step inputs don't lose focus mid-type.
+let _loanRestored = false, _loanHadStart = null;
+// Rate changes (adjustable-rate loans). Each step = {month, date, rate}: from that
+// point onward the loan re-amortizes the remaining balance at the new annual rate
+// over its remaining scheduled term. The "when" can be entered as an exact DATE
+// (when a First payment date anchors the schedule) or as a raw payment number
+// (no anchor); both are stored so switching the anchor doesn't lose the entry.
+// Kept as its own array (not rebuilt on every keystroke) so the step inputs don't
+// lose focus mid-type — only rebuilt on add/remove/restore and when the anchor
+// (First payment date present vs. not) flips, which changes the input type.
 let _loanSteps = [];
-function addLoanStep() { _loanSteps.push({ month: '', rate: '' }); renderLoanSteps(); renderLoan(); }
+function addLoanStep() { _loanSteps.push({ month: '', date: '', rate: '' }); renderLoanSteps(); renderLoan(); }
 function removeLoanStep(i) { _loanSteps.splice(i, 1); renderLoanSteps(); renderLoan(); }
 function updateLoanStep(i, field, val) { if (_loanSteps[i]) { _loanSteps[i][field] = val; renderLoan(); } }
+// Resolve a step to a 1-based payment number. With a First payment date + a step
+// date, count whole months between them (payment #1 = the first payment's month);
+// otherwise fall back to the typed payment number.
+function loanStepPaymentNo(s, startDate) {
+  if (startDate && s.date) {
+    const d = new Date(s.date + 'T12:00:00');
+    if (isNaN(d)) return NaN;
+    return (d.getFullYear() - startDate.getFullYear()) * 12 + (d.getMonth() - startDate.getMonth()) + 1;
+  }
+  return Math.round(parseFloat(s.month));
+}
 function renderLoanSteps() {
   const host = document.getElementById('loan-steps'); if (!host) return;
-  host.innerHTML = _loanSteps.map((s, i) =>
-    '<div class="loan-step-row">' +
-      '<span class="loan-step-lbl">From payment #</span>' +
-      '<div class="loan-field" style="width:70px"><input type="number" min="2" step="1" inputmode="numeric" value="' + (s.month != null ? s.month : '') + '" oninput="updateLoanStep(' + i + ',\'month\',this.value)"></div>' +
+  const hasStart = !!((document.getElementById('loan-start') || {}).value);
+  host.innerHTML = _loanSteps.map((s, i) => {
+    const when = hasStart
+      ? '<span class="loan-step-lbl">on</span>' +
+        '<div class="loan-field" style="width:158px"><input type="date" value="' + (s.date || '') + '" oninput="updateLoanStep(' + i + ',\'date\',this.value)" style="padding-right:.4rem"></div>'
+      : '<span class="loan-step-lbl">from payment #</span>' +
+        '<div class="loan-field" style="width:70px"><input type="number" min="2" step="1" inputmode="numeric" value="' + (s.month != null ? s.month : '') + '" oninput="updateLoanStep(' + i + ',\'month\',this.value)"></div>';
+    return '<div class="loan-step-row">' + when +
       '<span class="loan-step-lbl">rate →</span>' +
       '<div class="loan-field" style="width:96px"><input type="number" min="0" step="0.01" inputmode="decimal" placeholder="7.5" value="' + (s.rate != null ? s.rate : '') + '" oninput="updateLoanStep(' + i + ',\'rate\',this.value)"><span class="loan-post">%</span></div>' +
       '<button class="loan-step-del" aria-label="Remove rate change" onclick="removeLoanStep(' + i + ')"><i class="ti ti-x"></i></button>' +
-    '</div>').join('');
+    '</div>';
+  }).join('');
 }
 function renderLoan() {
   const amtEl = document.getElementById('loan-amount'); if (!amtEl) return;
@@ -5747,10 +5768,11 @@ function renderLoan() {
         if (s.unit) document.getElementById('loan-term-unit').value = s.unit;
         if (s.extra != null) document.getElementById('loan-extra').value = s.extra;
         if (s.start) document.getElementById('loan-start').value = s.start;
-        if (Array.isArray(s.steps)) _loanSteps = s.steps.map(x => ({ month: x.month, rate: x.rate }));
+        if (Array.isArray(s.steps)) _loanSteps = s.steps.map(x => ({ month: x.month, date: x.date || '', rate: x.rate }));
       }
     } catch(e){}
     renderLoanSteps();
+    _loanHadStart = !!document.getElementById('loan-start').value;
   }
   const P = Math.max(0, parseFloat(amtEl.value) || 0);
   const annual = Math.max(0, parseFloat(document.getElementById('loan-rate').value) || 0);
@@ -5758,8 +5780,22 @@ function renderLoan() {
   const unit = document.getElementById('loan-term-unit').value;
   const extra = Math.max(0, parseFloat(document.getElementById('loan-extra').value) || 0);
   const start = document.getElementById('loan-start').value;
+  const startDate = start ? new Date(start + 'T12:00:00') : null;
   const n = Math.round(unit === 'years' ? termNum * 12 : termNum);   // total scheduled payments
   const r = annual / 100 / 12;                                       // monthly rate
+
+  // Adding/removing the First payment date flips the rate-change rows between a
+  // date picker and a payment-number field — rebuild them (and the hint) when it
+  // toggles. (Not on every keystroke, so a step input keeps focus while typing.)
+  const hasStart = !!start;
+  if (hasStart !== _loanHadStart) {
+    _loanHadStart = hasStart;
+    renderLoanSteps();
+    const hint = document.getElementById('loan-steps-hint');
+    if (hint) hint.innerHTML = hasStart
+      ? 'Enter the date each new rate takes effect — it lines up with the payment schedule below.'
+      : 'Set a <b>First payment</b> date above to enter the exact date each rate takes effect.';
+  }
 
   // Persist inputs (including the rate-change schedule).
   lsSet('bk-loan', JSON.stringify({ amount: amtEl.value, rate: document.getElementById('loan-rate').value, term: document.getElementById('loan-term').value, unit, extra: document.getElementById('loan-extra').value, start, steps: _loanSteps }));
@@ -5781,7 +5817,7 @@ function renderLoan() {
   // in-range rows; when two land on the same payment the later-entered wins.
   const stepMap = {};
   _loanSteps.forEach(s => {
-    const m = Math.round(parseFloat(s.month));
+    const m = loanStepPaymentNo(s, startDate);
     const rt = parseFloat(s.rate);
     if (m >= 2 && isFinite(rt) && rt >= 0) stepMap[m] = rt / 100 / 12;
   });
@@ -5796,7 +5832,6 @@ function renderLoan() {
   // payment rides on top throughout.
   let bal = P, totalInterest = 0, rows = [], k = 0;
   let curR = r, basePay = schedPay(P, r, n), firstMonthly = basePay + extra;
-  const startDate = start ? new Date(start + 'T12:00:00') : null;
   const MAX = 1200;   // safety cap (100 years) so a near-zero payment can't loop forever
   while (bal > 0.005 && k < MAX) {
     const pmtNo = k + 1;
