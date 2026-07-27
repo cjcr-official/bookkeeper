@@ -27,10 +27,14 @@ version bump.
 ## Workflow: ship automatically (owner's standing instruction)
 
 The owner wants every completed change **merged to `main` automatically** — no
-"should I merge?" prompt. When work is done and verified: push the feature
+"should I merge?" prompt, ever. When work is done and verified: push the feature
 branch, open a PR, and merge it to `main` (which auto-deploys via Cloudflare
-Workers Builds). Only pause to ask when the change is genuinely risky or
-ambiguous; otherwise just ship it and report what was merged.
+Workers Builds). Then report what was merged.
+
+**Always merge.** This is unconditional — reaffirmed by the owner directly.
+There is no "but this one felt risky" exception: if a change is risky, say so
+plainly in the report *after* merging, and offer the revert. Don't hold the
+merge waiting for an answer, and don't ask again in a later session.
 
 ---
 
