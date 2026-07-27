@@ -6871,10 +6871,25 @@ function reportDoc(bizName, bizMeta, title, period, bodyHTML) {
     </div>
     <style>
       #report-print-area .rsec{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:#888;margin:1rem 0 .35rem}
-      #report-print-area .rrow{display:flex;justify-content:space-between;padding:.45rem 0;border-bottom:1px solid #eee}
+      /* The report doc is authored for the 780px print width, but it's ALSO shown
+         inline on the dashboard — where a phone is ~360px. With a plain
+         space-between flex row both columns shrank to min-content and wrapped
+         into each other, so a bill with a reimbursed note rendered as interleaved
+         fragments ("Progressive Insurance / $120.00 / due 19th · paid / ($70.00
+         back)"). Widest rows are the Budget report's, which is where it showed.
+         Fixed without a media/container query so BOTH widths use one code path
+         and the PDF can't drift from the preview: the row may wrap, the amount is
+         one unbreakable unit, and margin-left:auto keeps it right-aligned whether
+         it shares the line or drops below. At 780px nothing ever wraps, so the
+         printed output is byte-for-byte what it was. */
+      #report-print-area .rrow{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.15rem 1rem;padding:.45rem 0;border-bottom:1px solid #eee}
+      #report-print-area .rrow>span{min-width:0}
+      #report-print-area .rrow>span+span{flex:0 0 auto;margin-left:auto;text-align:right;white-space:nowrap}
       #report-print-area .rrow.sub span:first-child{padding-left:1rem;color:#555}
       #report-print-area .rrow.bold{font-weight:700;border-bottom:2px solid #1a1a1a}
-      #report-print-area .rtotal{display:flex;justify-content:space-between;padding:.7rem .85rem;margin-top:.85rem;background:#1a1a1a;color:#fff;border-radius:6px;font-weight:800;font-size:15px;letter-spacing:.3px}
+      #report-print-area .rtotal{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:.15rem 1rem;padding:.7rem .85rem;margin-top:.85rem;background:#1a1a1a;color:#fff;border-radius:6px;font-weight:800;font-size:15px;letter-spacing:.3px}
+      #report-print-area .rtotal>span{min-width:0}
+      #report-print-area .rtotal>span+span{flex:0 0 auto;margin-left:auto;text-align:right;white-space:nowrap}
       #report-print-area .mono{font-family:'JetBrains Mono',monospace}
       #report-print-area .rtable{width:100%;border-collapse:collapse;font-size:12.5px}
       #report-print-area .rtable th{font-size:10.5px;font-weight:700;letter-spacing:.6px;color:#888;padding:0 0 .5rem;border-bottom:1px solid #1a1a1a;background:transparent}

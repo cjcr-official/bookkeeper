@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **422** (see `version.json` — that file is the source of truth).
+Current version: **423** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -605,6 +605,13 @@ minute until the cache refreshes.
 - The global mobile table-stacking rule is scoped to `.page table`, with
   overrides so invoice/report print areas keep real columns. Reuse this scoping
   for new printables.
+- **A report doc is authored at 780px but ALSO rendered inline on the dashboard**,
+  where a phone is ~360px. Anything in `reportDoc`'s styles has to survive both.
+  `.rrow`/`.rtotal` do it with `flex-wrap` + `margin-left:auto` + `white-space:
+  nowrap` on the amount — one code path, no media/container query, so the preview
+  can't drift from the PDF. Don't "fix" a narrow-screen report with a viewport
+  media query: `htmlToPDF` renders its 780px clone in the SAME document while the
+  viewport is still phone-width, so a viewport query would corrupt the PDF too.
 
 ---
 
