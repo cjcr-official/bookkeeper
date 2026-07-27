@@ -5864,13 +5864,24 @@ function loanRateOn(comp, date) {
 function loanActual(loan, comp) {
   const pays = loanPays(loan);
   let bal = comp.P, paidTotal = 0, interestPaid = 0, principalPaid = 0;
+  // Interest accrues for the ACTUAL time between payments, not a flat month each, so
+  // irregular (skipped / quarterly / catch-up) payments land the right balance. The
+  // clock starts at origination ≈ one month before the first scheduled payment; on-time
+  // monthly payments therefore accrue exactly one period each (identical to before), and
+  // with no dates at all we fall back to one period per payment.
+  let prevDate = comp.startDate ? new Date(comp.startDate.getFullYear(), comp.startDate.getMonth() - 1, comp.startDate.getDate()) : null;
   pays.forEach(p => {
     const amt = Math.max(0, loanNum(p.amount));
     const rateM = loanRateOn(comp, p.date);
-    const interest = Math.min(Math.max(0, bal * rateM), amt);
-    const principal = Math.min(amt - interest, bal);
-    bal -= principal;
-    paidTotal += amt; interestPaid += interest; principalPaid += Math.max(0, principal);
+    const pd = p.date ? new Date(p.date + 'T12:00:00') : null;
+    let periods = 1;
+    if (prevDate && pd) periods = Math.max(1, Math.min(600, (pd.getFullYear() - prevDate.getFullYear()) * 12 + (pd.getMonth() - prevDate.getMonth())));
+    const interestDue = Math.max(0, bal * rateM) * periods;
+    let principal = amt - interestDue;
+    if (principal > bal) principal = bal;      // can't pay off more than is owed
+    bal -= principal;                          // underpayment (principal < 0) grows the balance
+    paidTotal += amt; interestPaid += Math.min(interestDue, amt); principalPaid += Math.max(0, principal);
+    if (pd) prevDate = pd;
   });
   bal = Math.max(0, bal);
   let covered = 0;
