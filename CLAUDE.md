@@ -409,6 +409,29 @@ create policy "time_entries_own" on time_entries for all using (auth.uid() = use
 -- default hourly rate for the Time Clock (set on the Time page; prefills new punches)
 alter table profiles add column if not exists hourly_rate numeric;
 
+-- loans: the Loan tab's saved loans (calculator + payment tracker). Each row is one
+-- loan; rate_steps holds adjustable-rate changes [{month,date,rate}] and payments the
+-- recorded actual payments [{id,date,amount,note}] (jsonb, rewritten wholesale on
+-- save, same pattern as budget_bills). computeLoan() amortizes it; loanActual()
+-- applies the recorded payments to derive the true remaining balance. Loan payment
+-- due dates also surface on the Dashboard calendar + Upcoming card.
+create table if not exists loans (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,
+  name text not null,
+  amount numeric,
+  rate numeric,
+  term_num numeric,
+  term_unit text default 'years',        -- 'years' | 'months'
+  extra numeric default 0,               -- optional extra principal per month
+  start_date date,                       -- first payment date (anchors the schedule + calendar)
+  rate_steps jsonb default '[]'::jsonb,  -- [{month,date,rate}] ARM rate changes
+  payments jsonb default '[]'::jsonb,    -- [{id,date,amount,note}] recorded payments
+  created_at timestamptz default now()
+);
+alter table loans enable row level security;
+create policy "loans_own" on loans for all using (auth.uid() = user_id);
+
 -- Budget (paycheck bill planner). All on profiles (jsonb), no separate table:
 --   pay_schedule  {freq:'biweekly'|'semimonthly'|'weekly'|'monthly', anchor:'YYYY-MM-DD'
 --                  (weekly/biweekly reference payday), days:[d1,d2] (semimonthly),
