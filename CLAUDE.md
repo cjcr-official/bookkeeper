@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **421** (see `version.json` — that file is the source of truth).
+Current version: **422** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -678,6 +678,25 @@ behaviors are easy to break without noticing. What exists and must keep working:
 - **Settings → About** shows running vs. latest version with a manual check —
   keep it working, it's the only way to tell a stuck install from a stale one
   without a debugger attached to the phone.
+- **Printing (`printDocInIframe`) has three Android rules**, all learned from
+  reports printing blank on a Galaxy while iPhone was fine:
+  1. The print iframe needs **real dimensions parked off-screen** — never
+     `width:0;height:0;visibility:hidden`. Chromium never lays out or paints a
+     zero-size hidden frame, so the print snapshot is empty. iOS snapshots it
+     anyway, which is why this stayed invisible.
+  2. **Wait for `load` + `document.fonts.ready`** (bounded by a timeout) before
+     calling `print()`. A blind delay races the font CDN on mobile data.
+  3. **Clean up on `afterprint`, never on a timer.** `window.print()` blocks
+     until dismissed on iOS/desktop but returns immediately on Android, where the
+     preview renders async — removing the frame pulled the document out from
+     under it.
+  Also set `print-color-adjust:exact`, or Android drops the report's background
+  fills and prints white-on-white.
+- **html2canvas must not hard-code `scale:2`.** Chrome on Android returns a
+  silently BLANK canvas past ~2^24 px (or ~8k a side) instead of throwing.
+  `safeCanvasScale()` picks the largest scale inside that budget and
+  `canvasLooksBlank()` steps down further if a device still gives up. Reports are
+  the tallest documents in the app, so they hit this where invoices don't.
 
 ---
 
