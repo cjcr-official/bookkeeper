@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **420** (see `version.json` — that file is the source of truth).
+Current version: **421** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -661,6 +661,23 @@ behaviors are easy to break without noticing. What exists and must keep working:
   Android reports `100vh` as the LARGE viewport, so content sat under the URL bar.
 - `touch-action:manipulation` is deliberately NOT applied to `input`/`textarea`
   (the logo-crop range slider needs the browser's own drag handling).
+- **The update prompt has to be triggered differently than on iOS.** An iPhone
+  standalone PWA is evicted from memory constantly, so the load-time
+  `checkForUpdate()` runs on nearly every open. An Android PWA lives in the app
+  switcher for days: Chrome freezes the page after a few minutes (killing the
+  2-minute `setInterval`) and a bfcache restore doesn't guarantee a
+  `visibilitychange`. So the check ALSO runs on `pageshow` (every show, not just
+  `e.persisted`) and on `window` focus. If you add another update trigger, add it
+  to all three — a check that only fires on load is effectively iOS-only.
+- **`doUpdate()` must not unregister the service worker.** `sw.js` caches
+  nothing, so unregistering bought zero freshness, while on Android it tore down
+  the push subscription (reminders dead until the next boot re-subscribed) and
+  dropped the worker that makes the app an installed WebAPK. It calls
+  `registration.update()` instead, and preserves the `bk-flags` cache (that holds
+  the "a push arrived" marker, not content).
+- **Settings → About** shows running vs. latest version with a manual check —
+  keep it working, it's the only way to tell a stuck install from a stale one
+  without a debugger attached to the phone.
 
 ---
 

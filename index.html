@@ -1598,6 +1598,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <button class="settings-nav-item" data-sec="security" onclick="showSettingsSection('security')"><i class="ti ti-shield-lock"></i>Security</button>
           <button class="settings-nav-item" data-sec="account" onclick="showSettingsSection('account')"><i class="ti ti-user"></i>Account</button>
           <button class="settings-nav-item" data-sec="legal" onclick="showSettingsSection('legal')"><i class="ti ti-file-text"></i>Legal</button>
+          <button class="settings-nav-item" data-sec="about" onclick="showSettingsSection('about')"><i class="ti ti-info-circle"></i>About</button>
         </aside>
         <div class="settings-panel">
         <div class="card settings-section active" data-sec="appearance">
@@ -1730,6 +1731,28 @@ input,select,textarea{border-radius:var(--radius-sm)}
             <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">How your data is collected, used, stored, and protected.</div>
             <a class="btn" href="data-retention-policy.html" target="_blank" rel="noopener" style="margin-top:1rem"><i class="ti ti-clock-hour-4"></i> Data Retention &amp; Disposal Policy</a>
             <div style="font-size:11px;color:var(--text3);margin-top:.6rem;line-height:1.5">What data is kept, for how long, and how it's deleted.</div>
+          </div>
+        </div>
+        <!-- ABOUT: makes the update state visible. "Didn't the update prompt show?"
+             used to be unanswerable — now the running vs. available version is
+             right here, on whichever phone is in question. -->
+        <div class="card settings-section" data-sec="about">
+          <div class="card-header"><h3>About</h3></div>
+          <div class="modal-body">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:1rem">
+              <span class="setting-row-title">Running version</span>
+              <span id="about-installed" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2)">—</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:1rem;margin-top:.6rem">
+              <span class="setting-row-title">Latest available</span>
+              <span id="about-latest" style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--text2)">—</span>
+            </div>
+            <div id="about-status" style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5"></div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.9rem">
+              <button class="btn btn-sm" onclick="checkForUpdateNow(this)"><i class="ti ti-refresh"></i> Check for updates</button>
+              <button class="btn btn-sm" id="about-update-btn" style="display:none" onclick="doUpdate()"><i class="ti ti-download"></i> Update now</button>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">The app checks on its own when it starts and while it's open. If the two numbers differ and no prompt appeared, tap Update now.</div>
           </div>
         </div>
         </div>
@@ -8673,6 +8696,7 @@ function showSettingsSection(name) {
   // Reset scroll so the new section starts at its top (a tall previous section may
   // have left the scroll mid-page). No-op when nothing was scrolled.
   const m = document.querySelector('.main'); if (m) m.scrollTo({ top: 0, behavior: 'smooth' });
+  if (name === 'about') { renderAboutVersions(); checkForUpdate(); }
 }
 
 // ── Payment methods (Settings → How to pay) ──
@@ -9763,10 +9787,11 @@ async function checkForUpdate() {
       cache: 'no-store',
       headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
     });
-    if (!res.ok) return;
+    if (!res.ok) { _lastUpdateCheckFailed = true; renderAboutVersions(); return; }
     const data = await res.json();
-    if (!data || typeof data.version === 'undefined') return;
+    if (!data || typeof data.version === 'undefined') { _lastUpdateCheckFailed = true; renderAboutVersions(); return; }
     serverVersion = data.version;
+    _lastUpdateCheckFailed = false;
 
     let installed = null;
     installed = lsGet('bk-installed-version');
@@ -9774,6 +9799,7 @@ async function checkForUpdate() {
     // First ever load: record the current live version, don't prompt.
     if (installed === null) {
       lsSet('bk-installed-version', String(data.version));
+      renderAboutVersions();
       return;
     }
 
@@ -9784,7 +9810,37 @@ async function checkForUpdate() {
       const ov = document.getElementById('update-overlay');
       if (ov) ov.style.display = 'flex';
     }
-  } catch(e) { /* offline or no file — ignore silently */ }
+    renderAboutVersions();
+  } catch(e) { _lastUpdateCheckFailed = true; renderAboutVersions(); }
+}
+
+// Settings → About. The whole point is to be able to answer "why didn't the
+// update prompt show on this phone?" by looking, instead of guessing.
+let _lastUpdateCheckFailed = false;
+function renderAboutVersions() {
+  const inst = document.getElementById('about-installed');
+  if (!inst) return;                       // Settings not rendered yet
+  const latest = document.getElementById('about-latest');
+  const status = document.getElementById('about-status');
+  const btn = document.getElementById('about-update-btn');
+  const installed = lsGet('bk-installed-version');
+  inst.textContent = installed === null ? 'unknown' : installed;
+  latest.textContent = serverVersion === null ? (_lastUpdateCheckFailed ? 'unreachable' : 'checking…') : String(serverVersion);
+  const behind = serverVersion !== null && installed !== null && String(serverVersion) !== String(installed);
+  if (btn) btn.style.display = behind ? '' : 'none';
+  if (status) {
+    status.textContent = _lastUpdateCheckFailed ? "Couldn't reach the server — you may be offline."
+      : behind ? 'An update is available.'
+      : serverVersion === null ? '' : 'Up to date.';
+  }
+}
+async function checkForUpdateNow(btn) {
+  const html = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Checking…'; }
+  _lastUpdateCheckFailed = false;
+  await checkForUpdate();
+  if (btn) { btn.disabled = false; btn.innerHTML = html; }
+  renderAboutVersions();
 }
 
 function doUpdate() {
@@ -9798,10 +9854,19 @@ function doUpdate() {
   };
   const tasks = [];
   if (window.caches && caches.keys) {
-    tasks.push(caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))));
+    // 'bk-flags' is not a content cache — it holds the "a push arrived" marker the
+    // notifications pane reads. Wiping it would swallow a reminder that landed
+    // while the update prompt was up.
+    tasks.push(caches.keys().then(keys => Promise.all(keys.filter(k => k !== 'bk-flags').map(k => caches.delete(k)))));
   }
+  // Refresh the service worker IN PLACE — do not unregister it. sw.js caches
+  // nothing, so unregistering bought no freshness at all, while on Android it
+  // tore down the push subscription (reminders dead until the next boot re-
+  // subscribed) and dropped the controlling worker that makes the app an
+  // installed WebAPK. update() pulls any new sw.js without either cost.
   if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
-    tasks.push(navigator.serviceWorker.getRegistrations().then(rs => Promise.all(rs.map(r => r.unregister()))));
+    tasks.push(navigator.serviceWorker.getRegistrations()
+      .then(rs => Promise.all(rs.map(r => r.update().catch(() => {})))));
   }
   Promise.all(tasks).then(finish).catch(finish);
   setTimeout(finish, 1500);
@@ -9892,7 +9957,20 @@ document.addEventListener('visibilitychange', () => {
   checkForUpdate();
   showNotificationsOnOpen(300);   // self-gates: only pops if a new push arrived
 });
-window.addEventListener('pageshow', (e) => { if (e.persisted) { _notifFgShown = false; showNotificationsOnOpen(300); } });
+// pageshow fires on EVERY show, including a bfcache restore. This is the one
+// event Android reliably delivers when a long-lived PWA comes back from the app
+// switcher: Chrome freezes background pages after a few minutes (so the 2-minute
+// setInterval stops), and a bfcache restore doesn't guarantee a visibilitychange
+// — so on an Android phone that never fully closes the app, the version check
+// could go days without running while an iPhone (whose standalone PWA is evicted
+// and cold-starts constantly) checked on nearly every open.
+window.addEventListener('pageshow', (e) => {
+  checkForUpdate();
+  if (e.persisted) { _notifFgShown = false; showNotificationsOnOpen(300); }
+});
+// Belt and braces for the same gap: regaining focus is delivered in cases where
+// neither visibilitychange nor pageshow is (split-screen / pop-up view on One UI).
+window.addEventListener('focus', checkForUpdate);
 // A push that lands while the app is open: the service worker pings us to pop the pane.
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (e) => {
