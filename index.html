@@ -7,7 +7,15 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Bookkeeper">
+<meta name="application-name" content="Bookkeeper">
+<!-- theme-color is rewritten per theme by applyThemeAttr(); this is the boot value.
+     On Android it tints the status bar / URL bar, on iOS the notch area. -->
 <meta name="theme-color" content="#0f1117">
+<!-- Tells Samsung Internet's and Chrome's forced-dark engines that this page
+     already handles both schemes, so neither re-inverts the palette on top of a
+     theme the user picked (Samsung's "Dark mode" is on by default on One UI). -->
+<meta name="color-scheme" content="dark light">
+<meta name="supported-color-schemes" content="dark light">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
@@ -273,8 +281,25 @@
 [data-theme="sepia"][data-accent="sunset"] { --accent:#ea580c; --accent2:#d97706; }
 [data-theme="sepia"][data-accent="graphite"]{ --accent:#475569; --accent2:#64748b; }
 
-html{height:100%;overflow:hidden}
-body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;height:100%;overflow:hidden;transition:background .2s,color .2s;-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+/* overscroll-behavior:none kills Chrome/Samsung Internet's pull-to-refresh and
+   the rubber-band glow at the document edge — in an installed Android PWA a
+   stray downward swipe would otherwise reload the whole app mid-edit. */
+html{height:100%;overflow:hidden;overscroll-behavior:none}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;height:100%;overflow:hidden;overscroll-behavior:none;transition:background .2s,color .2s;-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+/* Android/Chromium paints a translucent grey box over anything tapped and keeps a
+   ~300ms double-tap-zoom delay on controls. iOS Safari does neither, so this was
+   invisible on iPhone — every interactive surface opts out here instead of the
+   handful that had it piecemeal. (touch-action also survives Chrome's "force
+   enable zoom" accessibility setting, which overrides user-scalable=no.) */
+a,button,input,select,textarea,summary,[role="button"],[onclick],.nav-item,.tab,.setting-row{
+  -webkit-tap-highlight-color:transparent;
+}
+/* touch-action is deliberately NOT on inputs/textareas: a range slider (the logo
+   crop zoom) needs the browser's own drag handling, and text fields need none of
+   this. Buttons and rows are where the tap delay is felt. */
+a,button,select,summary,[role="button"],[onclick],.nav-item,.tab,.setting-row{
+  touch-action:manipulation;
+}
 h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 
 /* ── THEME TOGGLE ── */
@@ -297,7 +322,10 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .notif-empty-sub{font-size:12.5px;line-height:1.55;color:var(--text3);max-width:250px}
 
 /* ── AUTH ── */
-.auth-wrap{min-height:100vh;height:100%;overflow-y:auto;display:flex;align-items:center;justify-content:center;background:var(--bg);background-image:radial-gradient(ellipse at 20% 50%, var(--accent-glow) 0%, transparent 60%),radial-gradient(ellipse at 80% 20%, rgba(6,182,212,.1) 0%, transparent 50%)}
+/* 100dvh, not 100vh: Android Chrome/Samsung Internet report 100vh as the LARGE
+   viewport (URL bar hidden), so on the sign-in screen the card sat pushed below
+   the fold behind the visible URL bar. dvh tracks the bar as it collapses. */
+.auth-wrap{min-height:100vh;min-height:100dvh;height:100%;overflow-y:auto;overscroll-behavior:contain;display:flex;align-items:center;justify-content:center;background:var(--bg);background-image:radial-gradient(ellipse at 20% 50%, var(--accent-glow) 0%, transparent 60%),radial-gradient(ellipse at 80% 20%, rgba(6,182,212,.1) 0%, transparent 50%)}
 .auth-card{background:var(--surface);border:1px solid var(--border2);border-radius:16px;padding:2.5rem;width:420px;box-shadow:var(--shadow-lg)}
 .auth-sub{font-size:13px;color:var(--text3);margin-bottom:2rem}
 .auth-tabs{display:flex;gap:0;margin-bottom:1.5rem;background:var(--bg2);border-radius:var(--radius-sm);padding:3px;overflow:hidden}
@@ -309,7 +337,7 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .auth-success.show{display:block}
 
 /* ── APP LAYOUT ── */
-.app{display:flex;height:100vh;overflow:hidden;display:none}
+.app{display:flex;height:100vh;height:100dvh;overflow:hidden;display:none}
 .sidebar{width:var(--sidebar-w);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
 .sidebar-logo{padding:1.25rem 1rem 1rem;border-bottom:1px solid var(--border);margin-bottom:.5rem;display:flex;align-items:center;gap:10px}
 .sidebar-logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--cyan));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
@@ -605,7 +633,10 @@ textarea{resize:vertical;min-height:70px}
 @keyframes skpulse{0%,100%{opacity:.5}50%{opacity:.9}}
 
 /* ── LOADING ── */
-.loading-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9998;flex-direction:column;gap:1rem}
+/* height:100dvh alongside inset:0 so the lock/loading pad stays fully on-screen
+   while Android's URL bar is still showing (inset:0 resolves to the large
+   viewport there, pushing the passcode keypad under the bottom edge). */
+.loading-screen{position:fixed;inset:0;height:100dvh;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9998;flex-direction:column;gap:1rem;padding:max(1rem,env(safe-area-inset-top,0px)) 1rem max(1rem,env(safe-area-inset-bottom,0px));overflow-y:auto}
 .loading-screen h2{font-size:18px;color:var(--text2)}
 .loading-bar{width:200px;height:2px;background:var(--border2);border-radius:1px;overflow:hidden}
 .loading-bar::after{content:'';display:block;height:100%;width:40%;background:var(--accent);border-radius:1px;animation:loadslide 1s ease-in-out infinite alternate}
@@ -715,6 +746,7 @@ body.modal-open .main{overflow:hidden}
     min-height:0;
     overflow-y:auto;
     -webkit-overflow-scrolling:touch;
+    overscroll-behavior-y:contain;   /* no pull-to-refresh reload on Android */
     padding-bottom:calc(62px + env(safe-area-inset-bottom,0px));
   }
 
@@ -1210,11 +1242,15 @@ input,select,textarea{border-radius:var(--radius-sm)}
 <!-- shared SVG sprite — the Bookkeeper logo, reused via <use href="#bk-logo"> -->
 <svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true"><defs><linearGradient id="bkg1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#60a5fa"/><stop offset="100%" stop-color="#0ea5e9"/></linearGradient><symbol id="bk-logo" viewBox="0 0 92 94"><rect x="0" y="0" width="92" height="94" rx="14" fill="#1c2845" stroke="#2a4070" stroke-width="1"/><rect x="0" y="0" width="14" height="94" rx="14" fill="url(#bkg1)"/><polyline points="30,48 42,60 64,34" fill="none" stroke="#06b6d4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></symbol></defs></svg>
 
-<!-- INSTALL HINT (iOS Safari only, dismissible) -->
+<!-- INSTALL HINT (browser tab only, dismissible). The copy + the Install button
+     are filled in by evaluateInstallHint(): Android/Samsung get a one-tap
+     install (beforeinstallprompt), iOS gets the Share → Add to Home Screen
+     instructions, since Safari exposes no programmatic install. -->
 <div id="install-hint" style="display:none;position:fixed;bottom:62px;left:0;right:0;z-index:9000;background:var(--surface2,#232d42);border-top:1px solid var(--border2,#2a3349);padding:.9rem 1rem;padding-bottom:max(.9rem,env(safe-area-inset-bottom,.9rem));font-size:13px;color:var(--text,#e8eaf0);display:flex;align-items:center;gap:.75rem">
   <i class="ti ti-device-mobile" style="font-size:22px;color:#3b82f6;flex-shrink:0"></i>
-  <div style="flex:1;line-height:1.4">For fullscreen, tap <i class="ti ti-share" style="font-size:15px;vertical-align:-2px"></i> <strong>Share</strong> then <strong>Add to Home Screen</strong>.</div>
-  <button onclick="dismissInstallHint()" style="background:none;border:none;color:var(--text3,#8b93a8);font-size:20px;cursor:pointer;flex-shrink:0"><i class="ti ti-x"></i></button>
+  <div id="install-hint-text" style="flex:1;line-height:1.4">For fullscreen, tap <i class="ti ti-share" style="font-size:15px;vertical-align:-2px"></i> <strong>Share</strong> then <strong>Add to Home Screen</strong>.</div>
+  <button id="install-hint-btn" onclick="promptInstall()" style="display:none;background:var(--accent,#7b6cff);border:none;color:#fff;font-size:13px;font-weight:700;padding:.5rem .9rem;border-radius:999px;cursor:pointer;flex-shrink:0;font-family:'Plus Jakarta Sans',sans-serif">Install</button>
+  <button onclick="dismissInstallHint()" aria-label="Dismiss" style="background:none;border:none;color:var(--text3,#8b93a8);font-size:20px;cursor:pointer;flex-shrink:0"><i class="ti ti-x"></i></button>
 </div>
 
 <!-- UPDATE OVERLAY (forced) -->
@@ -1252,6 +1288,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
   <div id="lock-title" style="font-size:14px;color:var(--text2);font-family:'JetBrains Mono',monospace;letter-spacing:1px">ENTER PASSCODE</div>
   <div id="lock-dots" style="display:flex;gap:14px;margin:.25rem 0 1.25rem"></div>
   <div id="lock-pad" style="display:grid;grid-template-columns:repeat(3,72px);gap:14px"></div>
+  <!-- label + glyph are rewritten per platform by showLockScreen() (Face ID on iPhone, Fingerprint on Android) -->
   <button id="lock-faceid-btn" onclick="lockFaceIdUnlock()" style="display:none;margin-top:1.25rem;background:none;border:none;color:var(--accent);font-size:14px;cursor:pointer;font-weight:600"><i class="ti ti-face-id"></i> Unlock with Face ID</button>
   <button onclick="lockForgot()" style="margin-top:1rem;background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer">Forgot passcode? Sign out</button>
 </div>
@@ -1625,7 +1662,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
                 <button class="btn btn-sm" onclick="enablePush()"><i class="ti ti-refresh"></i> Re-register</button>
               </div>
             </div>
-            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-event reminders at the time you set on each event. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-event reminders at the time you set on each event. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari. Android and Samsung Internet work straight away, installed or not.</div>
           </div>
         </div>
         <div class="card settings-section" data-sec="invoice">
@@ -1663,7 +1700,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span class="theme-switch" id="lock-switch"><span class="theme-switch-knob"></span></span>
             </button>
             <button class="setting-row" id="faceid-row" style="display:none" role="switch" aria-checked="false" aria-label="Unlock with Face ID" onclick="toggleFaceId()">
-              <span><span class="setting-row-title">Unlock with Face ID</span><span class="setting-row-sub" id="faceid-sub">Use biometrics instead of the passcode</span></span>
+              <span><span class="setting-row-title" id="faceid-title">Unlock with Face ID</span><span class="setting-row-sub" id="faceid-sub">Use biometrics instead of the passcode</span></span>
               <span class="theme-switch" id="faceid-switch"><span class="theme-switch-knob"></span></span>
             </button>
             <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">The passcode is stored only on this device. If you forget it, the unlock screen can sign you out — sign back in with your email to reset it.</div>
@@ -1796,13 +1833,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
     <div class="modal-header"><h2>Use logo as app icon</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-appicon')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
       <p style="color:var(--text2);line-height:1.6;margin:0 0 1rem">Your logo is now the browser tab / bookmark icon. Reload the page once if the tab icon hasn't changed yet.</p>
-      <p style="color:var(--text2);line-height:1.6;margin:0 0 .5rem"><b>To update the iPhone Home Screen icon:</b> iOS locks the icon in when you add the app, so an app that's already on your Home Screen keeps the old icon until you re-add it:</p>
-      <ol style="color:var(--text2);line-height:1.7;margin:0 0 1rem;padding-left:1.2rem">
-        <li>Touch and hold the Bookkeeper icon → <b>Remove App</b> → <b>Delete from Home Screen</b>.</li>
-        <li>Open the app's web address in <b>Safari</b>.</li>
-        <li>Tap <b>Share</b> → <b>Add to Home Screen</b>.</li>
-      </ol>
-      <p style="color:var(--text3);font-size:12px;line-height:1.5;margin:0 0 1.25rem">The re-added icon will use your logo. (Your data stays safe — it lives in your account, not on the Home Screen.)</p>
+      <!-- Home-screen icon rules differ by platform, so the rest is filled in by forceUpdateAppIcon(). -->
+      <div id="appicon-platform"></div>
       <button class="btn btn-primary btn-full" onclick="closeModal('modal-appicon')">Got it</button>
     </div>
   </div>
@@ -2615,6 +2647,27 @@ function applyHashDeepLink() {
     showPage('settings');
     try { history.replaceState(null, '', location.pathname + location.search); } catch(_) {}
   }
+  applyShortcutLink();
+}
+
+// Android app-shortcuts (long-press the home-screen icon → "New Invoice") launch
+// the PWA at ./?go=<page>&new=1. Samsung's One UI also surfaces these on the
+// icon's pop-up menu. iOS has no equivalent, so this is simply never hit there.
+const SHORTCUT_NEW = { invoices: openInvoiceModal, expenses: openExpenseModal, mileage: openTripModal, customers: openCustomerModal };
+function applyShortcutLink() {
+  let params;
+  try { params = new URLSearchParams(location.search); } catch (_) { return; }
+  const go = params.get('go');
+  if (!go) return;
+  const wantsNew = params.get('new') === '1';
+  // Strip the params first so a reload (or the update overlay) doesn't re-fire
+  // the shortcut and pop the sheet a second time.
+  try { history.replaceState(null, '', location.pathname); } catch (_) {}
+  if (isPageHidden(go)) return;                 // section switched off in Settings
+  showPage(go);
+  const open = SHORTCUT_NEW[go];
+  // Let showPage's render settle before the sheet slides up.
+  if (wantsNew && open) setTimeout(() => { try { open(); } catch (_) {} }, 250);
 }
 
 async function doLogout() {
@@ -2977,8 +3030,15 @@ function renderModuleToggles() {
   }).join('');
 }
 
-function showPage(page, el) {
+// fromBack = the Android back button/gesture drove this, so the page we're
+// leaving must NOT be pushed onto the in-app history (that would trap back in a
+// two-page loop).
+function showPage(page, el, fromBack) {
   if (isPageHidden(page)) { page = 'dashboard'; el = null; }   // guard deep-links to a hidden section
+  if (!fromBack && page !== currentPage) {
+    _pageHistory.push(currentPage);
+    if (_pageHistory.length > 20) _pageHistory.shift();
+  }
   currentPage = page;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
@@ -2986,6 +3046,9 @@ function showPage(page, el) {
   // actually on the bar, then highlight it. Settings/Profile (no bar tab, opened
   // from the top bar) just re-apply the current layout.
   if (page !== 'settings' && page !== 'profile') _navMore = navSplit().overflow.includes(page);
+  // The group is only showing because THIS page lives in it — back should return
+  // to the previous page, not collapse the bar underneath the user.
+  _navMoreManual = false;
   layoutBottomNav();
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const sideTab = document.querySelector('.nav-item[data-page="'+page+'"]');
@@ -3008,6 +3071,7 @@ function showPage(page, el) {
   document.getElementById('topbar-actions').innerHTML = actions[page]||'';
   refreshNotifBadge();
   rerenderCurrentView();
+  navSync();   // keep the Android back sentinel in step with where we are
 }
 
 // Mobile bottom bar is TRUE overflow: it shows Home + as many section tabs as fit;
@@ -3045,7 +3109,11 @@ function layoutBottomNav() {
     if (lbl) lbl.textContent = _navMore ? 'Back' : 'More';
   }
 }
-function setNavMore(state) { _navMore = !!state; layoutBottomNav(); }
+// _navMoreManual: the user tapped "More" to peek at the overflow tabs, so back
+// should collapse it. (showPage clears it — there the group is open only because
+// the current page happens to live in it.)
+let _navMoreManual = false;
+function setNavMore(state) { _navMore = !!state; _navMoreManual = !!state; layoutBottomNav(); navSync(); }
 function toggleNavMore() { setNavMore(!_navMore); }
 
 // Floating + (mobile): runs the current tab's New action — the topbar + is out
@@ -3102,11 +3170,29 @@ async function refreshAppIcon(force) {
   applyIconLinks();
 }
 // Force the logo onto the browser favicon/bookmark + iOS Home-Screen icon, then
-// explain the iOS remove/re-add step (iOS locks the icon in at add-to-Home-Screen
-// time, so an already-installed app keeps the old icon until re-added).
+// explain what that does — and doesn't — change on this platform.
+//
+// iOS reads <link rel="apple-touch-icon"> at add-to-Home-Screen time and then
+// locks the icon in, so an already-installed iPhone app needs a remove + re-add.
+// Android is a different mechanism entirely: a WebAPK's launcher icon is built
+// from the MANIFEST icons at install time and ignores apple-touch-icon, so a
+// per-user logo can never become the launcher icon there. Saying "re-add it" to
+// an Android user would just waste their time, so we tell them the truth.
 async function forceUpdateAppIcon() {
   if (!profile.logo) { showToast('Add a logo first', 'error'); return; }
   await refreshAppIcon(true);
+  const host = document.getElementById('appicon-platform');
+  if (host) host.innerHTML = isAndroidDevice() ? `
+      <p style="color:var(--text2);line-height:1.6;margin:0 0 .5rem"><b>On Android, the home-screen icon stays the Bookkeeper icon.</b> Android builds an installed app's launcher icon from the app itself when you install it, so it can't be swapped per account.</p>
+      <p style="color:var(--text3);font-size:12px;line-height:1.5;margin:0 0 1.25rem">Your logo still shows everywhere it matters — on invoices, reports, the sidebar and the browser tab.</p>`
+    : `
+      <p style="color:var(--text2);line-height:1.6;margin:0 0 .5rem"><b>To update the iPhone Home Screen icon:</b> iOS locks the icon in when you add the app, so an app that's already on your Home Screen keeps the old icon until you re-add it:</p>
+      <ol style="color:var(--text2);line-height:1.7;margin:0 0 1rem;padding-left:1.2rem">
+        <li>Touch and hold the Bookkeeper icon → <b>Remove App</b> → <b>Delete from Home Screen</b>.</li>
+        <li>Open the app's web address in <b>Safari</b>.</li>
+        <li>Tap <b>Share</b> → <b>Add to Home Screen</b>.</li>
+      </ol>
+      <p style="color:var(--text3);font-size:12px;line-height:1.5;margin:0 0 1.25rem">The re-added icon will use your logo. (Your data stays safe — it lives in your account, not on the Home Screen.)</p>`;
   openModal('modal-appicon');
 }
 
@@ -4238,16 +4324,28 @@ async function shareInvoicePDF() {
     const fname = (lastInvoiceTitle || 'Invoice').replace(/[^a-z0-9]+/gi,'_') + '.pdf';
     const blob = pdf.output('blob');
     const file = new File([blob], fname, { type: 'application/pdf' });
-    // Preferred: native share sheet with the actual file (iOS supports this)
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: lastInvoiceTitle });
-    } else {
-      // Fallback: trigger a download of the real PDF file
+    const download = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = fname;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(url), 30000);
+    };
+    // Preferred: native share sheet with the actual file (iOS + Android both do this)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: lastInvoiceTitle });
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;   // user dismissed the sheet
+        // Chrome/Samsung Internet enforce transient user activation far more
+        // strictly than Safari: rendering the PDF can take longer than the
+        // gesture stays "live", and share() then throws NotAllowedError. Saving
+        // the file is the right outcome — not an error the user has to decode.
+        if (e && e.name === 'NotAllowedError') { download(); showToast('Saved to your downloads', 'success'); return; }
+        throw e;
+      }
+    } else {
+      download();   // no file-share support — save the real PDF instead
     }
   } catch(e) {
     if (e && e.name === 'AbortError') { /* user cancelled share — ignore */ }
@@ -7021,7 +7119,7 @@ async function requirePlaidPasskey() {
     }});
     return true;
   } catch (e) {
-    showToast('Face ID / passkey required to connect a bank', 'error');
+    showToast(bioLabel() + ' / passkey required to connect a bank', 'error');
     return false;
   }
 }
@@ -8894,7 +8992,9 @@ async function enablePush() {
     if (!('PushManager' in window))      { log('No PushManager in this browser', false); return; }
     if (!('Notification' in window))     { log('No Notification API', false); return; }
     if (!VAPID_PUBLIC_KEY)               { log('VAPID public key missing in index.html', false); return; }
-    if (!isStandalone() && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    // Only iOS requires installation before push works; Android/Chromium and
+    // Samsung Internet subscribe fine from a plain tab.
+    if (!isStandalone() && isIOSDevice()) {
       log('iOS requires Add to Home Screen first (iOS 16.4+)', false); return;
     }
     log('Registering service worker…');
@@ -8908,7 +9008,7 @@ async function enablePush() {
     else {
       let perm = Notification.permission;
       if (perm === 'default') {
-        log('Asking iOS for permission…');
+        log('Asking for notification permission…');
         perm = await Notification.requestPermission();
       }
       if (perm !== 'granted') { log('Permission: ' + perm, false); return; }
@@ -8982,7 +9082,7 @@ function renderPushStatus() {
     setSwitch(false); setEnabled(false); showPrefs(false);
     if (sub) sub.textContent = 'Not supported on this browser'; hint(''); return;
   }
-  if (!isStandalone() && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+  if (!isStandalone() && isIOSDevice()) {
     setSwitch(false); setEnabled(false); showPrefs(false);
     if (sub) sub.textContent = 'Add to Home Screen to enable';
     hint('On iPhone: Share → <strong>Add to Home Screen</strong> first, then open from the icon. iOS 16.4+ required.'); return;
@@ -8990,8 +9090,14 @@ function renderPushStatus() {
   const perm = Notification.permission;
   if (perm === 'denied') {
     setSwitch(false); setEnabled(false); showPrefs(false);
-    if (sub) sub.textContent = 'Blocked in iOS Settings';
-    hint('<span style="color:var(--red)">Blocked.</span> Enable in iOS Settings → Notifications → Bookkeeper, then come back.'); return;
+    // Point at the right settings screen for the platform — telling a Galaxy
+    // owner to look in "iOS Settings" is a dead end.
+    if (sub) sub.textContent = isIOSDevice() ? 'Blocked in iOS Settings' : 'Blocked in your device settings';
+    hint('<span style="color:var(--red)">Blocked.</span> ' + (isIOSDevice()
+      ? 'Enable in iOS Settings → Notifications → Bookkeeper, then come back.'
+      : (isStandalone()
+        ? 'Enable in Android Settings → Apps → Bookkeeper → Notifications, then come back.'
+        : 'Tap the padlock in the address bar → Permissions → Notifications → Allow, then come back.'))); return;
   }
   setEnabled(true);
   const on = perm === 'granted' && !!profile.push_subscription;
@@ -9044,13 +9150,94 @@ async function sendTestNotification() {
     const reg = await navigator.serviceWorker.ready;
     await reg.showNotification('Bookkeeper', {
       body: '✓ Test notification — reminders are working on this device.',
-      icon: 'icon-180.png', badge: 'icon-180.png', tag: 'bk-test'
+      icon: 'icon-180.png', badge: 'icon-180.png', tag: 'bk-test',
+      vibrate: [120, 60, 120], renotify: true   // Android buzzes; iOS ignores both
     });
     showToast('Test notification sent', 'success');
   } catch (e) {
     showToast('Could not show notification: ' + (e && e.message || e), 'error');
   }
 }
+
+// ====== ANDROID BACK BUTTON / BACK GESTURE ======
+// Android surfaces a back affordance everywhere — the gesture-nav swipe, the
+// 3-button back key, Samsung Internet's toolbar arrow — and in an installed PWA
+// it drives window history. With no history of our own the FIRST back press quit
+// the app outright, even with a half-filled invoice sheet open. (A standalone
+// iPhone PWA has no back affordance at all, which is why this never showed up.)
+//
+// Rather than mirror every UI step into history (which drifts out of sync the
+// moment a modal is closed out of order), we keep at most ONE sentinel entry
+// parked in history whenever something is "open", and decide what back means by
+// reading live DOM state:
+//     topmost open modal  →  close it
+//     More tab group open →  collapse it
+//     visited a page      →  return to the previous page
+//     not on Dashboard    →  go to the Dashboard
+//     nothing open        →  don't intervene; leaving the app is correct
+// After acting we re-park the sentinel if anything is still open, so back
+// unwinds one step per press and only exits from a resting Dashboard.
+let _pageHistory = [];       // pages visited before the current one (in-app only)
+let _navSelfPop = false;     // true while WE call history.back(), so the popstate
+                             // it produces isn't read as a user back press
+let _navSyncQueued = false;
+
+function navBackTarget() {
+  const open = document.querySelectorAll('.modal-overlay.open');
+  if (open.length) return { type: 'modal', id: open[open.length - 1].id };
+  if (_navMore && _navMoreManual) return { type: 'more' };
+  if (_pageHistory.length) return { type: 'page' };
+  if (currentPage !== 'dashboard') return { type: 'home' };
+  return null;
+}
+// Park or un-park the sentinel so history depth matches "is anything open".
+// Coalesced onto a timeout because a single action (save → close modal →
+// re-render → showPage) can call it several times in one tick.
+function navSync() {
+  if (_navSyncQueued) return;
+  _navSyncQueued = true;
+  setTimeout(() => {
+    _navSyncQueued = false;
+    const want = !!navBackTarget();
+    const have = !!(history.state && history.state.bkGuard);
+    if (want && !have) {
+      try { history.pushState({ bkGuard: true }, ''); } catch (_) {}
+    } else if (!want && have) {
+      _navSelfPop = true;
+      // Safety net: if the back never lands (blocked/no entry) don't leave the
+      // flag set, or the next REAL back press gets swallowed.
+      setTimeout(() => { _navSelfPop = false; }, 600);
+      try { history.back(); } catch (_) { _navSelfPop = false; }
+    }
+  }, 0);
+}
+// A few sheets need more than classList.remove('open') on the way out — closing
+// them by id alone would strand their in-flight state (a half-cropped logo, an
+// unfinished 2FA enrollment). Back must run the same closer their X button does.
+const MODAL_CLOSERS = { 'modal-logo-crop': 'cancelLogoCrop', 'modal-tax': 'closeTaxModal', 'modal-mfa-enroll': 'cancelMfaEnroll' };
+window.addEventListener('popstate', () => {
+  if (_navSelfPop) { _navSelfPop = false; return; }
+  const t = navBackTarget();
+  if (!t) return;                      // at rest — let the browser leave the app
+  if (t.type === 'modal') {
+    const overlay = document.getElementById(t.id);
+    // data-keep-open sheets (the invoice editor, onboarding) only ever close via
+    // their own Cancel/Save — same rule the backdrop tap and Escape already
+    // follow. One UI's edge-swipe back is easy to brush by accident halfway
+    // down a long invoice, so back must not discard the edit either. We still
+    // swallow the press (re-parking the sentinel below) so it can't quit the app.
+    if (overlay && overlay.hasAttribute('data-keep-open')) showToast('Use Cancel or Save to close this');
+    else {
+      const closer = MODAL_CLOSERS[t.id];
+      if (closer && typeof window[closer] === 'function') window[closer]();
+      else closeModal(t.id);
+    }
+  }
+  else if (t.type === 'more') setNavMore(false);
+  else if (t.type === 'page') showPage(_pageHistory.pop(), null, true);
+  else if (t.type === 'home') showPage('dashboard', null, true);
+  navSync();
+});
 
 // ====== MODAL ======
 let _modalReturnFocus = null;
@@ -9071,9 +9258,11 @@ function openModal(id) {
   // Move focus INTO the dialog — but to the container, not the first field, so a
   // sheet opening doesn't instantly pop the iOS keyboard. Tab then starts inside.
   if (modal) setTimeout(()=>modal.focus(), 50);
+  navSync();   // Android back now closes this sheet instead of quitting the app
 }
 function closeModal(id) {
   document.getElementById(id).classList.remove('open');
+  navSync();
   // only unlock scroll if no other modal is still open
   if (!document.querySelector('.modal-overlay.open')) document.body.classList.remove('modal-open');
   // Return focus to whatever opened the modal (keyboard / screen-reader users).
@@ -9226,7 +9415,22 @@ async function boot() {
 let _lockEntry = '', _hiddenAt = 0, _faceBusy = false;
 function lockPinSet() { return !!lsGet('bk-lock-pin'); }
 function faceIdOn() { return !!lsGet('bk-lock-cred'); }
-function faceIdSupported() { return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create); }
+function faceIdSupported() { return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create) && _platformAuthOk !== false; }
+// What this device actually calls its biometric unlock — "Face ID" is Apple's
+// name for it, and on a Galaxy it's the fingerprint sensor (or face unlock).
+// Used for every user-facing string and the button glyph.
+function bioLabel() { return isIOSDevice() ? 'Face ID' : 'Fingerprint'; }
+function bioIcon()  { return isIOSDevice() ? 'ti-face-id' : 'ti-fingerprint'; }
+// Android exposes WebAuthn even when the phone has no screen lock set, in which
+// case create() always fails — the toggle would appear and then break. Probe
+// once (async, cached) and hide the row when there's no platform authenticator.
+let _platformAuthOk = null;
+(function probePlatformAuth() {
+  if (!(window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable)) return;
+  PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+    .then(ok => { _platformAuthOk = !!ok; try { renderLockUI(); } catch (_) {} })
+    .catch(() => {});
+})();
 async function sha256(s) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
   return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -9239,7 +9443,15 @@ function renderLockUI() {
   if (row) row.setAttribute('aria-checked', on ? 'true' : 'false');
   if (sub) sub.textContent = on ? 'Passcode required to open the app' : 'Require a passcode to open the app';
   const fRow = document.getElementById('faceid-row'), fSw = document.getElementById('faceid-switch');
-  if (fRow) { fRow.style.display = (on && faceIdSupported()) ? '' : 'none'; fRow.setAttribute('aria-checked', faceIdOn() ? 'true' : 'false'); }
+  if (fRow) {
+    fRow.style.display = (on && faceIdSupported()) ? '' : 'none';
+    fRow.setAttribute('aria-checked', faceIdOn() ? 'true' : 'false');
+    // Say "Fingerprint" on a Galaxy, "Face ID" on an iPhone.
+    fRow.setAttribute('aria-label', 'Unlock with ' + bioLabel());
+    const t = document.getElementById('faceid-title'); if (t) t.textContent = 'Unlock with ' + bioLabel();
+    const s = document.getElementById('faceid-sub');
+    if (s) s.textContent = isIOSDevice() ? 'Use biometrics instead of the passcode' : 'Use your fingerprint or face instead of the passcode';
+  }
   if (fSw) fSw.classList.toggle('on', faceIdOn());
 }
 
@@ -9269,7 +9481,9 @@ function showLockScreen() {
   _lockEntry = '';
   buildLockPad(); renderLockDots();
   const useFace = faceIdOn() && faceIdSupported();
-  document.getElementById('lock-faceid-btn').style.display = useFace ? '' : 'none';
+  const fb = document.getElementById('lock-faceid-btn');
+  fb.style.display = useFace ? '' : 'none';
+  fb.innerHTML = '<i class="ti ' + bioIcon() + '"></i> Unlock with ' + bioLabel();
   scr.style.display = 'flex';
   // Auto-prompt Face ID as soon as the overlay is up. iOS may reject a WebAuthn
   // call made without a user gesture (cold launch) — if so we fall back silently
@@ -9316,8 +9530,8 @@ function lockForgot() {
 function _b64u(buf) { return btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_'); }
 function _unb64u(b) { const pad='='.repeat((4-b.length%4)%4); const s=(b+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(s); const a=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i); return a.buffer; }
 async function toggleFaceId() {
-  if (!faceIdSupported()) { showToast('Face ID isn’t available here', 'error'); return; }
-  if (faceIdOn()) { lsRemove('bk-lock-cred'); showToast('Face ID unlock off', 'success'); renderLockUI(); return; }
+  if (!faceIdSupported()) { showToast(bioLabel() + ' isn’t available here', 'error'); return; }
+  if (faceIdOn()) { lsRemove('bk-lock-cred'); showToast(bioLabel() + ' unlock off', 'success'); renderLockUI(); return; }
   try {
     const cred = await navigator.credentials.create({ publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
@@ -9328,8 +9542,8 @@ async function toggleFaceId() {
       timeout: 60000, attestation: 'none'
     }});
     lsSet('bk-lock-cred', _b64u(cred.rawId));
-    showToast('Face ID unlock on', 'success'); renderLockUI();
-  } catch (e) { showToast('Couldn’t set up Face ID: ' + (e && e.message || e), 'error'); }
+    showToast(bioLabel() + ' unlock on', 'success'); renderLockUI();
+  } catch (e) { showToast('Couldn’t set up ' + bioLabel() + ': ' + (e && e.message || e), 'error'); }
 }
 async function lockFaceIdUnlock(auto) {
   const id = lsGet('bk-lock-cred'); if (!id) return;
@@ -9345,7 +9559,7 @@ async function lockFaceIdUnlock(auto) {
   } catch (e) {
     // Auto attempts fail quietly (no gesture, or user dismissed the sheet) —
     // the passcode pad is right there. Manual taps surface the error.
-    if (!auto) showToast('Face ID failed — enter your passcode', 'error');
+    if (!auto) showToast(bioLabel() + ' failed — enter your passcode', 'error');
   } finally { _faceBusy = false; }
 }
 
@@ -9593,7 +9807,41 @@ function doUpdate() {
   setTimeout(finish, 1500);
 }
 
-// ====== INSTALL HINT (iOS, show only in Safari tab, not standalone) ======
+// ====== PLATFORM ======
+// Small, honest UA checks used only to pick the right WORDS (and the right
+// install path) — never to gate a feature that can be feature-detected.
+function isIOSDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent)
+      // iPadOS 13+ reports itself as desktop Safari; a touch-capable "Mac" is an iPad.
+      || (/macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+}
+function isAndroidDevice() { return /android/i.test(navigator.userAgent); }
+function isSamsungBrowser() { return /samsungbrowser/i.test(navigator.userAgent); }
+
+// ====== INSTALL HINT (browser tab only, not standalone) ======
+// Android/Chromium fires beforeinstallprompt when the app qualifies for install;
+// we stash it and drive a real one-tap Install button. Samsung Internet supports
+// it too, but only from its own "Add page to" flow on some builds — so when the
+// event never arrives we fall back to naming the menu instead of a dead button.
+let _deferredInstall = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();          // keep Chrome's own mini-infobar from double-asking
+  _deferredInstall = e;
+  evaluateInstallHint();
+});
+window.addEventListener('appinstalled', () => {
+  _deferredInstall = null;
+  const h = document.getElementById('install-hint');
+  if (h) h.style.display = 'none';
+  try { showToast('Bookkeeper installed — open it from your home screen', 'success'); } catch (_) {}
+});
+async function promptInstall() {
+  if (!_deferredInstall) return;
+  const evt = _deferredInstall;
+  _deferredInstall = null;                    // a prompt can only be used once
+  try { await evt.prompt(); await evt.userChoice; } catch (_) {}
+  evaluateInstallHint();
+}
 function dismissInstallHint() {
   document.getElementById('install-hint').style.display = 'none';
   lsSet('bk-hide-install-hint','1');
@@ -9601,19 +9849,30 @@ function dismissInstallHint() {
 function isStandalone() {
   return window.navigator.standalone === true
       || window.matchMedia('(display-mode: standalone)').matches
-      || window.matchMedia('(display-mode: fullscreen)').matches;
+      || window.matchMedia('(display-mode: fullscreen)').matches
+      || window.matchMedia('(display-mode: minimal-ui)').matches;
 }
 function evaluateInstallHint() {
   const h = document.getElementById('install-hint');
   if (!h) return;
-  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  let dismissed = false;
-  dismissed = lsGet('bk-hide-install-hint')==='1';
-  // Only show in a real iOS Safari TAB (not standalone / not fullscreen) and not dismissed
-  if (isIOS && !isStandalone() && !dismissed) {
-    h.style.display = 'flex';
+  const txt = document.getElementById('install-hint-text');
+  const btn = document.getElementById('install-hint-btn');
+  const dismissed = lsGet('bk-hide-install-hint') === '1';
+  const show = !isStandalone() && !dismissed
+            && (isIOSDevice() || isAndroidDevice() || !!_deferredInstall);
+  h.style.display = show ? 'flex' : 'none';
+  if (!show || !txt || !btn) return;
+  if (_deferredInstall) {
+    txt.innerHTML = 'Install Bookkeeper for fullscreen, an app icon and reminders.';
+    btn.style.display = '';
+  } else if (isAndroidDevice()) {
+    btn.style.display = 'none';
+    txt.innerHTML = isSamsungBrowser()
+      ? 'For fullscreen, open the <strong>≡</strong> menu then <strong>Add page to</strong> → <strong>Home screen</strong>.'
+      : 'For fullscreen, open the <strong>⋮</strong> menu then <strong>Add to Home screen</strong>.';
   } else {
-    h.style.display = 'none';
+    btn.style.display = 'none';
+    txt.innerHTML = 'For fullscreen, tap <i class="ti ti-share" style="font-size:15px;vertical-align:-2px"></i> <strong>Share</strong> then <strong>Add to Home Screen</strong>.';
   }
 }
 window.addEventListener('load', ()=>{ evaluateInstallHint(); setTimeout(evaluateInstallHint, 1200); });
@@ -9653,6 +9912,10 @@ if ('serviceWorker' in navigator) {
 }
 
 boot();
+// A reload while a sheet was open leaves the back sentinel parked in history with
+// nothing open behind it (history.state survives a refresh). Reconcile once at
+// launch so the very first Android back press does the right thing.
+navSync();
 </script>
 </body>
 </html>
