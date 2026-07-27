@@ -6947,8 +6947,11 @@ function buildBudgetReportDoc(by, bm) {
     const billLine=b=>{
       const dd=billDueDay(b), paid=isBillPaid(b.id,by,bm), r=reimb(b);
       const sub=(dd!=null?'due '+ordinal(dd):'no due date')+(billRecurs(b)?'':' · one-time')+(paid?' · paid':'');
-      const back=r?` <span style="color:#0a7d34">(${fmt(r)} back)</span>`:'';
-      return `<div class="rrow sub"><span>${esc(b.name||'Bill')} <span style="color:#999;font-size:11px">${sub}</span></span><span class="mono">${fmt(net(b))}${back}</span></div>`;
+      // The "(x back)" note goes BEFORE the amount so the amount is always the
+      // last thing on the line — that keeps every figure in the report flush to
+      // the same right edge, rows with a reimbursement and rows without alike.
+      const back=r?`<span style="color:#0a7d34">(${fmt(r)} back)</span> `:'';
+      return `<div class="rrow sub"><span>${esc(b.name||'Bill')} <span style="color:#999;font-size:11px">${sub}</span></span><span class="mono">${back}${fmt(net(b))}</span></div>`;
     };
     const groups=[];
     paydays.forEach((pd,i)=>{
