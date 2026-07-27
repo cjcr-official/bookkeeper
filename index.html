@@ -6180,7 +6180,11 @@ function openLoanPayment(loanId, payId) {
   document.getElementById('loan-pay-title').textContent = pay ? 'Edit Payment' : 'Record a Payment';
   const comp = computeLoan(loanToObj(loan)), act = loanActual(loan, comp);
   const next = comp.rows[act.covered];
-  document.getElementById('loan-pay-date').value = pay ? (pay.date || today()) : ((next && next.date) ? next.date : today());
+  // A recorded payment defaults to TODAY — the day you're actually logging it — not the
+  // next scheduled amortization date. Lump-sum / irregular payers cover several scheduled
+  // months at once, which pushes `next.date` years into the future; defaulting to that
+  // stamped recorded payments with far-future dates (the "dates make no sense" bug).
+  document.getElementById('loan-pay-date').value = pay ? (pay.date || today()) : today();
   document.getElementById('loan-pay-amount').value = pay ? (pay.amount != null ? pay.amount : '') : (next ? next.pay.toFixed(2) : (comp.firstMonthly ? comp.firstMonthly.toFixed(2) : ''));
   document.getElementById('loan-pay-note').value = pay ? (pay.note || '') : '';
   document.getElementById('loan-pay-delete-btn').style.display = pay ? '' : 'none';
