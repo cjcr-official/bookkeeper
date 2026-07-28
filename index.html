@@ -510,6 +510,10 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .loan-step-row .loan-field input{padding:.4rem 0;font-size:14px;width:100%}
 .loan-step-del{flex-shrink:0;background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:17px;line-height:1;padding:.2rem;display:flex;align-items:center}
 .loan-step-del:hover{color:var(--red)}
+/* Weekday letters live in their OWN header grid, so .loan-cal-grid holds only the
+   uniform aspect-ratio day cells (mixing the short weekday cells into the same grid made
+   iOS Safari size the rows unevenly — tall/stretched cells). Mirrors .spend-cal-head. */
+.loan-cal-wdrow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px}
 .loan-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
 .loan-cal-wd{text-align:center;font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;padding:2px 0}
 .loan-cal-cell{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:6px;position:relative}
@@ -6026,7 +6030,8 @@ function renderLoanDetail(body, loan) {
   const firstDow = new Date(cy, cm, 1).getDay();
   const dim = new Date(cy, cm + 1, 0).getDate();
   const todayStr = today();
-  let cal = '<div class="loan-cal-grid">' + ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => '<div class="loan-cal-wd">' + d + '</div>').join('');
+  let cal = '<div class="loan-cal-wdrow">' + ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => '<div class="loan-cal-wd">' + d + '</div>').join('') + '</div>';
+  cal += '<div class="loan-cal-grid">';
   for (let i = 0; i < firstDow; i++) cal += '<div class="loan-cal-cell empty"></div>';
   for (let d = 1; d <= dim; d++) {
     const ds = ymPref + '-' + String(d).padStart(2, '0');
