@@ -866,15 +866,6 @@ body.modal-open .main{overflow:hidden}
   #inv-print-area th,#inv-print-area td{display:table-cell!important}
   #inv-print-area td::before{display:none!important}
 
-  /* dashboard recent lists: keep flat rows inside their card (no inner card per row) */
-  .dash-wrap{padding:0 1rem}
-  .dash-table{display:table!important;width:100%;table-layout:fixed;margin:0;box-sizing:border-box}
-  .dash-table thead{display:none}
-  .dash-table tbody,.dash-table tr,.dash-table td{display:revert!important}
-  .dash-table tr{display:table-row!important;background:transparent!important;border:none!important;border-radius:0!important;margin:0!important;padding:0!important}
-  .dash-table td{display:table-cell!important;padding:.6rem .4rem!important;border:none!important;border-bottom:1px solid var(--border)!important;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
-  .dash-table td::before{display:none!important}
-  .dash-table tr:last-child td{border-bottom:none!important}
   /* loan yearly-breakdown table stays a real (horizontally scrollable) table on
      mobile — stacking it produced unlabeled columns of dollar figures */
   .loan-sched{display:table!important}
@@ -884,18 +875,6 @@ body.modal-open .main{overflow:hidden}
   .loan-sched th,.loan-sched td{display:table-cell!important}
   .loan-sched td::before{display:none!important}
   /* column alignment: # left, name left (flex-grow), amount right, status right */
-  /* 3-column dashboard tables that always fit */
-  .dash-table td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .dash-table td:first-child{padding-left:0!important}
-  .dash-table td:last-child{padding-right:0!important;text-align:right;overflow:visible}
-  /* invoices: # | customer (flex) | amount */
-  .dash-inv td:nth-child(1){width:50px;text-align:left}
-  .dash-inv td:nth-child(2){text-align:left}
-  .dash-inv td:nth-child(3){width:84px}
-  /* expenses: date | vendor (flex) | amount */
-  .dash-exp td:nth-child(1){width:74px;text-align:left}
-  .dash-exp td:nth-child(2){text-align:left}
-  .dash-exp td:nth-child(3){width:84px}
   table td:last-child{justify-content:flex-end;margin-top:.25rem}
 
   /* ── MODALS → BOTTOM SHEET ── */
@@ -1209,14 +1188,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
    widget is the same height (the legend / totals / pills / action buttons all
    act on the expanded body, so there's nothing to show while it's closed). */
 .card.collapsed>.card-header>*:not(h3):not(.dash-chev){display:none!important}
-/* On phones the Recent Invoices/Expenses pair stacks in a single column, so the
-   grid's own gap doubled up with each card's margin-bottom. Drop the grid gap
-   there and let the shared 1rem card margin set the rhythm, matching every other
-   widget in the collapsed stack. */
-@media(max-width:768px){#dash-card-recents{gap:0}}
 /* Dashboard section groupings: a mono micro-label with a trailing hairline rule,
    matching the app's uppercase-label signature. Splits the widget stack into
-   Expenses / Calendar / Recents & Reports. */
+   Expenses / Calendar / Reports. */
 .dash-group{display:flex;align-items:center;gap:.75rem;margin:1.15rem .3rem .5rem;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3)}
 .dash-group::after{content:'';flex:1;height:1px;background:var(--border)}
 
@@ -1229,7 +1203,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
 @media(min-width:1100px){
   /* .active keeps this ID rule from beating .page{display:none} on other pages. */
   #page-dashboard.active{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);column-gap:1rem;align-items:stretch;
-    grid-template-areas:"hero hero" "g1 g1" "flow cat" "spend cat" "g2 g2" "up cal" "g3 g3" "rec rec" "rep rep"}
+    grid-template-areas:"hero hero" "g1 g1" "flow cat" "spend cat" "g2 g2" "up cal" "g3 g3" "rep rep"}
   #page-dashboard .overview{grid-area:hero}
   #dash-grp-exp{grid-area:g1}
   #dash-grp-cal{grid-area:g2}
@@ -1241,7 +1215,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
   #dash-card-cat{grid-area:cat}
   #dash-card-up{grid-area:up}
   #dash-card-cal{grid-area:cal;align-self:start}
-  #dash-card-recents{grid-area:rec}
   #dash-card-reports{grid-area:rep}
   /* A collapsed card sits at its natural header height at the top of its track
      instead of stretching to fill it — so a folded Category card doesn't balloon
@@ -1555,17 +1528,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
           </div>
           <div id="cat-breakdown"></div>
         </div>
-        <div class="dash-group" id="dash-grp-rep" data-module-all="invoicing expenses">Recents &amp; Reports</div>
-        <div class="two-col" id="dash-card-recents">
-          <div class="card collapsible collapsed" id="dash-card-inv" data-module="invoicing">
-            <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Invoices</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('invoices',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
-            <div id="dash-invoices"></div>
-          </div>
-          <div class="card collapsible collapsed" id="dash-card-exp" data-module="expenses">
-            <div class="card-header" onclick="toggleDashCard(this)"><h3>Recent Expenses</h3><button class="btn btn-sm" onclick="event.stopPropagation();showPage('expenses',null)">View all</button><i class="ti ti-chevron-down dash-chev"></i></div>
-            <div id="dash-expenses"></div>
-          </div>
-        </div>
+        <div class="dash-group" id="dash-grp-rep" data-module-all="invoicing expenses budget loan">Reports</div>
 
         <!-- REPORTS (collapsible card on dashboard) — each report tab follows the
              module(s) that feed it, and the whole card hides only when every
@@ -3441,19 +3404,6 @@ function renderDashboard() {
   renderSpendMonth();
   renderCategoryBreakdown();
   renderDashMileage();
-
-  const esc = escHtml;
-  const ri = document.getElementById('dash-invoices');
-  const recent = cache.invoices.slice().sort((a,b)=>String(b.number||'').localeCompare(String(a.number||''),undefined,{numeric:true})).slice(0,5);
-  ri.innerHTML = recent.length
-    ? `<div class="dash-wrap"><table class="dash-table dash-inv"><tbody>${recent.map(i=>`<tr style="cursor:pointer" data-q="${esc(i.number||'')}" onclick="gotoInvoicesSearch(this.dataset.q)"><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent)">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(i.total)}</td></tr>`).join('')}</tbody></table></div>`
-    : `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices yet</p></div>`;
-
-  const re = document.getElementById('dash-expenses');
-  const rexp = cache.expenses.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,5);
-  re.innerHTML = rexp.length
-    ? `<div class="dash-wrap"><table class="dash-table dash-exp"><tbody>${rexp.map(e=>`<tr><td style="white-space:nowrap;font-size:11.5px;color:#888">${fmtDate(e.date)}</td><td>${esc(e.vendor)}</td><td class="red" style="text-align:right;font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td></tr>`).join('')}</tbody></table></div>`
-    : `<div class="empty"><i class="ti ti-receipt"></i><p>No expenses yet</p></div>`;
 
   renderUpcoming();
   applyDashCollapsed();
