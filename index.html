@@ -2605,6 +2605,7 @@ let invFilter = 'all';
 let invSortDir = 'desc';   // invoices always sort by number; 'desc' = highest (newest) first
 let currentReport = 'pl';
 let _reportLoanId = null;   // which saved loan the Loan report prints
+let _reportLoanMonth = null; // which schedule month to print ('all' = whole schedule)
 let editingInvLines = [];
 let editingInvExpenses = [];
 
@@ -7608,29 +7609,52 @@ function renderReport(r) {
     // Keep the selection valid; default to the first loan.
     if (!_reportLoanId || !loans.some(l => l.id === _reportLoanId)) _reportLoanId = loans[0].id;
     const loan = loans.find(l => l.id === _reportLoanId);
-    buildLoanReportDoc(loan);
-    const picker = `<div style="max-width:840px;margin:0 auto;padding:.85rem 1rem 0;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+    // Month options come from the loan's remaining schedule — one per upcoming
+    // payment — so the report prints a SINGLE month instead of the whole loan.
+    const comp = computeLoan(loanToObj(loan));
+    const act = comp.valid ? loanActual(loan, comp) : null;
+    const fwd = comp.valid ? loanForwardSchedule(loan, comp, act) : { rows: [] };
+    const monthKeyOf = row => row.date || ('#' + row.n);
+    const months = fwd.rows.map(row => ({ key: monthKeyOf(row), label: row.label }));
+    // Default to the next payment; keep the selection valid across loan switches.
+    if (_reportLoanMonth !== 'all' && !months.some(m => m.key === _reportLoanMonth)) {
+      _reportLoanMonth = months.length ? months[0].key : 'all';
+    }
+    buildLoanReportDoc(loan, _reportLoanMonth);
+    const loanSel = `<div style="display:flex;align-items:center;gap:.5rem;flex:1;min-width:150px">
         <label style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);font-family:'JetBrains Mono',monospace">Loan</label>
-        <select onchange="selectReportLoan(this.value)" style="flex:1;min-width:160px">
+        <select onchange="selectReportLoan(this.value)" style="flex:1;min-width:120px">
           ${loans.map(l => `<option value="${l.id}"${l.id===_reportLoanId?' selected':''}>${escHtml(l.name||'Loan')}</option>`).join('')}
         </select>
       </div>`;
+    const monthSel = months.length ? `<div style="display:flex;align-items:center;gap:.5rem;flex:1;min-width:150px">
+        <label style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);font-family:'JetBrains Mono',monospace">Month</label>
+        <select onchange="selectReportLoanMonth(this.value)" style="flex:1;min-width:120px">
+          ${months.map(m => `<option value="${escHtml(m.key)}"${m.key===_reportLoanMonth?' selected':''}>${escHtml(m.label)}</option>`).join('')}
+          <option value="all"${_reportLoanMonth==='all'?' selected':''}>Entire schedule</option>
+        </select>
+      </div>` : '';
+    const picker = `<div style="max-width:840px;margin:0 auto;padding:.85rem 1rem 0;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">${loanSel}${monthSel}</div>`;
     el.innerHTML = picker + reportScreen('Loan — '+(loan.name||'Loan'));
   }
 }
-// Switch which loan the Loan report shows, then re-render it.
-function selectReportLoan(id) { _reportLoanId = id; renderReport('loan'); }
+// Switch which loan the Loan report shows (reset the month to its next payment).
+function selectReportLoan(id) { _reportLoanId = id; _reportLoanMonth = null; renderReport('loan'); }
+// Switch which schedule month the Loan report prints.
+function selectReportLoanMonth(key) { _reportLoanMonth = key; renderReport('loan'); }
 
 // Build the printable Loan report into lastReportHTML/Title (mirrors buildBudgetReportDoc).
-function buildLoanReportDoc(loan) {
+// monthKey selects ONE upcoming payment (its schedule date, or '#n' for undated
+// loans) so the report is a single page; 'all' prints the whole remaining schedule.
+function buildLoanReportDoc(loan, monthKey) {
   const p = profile || {}, esc = escHtml;
   const bizName = esc(p.company||'My Business');
   const bizAddr = fmtAddress(p.address);
   const bizMeta = (bizAddr?bizAddr+'<br>':'') + (p.phone?'Phone: '+esc(fmtPhone(p.phone)):'') + (p.email?(p.phone?' · ':'')+esc((p.email||'').trim().toLowerCase()):'');
   const name = esc(loan.name || 'Loan');
-  lastReportTitle = 'Loan Summary — ' + (loan.name || 'Loan');
   const comp = computeLoan(loanToObj(loan));
   if (!comp.valid) {
+    lastReportTitle = 'Loan Summary — ' + (loan.name || 'Loan');
     lastReportHTML = reportDoc(bizName, bizMeta, 'Loan Summary', name,
       '<div class="rrow"><span>This loan is missing an amount, rate, or term.</span></div>');
     return;
@@ -7640,6 +7664,11 @@ function buildLoanReportDoc(loan) {
   const unit = loan.term_unit === 'months' ? 'months' : 'years';
   const termTxt = (loanNum(loan.term_num).toString()) + ' ' + unit;
   const rateTxt = loanNum(loan.rate).toFixed(3).replace(/\.?0+$/, '') + '%';
+  // The single selected upcoming payment (unless "Entire schedule" was chosen).
+  const monthRow = (monthKey && monthKey !== 'all')
+    ? fwd.rows.find(r => (r.date || ('#' + r.n)) === monthKey)
+    : null;
+  const total = fwd.made + fwd.count;
 
   let body = `<div class="rsec">LOAN DETAILS</div>
     <div class="rrow"><span>Original amount</span><span class="mono">${fmt(comp.P)}</span></div>
@@ -7658,24 +7687,30 @@ function buildLoanReportDoc(loan) {
     ${act.paidOff?'<div class="rrow"><span>Status</span><span class="mono">Paid off</span></div>'
       :(fwd.payoffDate?`<div class="rrow"><span>Projected payoff</span><span class="mono">${fmtDate(fwd.payoffDate)}</span></div>`:'')}`;
 
-  // Recorded payment history
-  const pays = loanPays(loan);
-  if (pays.length) {
-    body += `<div class="rsec">PAYMENT HISTORY</div>
-      <table class="rtable"><thead><tr><th style="text-align:left">DATE</th><th style="text-align:left">NOTE</th><th style="text-align:right">AMOUNT</th></tr></thead><tbody>
-      ${pays.map(pmt => `<tr><td class="mono">${pmt.date?fmtDate(pmt.date):'—'}</td><td data-label="Note">${esc(pmt.note||'')}</td><td class="mono" data-label="Amount" style="text-align:right">${fmt(pmt.amount)}</td></tr>`).join('')}
-      </tbody></table>`;
-  }
-
-  // Remaining amortization schedule
-  if (!act.paidOff && fwd.rows.length) {
+  let period = name;
+  if (monthRow) {
+    // ── Single selected month: a focused, one-page breakdown ──
+    period = name + ' · ' + monthRow.label;
+    lastReportTitle = 'Loan Payment — ' + (loan.name || 'Loan') + ' ' + monthRow.label;
+    body += `<div class="rsec">PAYMENT · ${esc(monthRow.label.toUpperCase())}</div>
+      ${monthRow.date?`<div class="rrow"><span>Due date</span><span class="mono">${fmtDate(monthRow.date)}</span></div>`:''}
+      <div class="rrow"><span>Payment number</span><span class="mono">${monthRow.n} of ${total}</span></div>
+      <div class="rrow"><span>Principal</span><span class="mono">${fmt(monthRow.principal)}</span></div>
+      <div class="rrow"><span>Interest</span><span class="mono">${fmt(monthRow.interest)}</span></div>
+      <div class="rrow bold"><span>Balance after payment</span><span class="mono">${fmt(monthRow.bal)}</span></div>
+      <div class="rtotal"><span>PAYMENT DUE</span><span class="mono">${fmt(monthRow.pay)}</span></div>`;
+  } else if (!act.paidOff && fwd.rows.length) {
+    // ── Entire remaining amortization schedule ──
+    lastReportTitle = 'Loan Summary — ' + (loan.name || 'Loan');
     body += `<div class="rsec">REMAINING SCHEDULE</div>
       <table class="rtable"><thead><tr><th style="text-align:left">DATE</th><th style="text-align:right">PAYMENT</th><th style="text-align:right">PRINCIPAL</th><th style="text-align:right">INTEREST</th><th style="text-align:right">BALANCE</th></tr></thead><tbody>
       ${fwd.rows.map(row => `<tr><td class="mono">${esc(row.label)}</td><td class="mono" data-label="Payment" style="text-align:right">${fmt(row.pay)}</td><td class="mono" data-label="Principal" style="text-align:right">${fmt(row.principal)}</td><td class="mono" data-label="Interest" style="text-align:right">${fmt(row.interest)}</td><td class="mono" data-label="Balance" style="text-align:right">${fmt(row.bal)}</td></tr>`).join('')}
       </tbody></table>`;
+  } else {
+    lastReportTitle = 'Loan Summary — ' + (loan.name || 'Loan');
   }
 
-  lastReportHTML = reportDoc(bizName, bizMeta, 'Loan Summary', name, body);
+  lastReportHTML = reportDoc(bizName, bizMeta, 'Loan Summary', period, body);
 }
 
 // On-screen wrapper for a report (header bar with Print button + the printable body shown inline)
