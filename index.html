@@ -403,6 +403,14 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .mod-ico{width:34px;height:34px;flex-shrink:0;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--accent-bg);color:var(--accent);font-size:17px}
 #module-toggles .setting-row{padding:.7rem 0;border-bottom:1px solid var(--border)}
 #module-toggles .setting-row:last-child{border-bottom:none}
+/* Section rows: tappable label (expands its settings) + on/off switch. */
+#module-toggles .mod-row{display:flex;align-items:center;gap:.5rem;padding:.7rem 0;border-bottom:1px solid var(--border)}
+#module-toggles .mod-main{flex:1;display:flex;align-items:center;gap:.7rem;min-width:0;background:none;border:none;padding:0;margin:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
+#module-toggles .mod-sw-btn{background:none;border:none;padding:0;margin:0;cursor:pointer;flex-shrink:0}
+#module-toggles .mod-chev{margin-left:.35rem;color:var(--text3);font-size:16px;flex-shrink:0;transition:transform .18s}
+#module-toggles .mod-chev.open{transform:rotate(180deg)}
+#module-toggles .mod-settings{padding:.1rem 0 .7rem 2.9rem;border-bottom:1px solid var(--border)}
+#module-toggles .mod-settings .setting-row{padding:.5rem 0;border-bottom:none}
 /* When the Net-Profit hero is hidden (Invoices off) but the grid still shows
    (e.g. Mileage on), drop the grid's top divider so it doesn't float orphaned. */
 .ov-hero[style*="display: none"] + .ov-grid,
@@ -1691,8 +1699,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span><span class="setting-row-title">24-hour time</span><span class="setting-row-sub">Show times as 14:00 instead of 2:00 PM.</span></span>
               <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
             </button>
-            <button class="setting-row" id="reportlogo-switch-row" role="switch" aria-checked="true" aria-label="Logo on reports" onclick="toggleReportLogo()">
-              <span><span class="setting-row-title">Logo on reports</span><span class="setting-row-sub">Show your logo at the top of printed reports.</span></span>
+            <button class="setting-row" id="reportlogo-switch-row" role="switch" aria-checked="true" aria-label="Logo on financial reports" onclick="toggleReportLogo()">
+              <span><span class="setting-row-title">Logo on financial reports</span><span class="setting-row-sub">Show your logo on P&amp;L, Expense Summary &amp; Budget. (Invoices and loan reports have their own toggle under Sections.)</span></span>
               <span class="theme-switch on" id="reportlogo-switch"><span class="theme-switch-knob"></span></span>
             </button>
           </div>
@@ -3188,19 +3196,59 @@ function toggleModule(id) {
     if (error && !/column .*hidden_modules/i.test(error.message)) showToast(error.message,'error');
   });
 }
+// Which enabled modules expose their own settings drawer (tap the row to expand).
+function moduleHasSettings(id) { return id === 'invoicing' || id === 'loan'; }
+let _secOpen = {};   // module id -> settings drawer expanded
+
 function renderModuleToggles() {
   const el = document.getElementById('module-toggles'); if (!el) return;
   const hid = getHiddenModules();
   el.innerHTML = MODULES.map(m => {
     const on = !hid.includes(m.id);   // on = visible
-    return `<button type="button" class="setting-row" role="switch" aria-checked="${on}" aria-label="Show ${escHtml(m.label)}" onclick="toggleModule('${m.id}')">
-      <span style="display:flex;align-items:center;gap:.7rem;min-width:0">
+    const hasSet = on && moduleHasSettings(m.id);
+    const open = hasSet && !!_secOpen[m.id];
+    // When a section is on AND configurable, tapping the label opens its settings;
+    // otherwise tapping the label toggles the module (the switch always toggles).
+    const mainClick = hasSet ? `toggleSectionSettings('${m.id}')` : `toggleModule('${m.id}')`;
+    let row = `<div class="mod-row">
+      <button type="button" class="mod-main" onclick="${mainClick}"${hasSet?` aria-expanded="${open}"`:''} aria-label="${hasSet?'Configure':'Toggle'} ${escHtml(m.label)}">
         <span class="mod-ico"><i class="ti ${m.icon}"></i></span>
-        <span style="min-width:0"><span class="setting-row-title">${escHtml(m.label)}</span><span class="setting-row-sub">${escHtml(m.desc)}</span></span>
-      </span>
-      <span class="theme-switch${on?' on':''}"><span class="theme-switch-knob"></span></span>
-    </button>`;
+        <span style="min-width:0;flex:1"><span class="setting-row-title">${escHtml(m.label)}</span><span class="setting-row-sub">${escHtml(m.desc)}</span></span>
+        ${hasSet?`<i class="ti ti-chevron-down mod-chev${open?' open':''}"></i>`:''}
+      </button>
+      <button type="button" class="mod-sw-btn" role="switch" aria-checked="${on}" aria-label="Show ${escHtml(m.label)}" onclick="toggleModule('${m.id}')">
+        <span class="theme-switch${on?' on':''}"><span class="theme-switch-knob"></span></span>
+      </button>
+    </div>`;
+    if (open) row += `<div class="mod-settings">${sectionSettingsHTML(m.id)}</div>`;
+    return row;
   }).join('');
+}
+// Per-section settings drawer contents. Add more rows here as sections gain settings.
+function sectionSettingsHTML(id) {
+  if (id === 'invoicing') return logoToggleRowHTML('invoice_logo', 'Show logo on invoices', 'Print your logo at the top of invoices.');
+  if (id === 'loan') return logoToggleRowHTML('loan_logo', 'Show logo on loan reports', 'Print your logo on loan payment slips & summaries.');
+  return '';
+}
+function logoToggleRowHTML(col, title, sub) {
+  const on = profile[col] !== false;   // default on
+  return `<button type="button" class="setting-row" role="switch" aria-checked="${on}" aria-label="${escHtml(title)}" onclick="toggleSectionLogo('${col}')">
+    <span><span class="setting-row-title">${escHtml(title)}</span><span class="setting-row-sub">${escHtml(sub)}</span></span>
+    <span class="theme-switch${on?' on':''}"><span class="theme-switch-knob"></span></span>
+  </button>`;
+}
+function toggleSectionSettings(id) { _secOpen[id] = !_secOpen[id]; renderModuleToggles(); }
+async function toggleSectionLogo(col) {
+  const cur = profile[col] !== false;
+  profile[col] = !cur;             // flip (default was on)
+  renderModuleToggles();
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, [col]: profile[col] });
+  if (error) {
+    if (new RegExp('column .*' + col, 'i').test(error.message))
+      showToast(`Run: alter table profiles add column if not exists ${col} boolean default true;`, 'error');
+    else showToast('Could not save: ' + error.message, 'error');
+    profile[col] = cur; renderModuleToggles();   // revert on failure
+  }
 }
 
 // fromBack = the Android back button/gesture drove this, so the page we're
@@ -4692,7 +4740,7 @@ function viewInvoice(id) {
     <!-- HEADER: business left, INVOICE right -->
     <div style="display:flex;justify-content:space-between;gap:1.5rem;border-bottom:2px solid #1a1a1a;padding-bottom:1rem;margin-bottom:1.25rem">
       <div style="min-width:0">
-        ${p.logo?`<img src="${p.logo}" alt="logo" style="max-height:56px;max-width:200px;margin-bottom:.5rem;display:block">`:''}
+        ${(p.logo && p.invoice_logo!==false)?`<img src="${p.logo}" alt="logo" style="max-height:56px;max-width:200px;margin-bottom:.5rem;display:block">`:''}
         <div style="font-weight:700;font-size:16px;line-height:1.3">${esc(bizName)}</div>
         <div style="font-size:12px;color:#444;margin-top:.35rem;line-height:1.6">${bizAddr?bizAddr+'<br>':''}${p.phone?'Phone: '+esc(fmtPhone(p.phone)):''}</div>
       </div>
@@ -7653,10 +7701,11 @@ function buildLoanReportDoc(loan, monthKey) {
   const bizMeta = (bizAddr?bizAddr+'<br>':'') + (p.phone?'Phone: '+esc(fmtPhone(p.phone)):'') + (p.email?(p.phone?' · ':'')+esc((p.email||'').trim().toLowerCase()):'');
   const name = esc(loan.name || 'Loan');
   const comp = computeLoan(loanToObj(loan));
+  const loanLogo = profile.loan_logo !== false;   // per-section: logo on loan reports
   if (!comp.valid) {
     lastReportTitle = 'Loan Summary — ' + (loan.name || 'Loan');
     lastReportHTML = reportDoc(bizName, bizMeta, 'Loan Summary', name,
-      '<div class="rrow"><span>This loan is missing an amount, rate, or term.</span></div>');
+      '<div class="rrow"><span>This loan is missing an amount, rate, or term.</span></div>', loanLogo);
     return;
   }
   const act = loanActual(loan, comp);
@@ -7725,7 +7774,7 @@ function buildLoanReportDoc(loan, monthKey) {
     }
   }
 
-  lastReportHTML = reportDoc(bizName, bizMeta, docTitle, period, body);
+  lastReportHTML = reportDoc(bizName, bizMeta, docTitle, period, body, loanLogo);
 }
 
 // On-screen wrapper for a report (header bar with Print button + the printable body shown inline)
@@ -7745,12 +7794,16 @@ function reportScreen(title) {
   </div>`;
 }
 
-// Build the printable report document body (same visual language as the invoice)
-function reportDoc(bizName, bizMeta, title, period, bodyHTML) {
+// Build the printable report document body (same visual language as the invoice).
+// showLogo lets each report type gate the header logo independently; when omitted
+// it falls back to the general reports toggle (profile.report_logo) so P&L /
+// Expense / Budget behave exactly as before.
+function reportDoc(bizName, bizMeta, title, period, bodyHTML, showLogo) {
+  if (showLogo === undefined) showLogo = profile.report_logo !== false;
   return `<div id="report-print-area" style="background:#fff;color:#1a1a1a;padding:1.25rem;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;line-height:1.5">
     <div style="display:flex;justify-content:space-between;gap:1.5rem;border-bottom:2px solid #1a1a1a;padding-bottom:1rem;margin-bottom:1.25rem">
       <div style="min-width:0">
-        ${(profile.logo && profile.report_logo!==false)?`<img src="${profile.logo}" alt="logo" style="max-height:52px;max-width:200px;margin-bottom:.5rem;display:block">`:''}
+        ${(profile.logo && showLogo)?`<img src="${profile.logo}" alt="logo" style="max-height:52px;max-width:200px;margin-bottom:.5rem;display:block">`:''}
         <div style="font-weight:700;font-size:16px;line-height:1.3">${bizName}</div>
         <div style="font-size:12px;color:#444;margin-top:.35rem;line-height:1.6">${bizMeta}</div>
       </div>

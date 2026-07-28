@@ -299,10 +299,21 @@ alter table profiles add column if not exists pay_instructions text;
 -- time_format: how job/calendar times display app-wide — '12' (default, 12-hour
 -- AM/PM) or '24' (24-hour / military). Toggled in Settings → Appearance.
 alter table profiles add column if not exists time_format text default '12';
--- report_logo: show the business logo at the top of printed reports (P&L,
--- Expense Summary, Budget). Default on; toggled in Settings → Appearance. Only
--- gates reportDoc's header logo — invoices are unaffected.
+-- Per-section logo control. The business logo can be shown/hidden independently
+-- per printable output, so e.g. invoices keep the logo while loan slips don't.
+-- All default on (unset/null = on, so the app works before the migration runs).
+--   report_logo  → P&L, Expense Summary, Budget (the financial reports). Toggled
+--                  in Settings → Appearance ("Logo on financial reports").
+--   invoice_logo → invoice PDFs. Toggled in Settings → Sections → Invoices.
+--   loan_logo    → loan payment slips & summaries. Settings → Sections → Loan.
+-- reportDoc() takes a showLogo arg (falls back to report_logo when omitted, so
+-- P&L/Expense/Budget are unchanged); the loan builder passes loan_logo, the
+-- invoice builder gates on invoice_logo. Per-section toggles live in the Sections
+-- panel: an enabled module row is tappable to expand its own settings drawer
+-- (renderModuleToggles → moduleHasSettings/sectionSettingsHTML/toggleSectionLogo).
 alter table profiles add column if not exists report_logo boolean default true;
+alter table profiles add column if not exists invoice_logo boolean default true;
+alter table profiles add column if not exists loan_logo boolean default true;
 
 -- App lock is fully on-device (no DB): localStorage bk-lock-pin (SHA-256 hash),
 -- bk-lock-len, bk-lock-cred (WebAuthn platform credential id for Face ID unlock).
