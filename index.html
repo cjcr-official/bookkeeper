@@ -5872,11 +5872,25 @@ function loanActual(loan, comp) {
   let prevDate = comp.startDate ? new Date(comp.startDate.getFullYear(), comp.startDate.getMonth() - 1, comp.startDate.getDate()) : null;
   pays.forEach(p => {
     const amt = Math.max(0, loanNum(p.amount));
-    const rateM = loanRateOn(comp, p.date);
     const pd = p.date ? new Date(p.date + 'T12:00:00') : null;
     let periods = 1;
     if (prevDate && pd) periods = Math.max(1, Math.min(600, (pd.getFullYear() - prevDate.getFullYear()) * 12 + (pd.getMonth() - prevDate.getMonth())));
-    const interestDue = Math.max(0, bal * rateM) * periods;
+    // Accrue interest month by month across the gap so a rate change that falls BETWEEN
+    // two payments — including a 0% "interest holiday" the lender granted — is honored for
+    // each month, instead of charging one flat rate for the whole gap. Interest is figured
+    // on the balance at the START of the gap (no payment lands mid-gap), matching how these
+    // notes bill. For an on-time monthly payment periods===1 and the single month's date is
+    // the payment date, so this is identical to the old single-rate charge; a multi-month
+    // gap with no rate change also matches (every month reads the same rate).
+    let interestDue = 0;
+    if (prevDate && pd) {
+      for (let i = 1; i <= periods; i++) {
+        const md = new Date(prevDate.getFullYear(), prevDate.getMonth() + i, prevDate.getDate());
+        interestDue += Math.max(0, bal * loanRateOn(comp, ymd(md)));
+      }
+    } else {
+      interestDue = Math.max(0, bal * loanRateOn(comp, p.date));
+    }
     let principal = amt - interestDue;
     if (principal > bal) principal = bal;      // can't pay off more than is owed
     bal -= principal;                          // underpayment (principal < 0) grows the balance
