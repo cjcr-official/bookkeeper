@@ -6168,16 +6168,26 @@ function renderLoanDetail(body, loan) {
     '</div>' +
   '</div>';
 
-  // ── Recorded payments ──
+  // ── Recorded payments (most recent first; older ones fold behind a toggle so a
+  //    long history doesn't turn the page into an endless scroll) ──
   const pays = loanPays(loan);
-  let payList;
-  if (!pays.length) payList = '<div style="padding:1rem;color:var(--text3);font-size:13px">No payments recorded yet. Tap <b>Add</b> when you make one.</div>';
-  else payList = pays.slice().reverse().map(p =>
-    '<div onclick="openLoanPayment(\'' + loan.id + '\',\'' + p.id + '\')" style="display:flex;align-items:center;gap:.6rem;padding:.6rem 1rem;border-bottom:1px solid var(--border);cursor:pointer">' +
-      '<div style="width:30px;height:30px;border-radius:8px;background:var(--green-bg);color:var(--green);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-cash"></i></div>' +
-      '<div style="flex:1;min-width:0"><div style="font-weight:600;font-family:\'JetBrains Mono\',monospace">' + fmt(p.amount) + '</div>' + (p.note ? '<div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(p.note) + '</div>' : '') + '</div>' +
+  const payRowHtml = p =>
+    '<div onclick="openLoanPayment(\'' + loan.id + '\',\'' + p.id + '\')" style="display:flex;align-items:center;gap:.6rem;padding:.55rem 1rem;border-top:1px solid var(--border);cursor:pointer">' +
+      '<div style="width:26px;height:26px;border-radius:7px;background:var(--green-bg);color:var(--green);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px"><i class="ti ti-cash"></i></div>' +
+      '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13.5px;font-family:\'JetBrains Mono\',monospace">' + fmt(p.amount) + '</div>' + (p.note ? '<div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(p.note) + '</div>' : '') + '</div>' +
       '<div style="font-size:12px;color:var(--text3);font-family:\'JetBrains Mono\',monospace">' + fmtDate(p.date) + '</div>' +
-    '</div>').join('');
+    '</div>';
+  const paysDesc = pays.slice().reverse();
+  const PAY_SHOWN = 4;
+  let payList;
+  if (!pays.length) payList = '<div style="padding:1rem;color:var(--text3);font-size:13px;border-top:1px solid var(--border)">No payments recorded yet. Tap <b>Add</b> when you make one.</div>';
+  else {
+    payList = paysDesc.slice(0, PAY_SHOWN).map(payRowHtml).join('');
+    if (paysDesc.length > PAY_SHOWN) {
+      payList += '<details style="border-top:1px solid var(--border)"><summary style="cursor:pointer;font-size:12px;color:var(--accent-text);font-family:\'JetBrains Mono\',monospace;padding:.7rem 1rem">Show all ' + paysDesc.length + ' payments</summary>' +
+        paysDesc.slice(PAY_SHOWN).map(payRowHtml).join('') + '</details>';
+    }
+  }
   html += '<div class="card" style="margin-top:1rem">' +
     '<div class="card-header"><h3>Payments' + (act.paidTotal ? ' · ' + fmt(act.paidTotal) : '') + '</h3><button class="btn btn-sm btn-primary" onclick="openLoanPayment(\'' + loan.id + '\',null)"><i class="ti ti-plus"></i> Add</button></div>' +
     payList +
@@ -6235,14 +6245,15 @@ function loanScheduleHtml(comp, fwd) {
   const total = fwd.made + fwd.count;
   const pos = fwd.count + ' payment' + (fwd.count === 1 ? '' : 's') + ' left' + (fwd.made ? ' · ' + fwd.made + ' of ' + total + ' made' : ' of ' + total);
 
-  if (rows.length <= 15) {
+  const SHOWN = 6;
+  if (rows.length <= SHOWN) {
     return card(
       '<div style="padding:.2rem 1rem .1rem;font-size:11px;color:var(--text3);font-family:\'JetBrains Mono\',monospace;text-transform:uppercase;letter-spacing:.5px">' + pos + '</div>' +
       listOf(rows));
   }
   return card(
     '<div style="padding:.2rem 1rem .1rem;font-size:11px;color:var(--text3);font-family:\'JetBrains Mono\',monospace;text-transform:uppercase;letter-spacing:.5px">' + pos + '</div>' +
-    listOf(rows.slice(0, 15)) +
+    listOf(rows.slice(0, SHOWN)) +
     '<div style="border-top:1px solid var(--border)">' +
       '<details style="padding:0 1rem"><summary style="' + summaryStyle + '">Show all ' + rows.length + ' remaining payments</summary>' +
         listOf(rows) + '</details>' +
