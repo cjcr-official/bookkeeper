@@ -513,10 +513,14 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 /* Weekday letters live in their OWN header grid, so .loan-cal-grid holds only the
    uniform aspect-ratio day cells (mixing the short weekday cells into the same grid made
    iOS Safari size the rows unevenly — tall/stretched cells). Mirrors .spend-cal-head. */
-.loan-cal-wdrow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:2px}
-.loan-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+/* minmax(0,1fr) (not 1fr) is REQUIRED: a 1fr track keeps an automatic min size,
+   and the cells' aspect-ratio:1 inflates that minimum, blowing the columns up to
+   huge squares (days scatter into alternating columns, rows stretch tall). The
+   max-width keeps the grid phone-sized and centered on a wide/desktop card. */
+.loan-cal-wdrow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;margin:0 auto 2px;max-width:360px}
+.loan-cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;margin:0 auto;max-width:360px}
 .loan-cal-wd{text-align:center;font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;padding:2px 0}
-.loan-cal-cell{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:6px;position:relative}
+.loan-cal-cell{aspect-ratio:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:6px;position:relative}
 .loan-cal-cell.today{background:var(--accent-bg)}
 .loan-cal-cell.loan-cal-has{cursor:pointer}
 .loan-cal-cell.sel{box-shadow:inset 0 0 0 1.5px var(--accent)}
