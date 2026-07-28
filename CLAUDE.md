@@ -302,8 +302,10 @@ alter table profiles add column if not exists time_format text default '12';
 -- Per-section logo control. The business logo can be shown/hidden independently
 -- per printable output, so e.g. invoices keep the logo while loan slips don't.
 -- All default on (unset/null = on, so the app works before the migration runs).
---   report_logo  → P&L, Expense Summary, Budget (the financial reports). Toggled
---                  in Settings → Appearance ("Logo on financial reports").
+--   report_logo  → P&L, Expense Summary, Budget (the financial reports). NO UI
+--                  toggle any more (the Appearance row was removed) — unset/null
+--                  reads as on, so these reports just print the logo. The column
+--                  is still honored by reportDoc's fallback if it was ever set.
 --   invoice_logo → invoice PDFs. Toggled in Settings → Sections → Invoices.
 --   loan_logo    → loan payment slips & summaries. Settings → Sections → Loan.
 -- reportDoc() takes a showLogo arg (falls back to report_logo when omitted, so

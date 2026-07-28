@@ -1702,10 +1702,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
               <span><span class="setting-row-title">24-hour time</span><span class="setting-row-sub">Show times as 14:00 instead of 2:00 PM.</span></span>
               <span class="theme-switch" id="timefmt-switch"><span class="theme-switch-knob"></span></span>
             </button>
-            <button class="setting-row" id="reportlogo-switch-row" role="switch" aria-checked="true" aria-label="Logo on financial reports" onclick="toggleReportLogo()">
-              <span><span class="setting-row-title">Logo on financial reports</span><span class="setting-row-sub">Show your logo on P&amp;L, Expense Summary &amp; Budget. (Invoices and loan reports have their own toggle under Sections.)</span></span>
-              <span class="theme-switch on" id="reportlogo-switch"><span class="theme-switch-knob"></span></span>
-            </button>
           </div>
         </div>
         <div class="card settings-section" data-sec="sections">
@@ -7798,9 +7794,10 @@ function reportScreen(title) {
 }
 
 // Build the printable report document body (same visual language as the invoice).
-// showLogo lets each report type gate the header logo independently; when omitted
-// it falls back to the general reports toggle (profile.report_logo) so P&L /
-// Expense / Budget behave exactly as before.
+// showLogo lets each report type gate the header logo independently (invoices and
+// loan reports pass their own per-section flag from Settings → Sections). When
+// omitted it falls back to profile.report_logo, which no longer has a UI toggle —
+// unset/null means on, so P&L / Expense / Budget just print the logo.
 function reportDoc(bizName, bizMeta, title, period, bodyHTML, showLogo) {
   if (showLogo === undefined) showLogo = profile.report_logo !== false;
   return `<div id="report-print-area" style="background:#fff;color:#1a1a1a;padding:1.25rem;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;line-height:1.5">
@@ -9739,7 +9736,6 @@ function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
 function loadSettingsForm() {
   syncThemeUI();
   syncTimeFormatUI();
-  syncReportLogoUI();
   syncAccentUI();
   renderPushStatus();
   // Invoice defaults
@@ -10745,24 +10741,6 @@ async function toggleTimeFormat() {
   if (error) {
     if (/column .*time_format/i.test(error.message))
       showToast("Run: alter table profiles add column if not exists time_format text default '12';", 'error');
-    else showToast(error.message, 'error');
-  }
-}
-// Show/hide the business logo at the top of printed reports (P&L, Expense
-// Summary, Budget). Default on; stored on profile.report_logo (boolean).
-function syncReportLogoUI() {
-  const on = !(profile && profile.report_logo === false);   // default true
-  const sw = document.getElementById('reportlogo-switch'); if (sw) sw.classList.toggle('on', on);
-  const row = document.getElementById('reportlogo-switch-row'); if (row) row.setAttribute('aria-checked', String(on));
-}
-async function toggleReportLogo() {
-  const on = !(profile && profile.report_logo === false);
-  profile.report_logo = !on;   // flip
-  syncReportLogoUI();
-  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, report_logo: profile.report_logo });
-  if (error) {
-    if (/column .*report_logo/i.test(error.message))
-      showToast("Run: alter table profiles add column if not exists report_logo boolean default true;", 'error');
     else showToast(error.message, 'error');
   }
 }
