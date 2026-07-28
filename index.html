@@ -529,9 +529,14 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
    huge squares (days scatter into alternating columns, rows stretch tall). The
    max-width keeps the grid phone-sized and centered on a wide/desktop card. */
 .loan-cal-wdrow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;margin:0 auto 2px;max-width:360px}
-.loan-cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;margin:0 auto;max-width:360px}
+/* Fixed, uniform row height — NOT per-cell aspect-ratio:1. iOS Safari mis-sizes
+   the FIRST grid row (the week with blank leading cells before the 1st) when the
+   height comes from aspect-ratio, stretching it to ~double height and leaving a
+   big empty gap under the weekday header. A fixed grid-auto-rows makes every week
+   the same height and keeps the calendar compact. */
+.loan-cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:40px;gap:2px;margin:0 auto;max-width:360px}
 .loan-cal-wd{text-align:center;font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;padding:2px 0}
-.loan-cal-cell{aspect-ratio:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:6px;position:relative}
+.loan-cal-cell{min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border-radius:6px;position:relative}
 .loan-cal-cell.today{background:var(--accent-bg)}
 .loan-cal-cell.loan-cal-has{cursor:pointer}
 .loan-cal-cell.sel{box-shadow:inset 0 0 0 1.5px var(--accent)}

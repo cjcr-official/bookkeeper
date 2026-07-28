@@ -1,1 +1,1 @@
-{"version":452,"note":"v452: Removed the Recent Invoices and Recent Expenses cards from the dashboard/home page. The Reports section stays; use the Invoices / Expenses tabs to see the full lists."}
+{"version":453,"note":"v453: Fixed the Loan payment calendar's huge gap under the weekday header. The first week (with blank leading cells) was rendered ~double height by iOS Safari's aspect-ratio grid sizing; calendar rows now use a fixed uniform height, so every week lines up and the calendar is more compact."}
