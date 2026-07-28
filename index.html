@@ -4642,6 +4642,14 @@ async function shareInvoicePDF() {
 // extraStyle adds page-specific CSS (e.g. unfreezing the invoice table layout).
 function printDocInIframe(html, title, extraStyle, fallback) {
   if (!html) return;
+  // Samsung / Android: printing the off-screen iframe renders in the print
+  // PREVIEW ("PDF view") but rasterizes BLANK when sent to an actual printer —
+  // while "Save as PDF" of the very same preview comes out perfect. That's the
+  // exact symptom users hit ("print is blank, but save-then-print looks good").
+  // Rather than fight Chromium's subframe snapshot, hand Android the real
+  // generated PDF — the same artifact the "save" path produces — which prints
+  // identically everywhere. iOS/desktop keep the native iframe print dialog.
+  if (isAndroidDevice() && typeof fallback === 'function') { fallback(); return; }
   const old = document.getElementById('print-frame');
   if (old) old.remove();
   const iframe = document.createElement('iframe');
