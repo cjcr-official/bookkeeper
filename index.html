@@ -1561,7 +1561,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
              report's module is turned off. P&L is revenue+spending-driven, so it
              shows while EITHER Invoices or Expenses is on; Expense Summary follows
              Expenses; Budget follows Budget. -->
-        <div class="card" id="dash-card-reports" data-module-all="invoicing expenses budget">
+        <div class="card" id="dash-card-reports" data-module-all="invoicing expenses budget loan">
           <div class="card-header" onclick="toggleReports()" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-chart-pie" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Reports</h3>
             <i class="ti ti-chevron-down dash-chev" id="reports-chevron" style="transform:rotate(-90deg)"></i>
@@ -1572,6 +1572,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
                 <div class="tab active" data-report="pl" data-module-all="invoicing expenses" onclick="showReport('pl',this)">Profit & Loss</div>
                 <div class="tab" data-report="exp" data-module="expenses" onclick="showReport('exp',this)">Expense Summary</div>
                 <div class="tab" data-report="budget" data-module="budget" onclick="showReport('budget',this)">Budget</div>
+                <div class="tab" data-report="loan" data-module="loan" onclick="showReport('loan',this)">Loan</div>
               </div>
             </div>
             <div id="report-content"></div>
@@ -2603,6 +2604,7 @@ window.addEventListener('orientationchange', () => {
 let invFilter = 'all';
 let invSortDir = 'desc';   // invoices always sort by number; 'desc' = highest (newest) first
 let currentReport = 'pl';
+let _reportLoanId = null;   // which saved loan the Loan report prints
 let editingInvLines = [];
 let editingInvExpenses = [];
 
@@ -6213,18 +6215,6 @@ function loanScheduleHtml(comp, fwd) {
   if (!rows.length) return card('<div style="padding:1.25rem;text-align:center;color:var(--text3);font-size:13px">' +
     (fwd.noAmortize ? 'At this payment the balance never pays down — raise the payment or lower the rate.' : 'Add the loan amount, rate, and term to see the schedule.') + '</div>');
 
-  // Year-by-year of the REMAINING schedule (each group = 12 upcoming payments).
-  const yearly = [];
-  rows.forEach((row, idx) => {
-    const yi = Math.floor(idx / 12);
-    if (!yearly[yi]) yearly[yi] = { yr: yi + 1, pay: 0, principal: 0, interest: 0, bal: row.bal };
-    yearly[yi].pay += row.pay; yearly[yi].principal += row.principal;
-    yearly[yi].interest += row.interest; yearly[yi].bal = row.bal;
-  });
-  const yhead = '<tr><th>Year</th><th>Paid</th><th>Principal</th><th>Interest</th><th>Balance</th></tr>';
-  const yrows = yearly.map(y => '<tr class="loan-yr"><td>Year ' + y.yr + '</td><td>' + fmt(y.pay) + '</td><td>' + fmt(y.principal) + '</td><td>' + fmt(y.interest) + '</td><td>' + fmt(y.bal) + '</td></tr>').join('');
-  const yearBlock = '<div class="loan-sched-wrap" style="padding:.4rem .5rem 1rem"><table class="loan-sched">' + yhead + yrows + '</table></div>';
-
   // Clean two-line rows; the first upcoming payment is the NEXT one due.
   const payRow = (row, idx) => {
     const isNext = idx === 0;
@@ -6255,12 +6245,8 @@ function loanScheduleHtml(comp, fwd) {
     '<div style="padding:.2rem 1rem .1rem;font-size:11px;color:var(--text3);font-family:\'JetBrains Mono\',monospace;text-transform:uppercase;letter-spacing:.5px">' + pos + '</div>' +
     listOf(rows.slice(0, SHOWN)) +
     '<div style="border-top:1px solid var(--border)">' +
-      '<details style="padding:0 1rem"><summary style="' + summaryStyle + '">Show all ' + rows.length + ' remaining payments</summary>' +
+      '<details style="padding:0 1rem 1rem"><summary style="' + summaryStyle + '">Show all ' + rows.length + ' remaining payments</summary>' +
         listOf(rows) + '</details>' +
-    '</div>' +
-    '<div style="border-top:1px solid var(--border)">' +
-      '<details style="padding:0 1rem 1rem"><summary style="' + summaryStyle + '">Year-by-year breakdown</summary>' +
-        yearBlock + '</details>' +
     '</div>');
 }
 
@@ -7536,9 +7522,10 @@ function reportAvailable(r) {
   if (r==='pl') return !isModuleHidden('invoicing') || !isModuleHidden('expenses');
   if (r==='exp') return !isModuleHidden('expenses');
   if (r==='budget') return !isModuleHidden('budget');
+  if (r==='loan') return !isModuleHidden('loan');
   return true;
 }
-function firstVisibleReport() { return ['pl','exp','budget'].find(reportAvailable) || null; }
+function firstVisibleReport() { return ['pl','exp','budget','loan'].find(reportAvailable) || null; }
 function syncReportTabActive() {
   document.querySelectorAll('#report-tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.report===currentReport));
 }
@@ -7611,7 +7598,84 @@ function renderReport(r) {
     const now=new Date();
     const monthLabel=buildBudgetReportDoc(now.getFullYear(), now.getMonth());
     el.innerHTML = reportScreen('Budget — '+monthLabel);
+  } else if (r==='loan') {
+    // Loan report — the user picks which saved loan to print from a dropdown.
+    const loans = cache.loans || [];
+    if (!loans.length) {
+      el.innerHTML = `<div style="max-width:840px;margin:0 auto;padding:1.5rem 1rem;text-align:center;color:var(--text3);font-size:13px">No loans saved yet. Add one on the <a onclick="showPage('loan',null)" style="color:var(--accent);cursor:pointer">Loan</a> page to print it here.</div>`;
+      return;
+    }
+    // Keep the selection valid; default to the first loan.
+    if (!_reportLoanId || !loans.some(l => l.id === _reportLoanId)) _reportLoanId = loans[0].id;
+    const loan = loans.find(l => l.id === _reportLoanId);
+    buildLoanReportDoc(loan);
+    const picker = `<div style="max-width:840px;margin:0 auto;padding:.85rem 1rem 0;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <label style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);font-family:'JetBrains Mono',monospace">Loan</label>
+        <select onchange="selectReportLoan(this.value)" style="flex:1;min-width:160px">
+          ${loans.map(l => `<option value="${l.id}"${l.id===_reportLoanId?' selected':''}>${escHtml(l.name||'Loan')}</option>`).join('')}
+        </select>
+      </div>`;
+    el.innerHTML = picker + reportScreen('Loan — '+(loan.name||'Loan'));
   }
+}
+// Switch which loan the Loan report shows, then re-render it.
+function selectReportLoan(id) { _reportLoanId = id; renderReport('loan'); }
+
+// Build the printable Loan report into lastReportHTML/Title (mirrors buildBudgetReportDoc).
+function buildLoanReportDoc(loan) {
+  const p = profile || {}, esc = escHtml;
+  const bizName = esc(p.company||'My Business');
+  const bizAddr = fmtAddress(p.address);
+  const bizMeta = (bizAddr?bizAddr+'<br>':'') + (p.phone?'Phone: '+esc(fmtPhone(p.phone)):'') + (p.email?(p.phone?' · ':'')+esc((p.email||'').trim().toLowerCase()):'');
+  const name = esc(loan.name || 'Loan');
+  lastReportTitle = 'Loan Summary — ' + (loan.name || 'Loan');
+  const comp = computeLoan(loanToObj(loan));
+  if (!comp.valid) {
+    lastReportHTML = reportDoc(bizName, bizMeta, 'Loan Summary', name,
+      '<div class="rrow"><span>This loan is missing an amount, rate, or term.</span></div>');
+    return;
+  }
+  const act = loanActual(loan, comp);
+  const fwd = loanForwardSchedule(loan, comp, act);
+  const unit = loan.term_unit === 'months' ? 'months' : 'years';
+  const termTxt = (loanNum(loan.term_num).toString()) + ' ' + unit;
+  const rateTxt = loanNum(loan.rate).toFixed(3).replace(/\.?0+$/, '') + '%';
+
+  let body = `<div class="rsec">LOAN DETAILS</div>
+    <div class="rrow"><span>Original amount</span><span class="mono">${fmt(comp.P)}</span></div>
+    <div class="rrow"><span>Interest rate${comp.changeCount?' (starting)':''}</span><span class="mono">${rateTxt}</span></div>
+    <div class="rrow"><span>Term</span><span class="mono">${esc(termTxt)}</span></div>
+    ${comp.startDate?`<div class="rrow"><span>First payment</span><span class="mono">${fmtDate(loan.start_date)}</span></div>`:''}
+    <div class="rrow"><span>Monthly payment</span><span class="mono">${fmt(comp.firstMonthly)}</span></div>
+    ${comp.extra>0?`<div class="rrow sub"><span>incl. extra principal</span><span class="mono">${fmt(comp.extra)}</span></div>`:''}`;
+
+  body += `<div class="rsec">CURRENT STATUS</div>
+    <div class="rrow"><span>Payments made</span><span class="mono">${act.count}</span></div>
+    <div class="rrow"><span>Total paid</span><span class="mono">${fmt(act.paidTotal)}</span></div>
+    <div class="rrow sub"><span>Principal paid</span><span class="mono">${fmt(act.principalPaid)}</span></div>
+    <div class="rrow sub"><span>Interest paid</span><span class="mono">${fmt(act.interestPaid)}</span></div>
+    <div class="rrow bold"><span>Remaining balance</span><span class="mono">${fmt(act.remaining)}</span></div>
+    ${act.paidOff?'<div class="rrow"><span>Status</span><span class="mono">Paid off</span></div>'
+      :(fwd.payoffDate?`<div class="rrow"><span>Projected payoff</span><span class="mono">${fmtDate(fwd.payoffDate)}</span></div>`:'')}`;
+
+  // Recorded payment history
+  const pays = loanPays(loan);
+  if (pays.length) {
+    body += `<div class="rsec">PAYMENT HISTORY</div>
+      <table class="rtable"><thead><tr><th style="text-align:left">DATE</th><th style="text-align:left">NOTE</th><th style="text-align:right">AMOUNT</th></tr></thead><tbody>
+      ${pays.map(pmt => `<tr><td class="mono">${pmt.date?fmtDate(pmt.date):'—'}</td><td data-label="Note">${esc(pmt.note||'')}</td><td class="mono" data-label="Amount" style="text-align:right">${fmt(pmt.amount)}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+
+  // Remaining amortization schedule
+  if (!act.paidOff && fwd.rows.length) {
+    body += `<div class="rsec">REMAINING SCHEDULE</div>
+      <table class="rtable"><thead><tr><th style="text-align:left">DATE</th><th style="text-align:right">PAYMENT</th><th style="text-align:right">PRINCIPAL</th><th style="text-align:right">INTEREST</th><th style="text-align:right">BALANCE</th></tr></thead><tbody>
+      ${fwd.rows.map(row => `<tr><td class="mono">${esc(row.label)}</td><td class="mono" data-label="Payment" style="text-align:right">${fmt(row.pay)}</td><td class="mono" data-label="Principal" style="text-align:right">${fmt(row.principal)}</td><td class="mono" data-label="Interest" style="text-align:right">${fmt(row.interest)}</td><td class="mono" data-label="Balance" style="text-align:right">${fmt(row.bal)}</td></tr>`).join('')}
+      </tbody></table>`;
+  }
+
+  lastReportHTML = reportDoc(bizName, bizMeta, 'Loan Summary', name, body);
 }
 
 // On-screen wrapper for a report (header bar with Print button + the printable body shown inline)
