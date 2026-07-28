@@ -6113,18 +6113,45 @@ function loanScheduleHtml(comp, act) {
   const yhead = '<tr><th>Year</th><th>Paid</th><th>Principal</th><th>Interest</th><th>Balance</th></tr>';
   const yrows = yearly.map(y => '<tr class="loan-yr"><td>Year ' + y.yr + '</td><td>' + fmt(y.pay) + '</td><td>' + fmt(y.principal) + '</td><td>' + fmt(y.interest) + '</td><td>' + fmt(y.bal) + '</td></tr>').join('');
   const mhead = '<tr><th>' + (comp.startDate ? 'Month' : 'Payment') + '</th><th>Payment</th><th>Principal</th><th>Interest</th><th>Balance</th></tr>';
-  const mrows = rows.map(row => {
+  // The next payment due (balance-derived, so it honors skipped / extra / lump-sum
+  // payments) — the row we anchor the default view on.
+  const nextK = act.paidOff ? 0 : act.covered + 1;
+  const rowHtml = row => {
     const paid = row.k <= act.covered;
+    const isNext = row.k === nextK;
     const stepMark = row.isStep ? ' <span style="font-size:9px">▲ ' + (row.rateM * 1200).toFixed(2) + '%</span>' : '';
-    return '<tr' + (row.isStep ? ' class="loan-yr"' : '') + (paid ? ' style="opacity:.5"' : '') + '><td>' + (paid ? '✓ ' : '') + row.label + stepMark + '</td><td>' + fmt(row.pay) + '</td><td>' + fmt(row.principal) + '</td><td>' + fmt(row.interest) + '</td><td>' + fmt(row.bal) + '</td></tr>';
-  }).join('');
+    const nextMark = isNext ? ' <span style="font-size:9px;color:var(--accent-text);font-family:\'JetBrains Mono\',monospace">◀ NEXT</span>' : '';
+    const style = paid ? 'opacity:.5' : (isNext ? 'background:var(--accent-bg)' : '');
+    return '<tr' + (row.isStep ? ' class="loan-yr"' : '') + (style ? ' style="' + style + '"' : '') + '><td>' + (paid ? '✓ ' : '') + row.label + stepMark + nextMark + '</td><td>' + fmt(row.pay) + '</td><td>' + fmt(row.principal) + '</td><td>' + fmt(row.interest) + '</td><td>' + fmt(row.bal) + '</td></tr>';
+  };
+  const allRows = rows.map(rowHtml).join('');
+  // Default view: a window around where you actually are — a few paid rows behind
+  // for context, then the upcoming payments — instead of dumping all N rows from
+  // payment #1 (which you'd scroll past forever to find today). "Show all" still
+  // reveals the complete schedule.
+  let focused = '';
+  if (rows.length > 12) {
+    const BACK = 3, FWD = 12;
+    let from = Math.max(0, act.covered - BACK);
+    let to = Math.min(rows.length, act.covered + FWD);
+    if (to - from < 15) to = Math.min(rows.length, from + 15);   // keep a useful window near the very end
+    if (to - from < 15) from = Math.max(0, to - 15);
+    const windowRows = rows.slice(from, to).map(rowHtml).join('');
+    const pos = act.paidOff ? 'Paid off · ' + comp.payoffCount + ' payments'
+      : 'Payment ' + (act.covered + 1) + ' of ' + comp.payoffCount + ' coming up';
+    focused =
+      '<div style="padding:0 1rem;margin-top:.4rem;font-size:11px;color:var(--text3);font-family:\'JetBrains Mono\',monospace;text-transform:uppercase;letter-spacing:.5px">' + pos + '</div>' +
+      '<div class="loan-sched-wrap" style="padding:.4rem .5rem .25rem"><table class="loan-sched">' + mhead + windowRows + '</table></div>' +
+      '<details style="padding:0 1rem 1rem"><summary style="cursor:pointer;font-size:12px;color:var(--accent-text);font-family:\'JetBrains Mono\',monospace">Show all ' + rows.length + ' payments</summary>' +
+      '<div class="loan-sched-wrap" style="margin-top:.6rem"><table class="loan-sched">' + mhead + allRows + '</table></div></details>';
+  } else {
+    // Short loan — the whole thing fits, no windowing needed.
+    focused = '<div class="loan-sched-wrap" style="padding:.4rem .5rem 1rem"><table class="loan-sched">' + mhead + allRows + '</table></div>';
+  }
   return '<div class="card" style="margin-top:1rem">' +
     '<div class="card-header"><h3>Schedule</h3></div>' +
-    '<div class="loan-sched-wrap" style="padding:.25rem .5rem 1rem"><table class="loan-sched">' + yhead + yrows + '</table></div>' +
-    (rows.length > 12 ?
-      '<details style="padding:0 1rem 1rem"><summary style="cursor:pointer;font-size:12px;color:var(--accent-text);font-family:\'JetBrains Mono\',monospace">Show every payment (' + rows.length + ')</summary>' +
-      '<div class="loan-sched-wrap" style="margin-top:.6rem"><table class="loan-sched">' + mhead + mrows + '</table></div></details>'
-      : '') +
+    '<div class="loan-sched-wrap" style="padding:.25rem .5rem .5rem"><table class="loan-sched">' + yhead + yrows + '</table></div>' +
+    focused +
   '</div>';
 }
 
