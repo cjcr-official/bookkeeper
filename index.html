@@ -7661,56 +7661,49 @@ function buildLoanReportDoc(loan, monthKey) {
   }
   const act = loanActual(loan, comp);
   const fwd = loanForwardSchedule(loan, comp, act);
-  const unit = loan.term_unit === 'months' ? 'months' : 'years';
-  const termTxt = (loanNum(loan.term_num).toString()) + ' ' + unit;
-  const rateTxt = loanNum(loan.rate).toFixed(3).replace(/\.?0+$/, '') + '%';
+  // Annual rate (%) from a monthly rate — honors ARM steps, so this is the CURRENT
+  // rate, not the origination rate.
+  const rateFmt = m => (m * 1200).toFixed(3).replace(/\.?0+$/, '') + '%';
   // The single selected upcoming payment (unless "Entire schedule" was chosen).
   const monthRow = (monthKey && monthKey !== 'all')
     ? fwd.rows.find(r => (r.date || ('#' + r.n)) === monthKey)
     : null;
   const total = fwd.made + fwd.count;
 
-  let body = `<div class="rsec">LOAN DETAILS</div>
-    <div class="rrow"><span>Original amount</span><span class="mono">${fmt(comp.P)}</span></div>
-    <div class="rrow"><span>Interest rate${comp.changeCount?' (starting)':''}</span><span class="mono">${rateTxt}</span></div>
-    <div class="rrow"><span>Term</span><span class="mono">${esc(termTxt)}</span></div>
-    ${comp.startDate?`<div class="rrow"><span>First payment</span><span class="mono">${fmtDate(loan.start_date)}</span></div>`:''}
-    <div class="rrow"><span>Monthly payment</span><span class="mono">${fmt(comp.firstMonthly)}</span></div>
-    ${comp.extra>0?`<div class="rrow sub"><span>incl. extra principal</span><span class="mono">${fmt(comp.extra)}</span></div>`:''}`;
-
-  body += `<div class="rsec">CURRENT STATUS</div>
-    <div class="rrow"><span>Payments made</span><span class="mono">${act.count}</span></div>
-    <div class="rrow"><span>Total paid</span><span class="mono">${fmt(act.paidTotal)}</span></div>
-    <div class="rrow sub"><span>Principal paid</span><span class="mono">${fmt(act.principalPaid)}</span></div>
-    <div class="rrow sub"><span>Interest paid</span><span class="mono">${fmt(act.interestPaid)}</span></div>
-    <div class="rrow bold"><span>Remaining balance</span><span class="mono">${fmt(act.remaining)}</span></div>
-    ${act.paidOff?'<div class="rrow"><span>Status</span><span class="mono">Paid off</span></div>'
-      :(fwd.payoffDate?`<div class="rrow"><span>Projected payoff</span><span class="mono">${fmtDate(fwd.payoffDate)}</span></div>`:'')}`;
-
-  let period = name;
+  let body, period = name, docTitle = 'Loan Summary';
   if (monthRow) {
-    // ── Single selected month: a focused, one-page breakdown ──
+    // ── Single selected month: a lean payment slip (rate for THIS payment) ──
     period = name + ' · ' + monthRow.label;
+    docTitle = 'Loan Payment';
     lastReportTitle = 'Loan Payment — ' + (loan.name || 'Loan') + ' ' + monthRow.label;
-    body += `<div class="rsec">PAYMENT · ${esc(monthRow.label.toUpperCase())}</div>
+    const payRate = rateFmt(loanRateOn(comp, monthRow.date));
+    body = `<div class="rsec">PAYMENT · ${esc(monthRow.label.toUpperCase())}</div>
       ${monthRow.date?`<div class="rrow"><span>Due date</span><span class="mono">${fmtDate(monthRow.date)}</span></div>`:''}
       <div class="rrow"><span>Payment number</span><span class="mono">${monthRow.n} of ${total}</span></div>
+      <div class="rrow"><span>Interest rate</span><span class="mono">${payRate}</span></div>
       <div class="rrow"><span>Principal</span><span class="mono">${fmt(monthRow.principal)}</span></div>
       <div class="rrow"><span>Interest</span><span class="mono">${fmt(monthRow.interest)}</span></div>
       <div class="rrow bold"><span>Balance after payment</span><span class="mono">${fmt(monthRow.bal)}</span></div>
       <div class="rtotal"><span>PAYMENT DUE</span><span class="mono">${fmt(monthRow.pay)}</span></div>`;
-  } else if (!act.paidOff && fwd.rows.length) {
-    // ── Entire remaining amortization schedule ──
-    lastReportTitle = 'Loan Summary — ' + (loan.name || 'Loan');
-    body += `<div class="rsec">REMAINING SCHEDULE</div>
-      <table class="rtable"><thead><tr><th style="text-align:left">DATE</th><th style="text-align:right">PAYMENT</th><th style="text-align:right">PRINCIPAL</th><th style="text-align:right">INTEREST</th><th style="text-align:right">BALANCE</th></tr></thead><tbody>
-      ${fwd.rows.map(row => `<tr><td class="mono">${esc(row.label)}</td><td class="mono" data-label="Payment" style="text-align:right">${fmt(row.pay)}</td><td class="mono" data-label="Principal" style="text-align:right">${fmt(row.principal)}</td><td class="mono" data-label="Interest" style="text-align:right">${fmt(row.interest)}</td><td class="mono" data-label="Balance" style="text-align:right">${fmt(row.bal)}</td></tr>`).join('')}
-      </tbody></table>`;
   } else {
+    // ── Entire schedule: a compact summary + the remaining table ──
     lastReportTitle = 'Loan Summary — ' + (loan.name || 'Loan');
+    const curRate = rateFmt(loanRateOn(comp, today()));
+    body = `<div class="rsec">SUMMARY</div>
+      <div class="rrow"><span>Interest rate (current)</span><span class="mono">${curRate}</span></div>
+      <div class="rrow"><span>Monthly payment</span><span class="mono">${fmt(comp.firstMonthly)}</span></div>
+      <div class="rrow bold"><span>Remaining balance</span><span class="mono">${fmt(act.remaining)}</span></div>
+      ${act.paidOff?'<div class="rrow"><span>Status</span><span class="mono">Paid off</span></div>'
+        :(fwd.payoffDate?`<div class="rrow"><span>Projected payoff</span><span class="mono">${fmtDate(fwd.payoffDate)}</span></div>`:'')}`;
+    if (!act.paidOff && fwd.rows.length) {
+      body += `<div class="rsec">REMAINING SCHEDULE</div>
+        <table class="rtable"><thead><tr><th style="text-align:left">DATE</th><th style="text-align:right">PAYMENT</th><th style="text-align:right">PRINCIPAL</th><th style="text-align:right">INTEREST</th><th style="text-align:right">BALANCE</th></tr></thead><tbody>
+        ${fwd.rows.map(row => `<tr><td class="mono">${esc(row.label)}</td><td class="mono" data-label="Payment" style="text-align:right">${fmt(row.pay)}</td><td class="mono" data-label="Principal" style="text-align:right">${fmt(row.principal)}</td><td class="mono" data-label="Interest" style="text-align:right">${fmt(row.interest)}</td><td class="mono" data-label="Balance" style="text-align:right">${fmt(row.bal)}</td></tr>`).join('')}
+        </tbody></table>`;
+    }
   }
 
-  lastReportHTML = reportDoc(bizName, bizMeta, 'Loan Summary', period, body);
+  lastReportHTML = reportDoc(bizName, bizMeta, docTitle, period, body);
 }
 
 // On-screen wrapper for a report (header bar with Print button + the printable body shown inline)
