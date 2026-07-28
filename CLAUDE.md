@@ -494,8 +494,9 @@ minute until the cache refreshes.
 - **Dashboard:** 4 stat cards (Total Revenue, Total Expenses, Net Profit,
   Outstanding) + Upcoming card (next 30 days of jobs / unpaid invoices /
   recurring runs) + collapsible Calendar (month-grid view) + 6-month
-  Income-vs-Expenses bar chart + Recent Invoices/Expenses + collapsible
-  Reports.
+  Income-vs-Expenses bar chart + collapsible Reports. (The Recent
+  Invoices/Expenses cards were removed in v452 — the Invoices/Expenses tabs
+  hold the full lists.)
 - **Jobs / Calendar:** add jobs (title + date + optional time + optional
   customer link + optional `remind_minutes` push reminder). The Calendar card
   on the dashboard shows a month grid with color-coded chips (violet=job,

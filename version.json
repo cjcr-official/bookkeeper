@@ -1,1 +1,1 @@
-{"version":451,"note":"v451: Fix Samsung/Android printing blank pages. Printing the off-screen iframe rendered in the preview but came out blank on an actual printer (while Save-as-PDF worked). Android now prints via the generated PDF directly — the same artifact that already printed fine — so Print and Save match. iOS/desktop keep the native print dialog."}
+{"version":452,"note":"v452: Removed the Recent Invoices and Recent Expenses cards from the dashboard/home page. The Reports section stays; use the Invoices / Expenses tabs to see the full lists."}
