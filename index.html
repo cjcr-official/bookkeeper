@@ -7699,10 +7699,10 @@ function buildLoanReportDoc(loan, monthKey) {
       <div class="rrow"><span>${esc(intLabel)}</span><span class="mono">${fmt(monthRow.interest)}</span></div>
       <div class="rrow"><span>Principal</span><span class="mono">${fmt(monthRow.principal)}</span></div>
       <div class="rrow bold"><span>Payment amount</span><span class="mono">${fmt(monthRow.pay)}</span></div>
-      <div class="rsec">NEW BALANCE</div>
+      <div class="rsec">NEW BALANCE${monthRow.date ? ' · ' + esc(fmtDate(monthRow.date).toUpperCase()) : ''}</div>
       <div class="rrow"><span>Current balance</span><span class="mono">${fmt(balBefore)}</span></div>
       <div class="rrow"><span>Less principal</span><span class="mono">-${fmt(monthRow.principal)}</span></div>
-      <div class="rtotal"><span>NEW BALANCE${monthRow.date ? ' · ' + fmtDate(monthRow.date) : ''}</span><span class="mono">${fmt(monthRow.bal)}</span></div>
+      <div class="rtotal"><span>NEW BALANCE</span><span class="mono">${fmt(monthRow.bal)}</span></div>
       <div style="margin-top:2.5rem;max-width:340px">
         <div style="border-bottom:1px solid #1a1a1a;height:2.4rem"></div>
         <div style="font-size:11px;color:#444;margin-top:.4rem;font-weight:700;letter-spacing:.4px;text-transform:uppercase">Prepared by${p.company ? ' · ' + esc(p.company) : ''}</div>
