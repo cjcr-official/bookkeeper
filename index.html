@@ -3859,13 +3859,13 @@ function renderUpcoming() {
   });
   if (!isModuleHidden('loan')) (cache.loans||[]).forEach(l => {
     const comp = computeLoan(loanToObj(l)); if (!comp.valid) return;
-    const next = comp.rows[loanActual(l, comp).covered];   // first unpaid scheduled payment (balance-derived)
+    const next = loanForwardSchedule(l, comp, loanActual(l, comp)).rows[0];   // next real payment due (re-forecast)
     if (!next || !next.date || next.date > horizon) return;
     const overdue = next.date < todayStr;
     items.push({
       date: next.date,
       type: overdue ? 'Loan payment due' : 'Loan payment',
-      label: (l.name||'Loan') + ' · payment ' + next.k,
+      label: (l.name||'Loan') + ' · payment ' + next.n,
       icon: 'ti-building-bank',
       onclick: `openLoanFromCal('${l.id}')`,
       amount: next.pay,
@@ -5929,6 +5929,53 @@ function loanActual(loan, comp) {
   for (const r of comp.rows) { if (r.bal >= bal - 0.01) covered++; else break; }
   return { count: pays.length, covered, paidTotal, interestPaid, principalPaid, remaining: bal, paidOff: comp.valid && bal <= 0.01 };
 }
+// Re-project the loan FORWARD from where the borrower actually is: take the TRUE
+// remaining balance (from recorded payments) and amortize it at the scheduled
+// payment, starting the month AFTER the last payment. This is what makes the
+// timeframe + payoff date adjust to reality — pay extra and the payoff moves in,
+// fall behind and it moves out — instead of parroting the fixed origination
+// schedule (which dated future months as "paid" once you were ahead on balance).
+// `made` = payments actually recorded; each forward row carries its absolute
+// payment number `n` = made + its position. For an on-time payer this reproduces
+// the original remaining schedule exactly (no regression).
+function loanForwardSchedule(loan, comp, act) {
+  const out = { rows: [], nextDate: null, payoffDate: null, made: 0, count: 0, remaining: act.remaining, paidOff: act.paidOff, noAmortize: false };
+  const pays = loanPays(loan);
+  out.made = pays.length;
+  if (!comp.valid || comp.noAmortize) return out;
+  if (act.paidOff || act.remaining <= 0.01) { out.paidOff = true; return out; }
+  const startDate = comp.startDate;
+  let d = null;
+  if (startDate) {
+    if (pays.length) {
+      const last = new Date(pays[pays.length - 1].date + 'T12:00:00');   // pays sorted date-asc
+      d = new Date(last.getFullYear(), last.getMonth() + 1, startDate.getDate());
+    } else {
+      d = new Date(startDate);
+    }
+    out.nextDate = ymd(d);
+  }
+  const pay = comp.firstMonthly;   // scheduled payment (+ any configured extra)
+  let bal = act.remaining, k = 0; const MAX = 1200;
+  while (bal > 0.005 && k < MAX) {
+    const rateM = d ? loanRateOn(comp, ymd(d)) : comp.r;
+    const interest = bal * rateM;
+    let principal = pay - interest;
+    if (principal <= 0) { out.noAmortize = true; break; }   // payment no longer covers interest
+    if (principal > bal) principal = bal;
+    bal -= principal; k++;
+    out.rows.push({
+      k, n: out.made + k,
+      date: d ? ymd(d) : null,
+      label: d ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : ('#' + (out.made + k)),
+      pay: principal + interest, principal, interest, bal: Math.max(0, bal),
+    });
+    if (d) d = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  }
+  out.count = k;
+  out.payoffDate = out.rows.length ? out.rows[out.rows.length - 1].date : null;
+  return out;
+}
 // Resolve a step to a 1-based payment number. With a First payment date + a step
 // date, count whole months between them (payment #1 = the first payment's month);
 // otherwise fall back to the typed payment number.
@@ -5984,9 +6031,11 @@ function renderLoanList(body) {
     const comp = computeLoan(loanToObj(l));
     const act = loanActual(l, comp);
     const remaining = act.remaining;
-    const next = comp.rows[act.covered];
-    const pct = comp.P > 0 ? Math.min(100, Math.max(0, Math.round((comp.P - remaining) / comp.P * 100))) : 0;
     const paidOff = comp.valid && act.paidOff;
+    const fwd = comp.valid ? loanForwardSchedule(l, comp, act) : null;
+    const next = fwd && fwd.rows.length ? fwd.rows[0] : null;
+    const total = fwd ? fwd.made + fwd.count : 0;
+    const pct = comp.P > 0 ? Math.min(100, Math.max(0, Math.round((comp.P - remaining) / comp.P * 100))) : 0;
     return '<div class="card cust-card" style="cursor:pointer;margin-bottom:.75rem" onclick="openLoanDetail(\'' + l.id + '\')">' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;padding:.9rem 1rem">' +
         '<div style="min-width:0">' +
@@ -6003,8 +6052,8 @@ function renderLoanList(body) {
       (comp.valid && !paidOff ? '<div style="padding:0 1rem .9rem">' +
         '<div style="height:6px;background:var(--border);border-radius:99px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--accent)"></div></div>' +
         '<div style="display:flex;justify-content:space-between;margin-top:.4rem;font-size:11px;color:var(--text3);font-family:\'JetBrains Mono\',monospace">' +
-          '<span>' + act.covered + ' / ' + comp.payoffCount + ' paid</span>' +
-          (next ? '<span>next ' + (next.date ? fmtDate(next.date) : '#' + next.k) + '</span>' : '') +
+          '<span>' + act.count + ' / ' + total + ' paid</span>' +
+          (next ? '<span>next ' + (next.date ? fmtDate(next.date) : '#' + next.n) + '</span>' : '') +
         '</div></div>' : '') +
     '</div>';
   }).join('');
@@ -6029,14 +6078,29 @@ function renderLoanDetail(body, loan) {
   }
   const remaining = act.remaining;
   const paidOff = act.paidOff;
-  const next = comp.rows[act.covered];
-  const payoffStr = paidOff ? 'Paid off' : (next ? (next.date ? fmtDate(next.date) : '#' + next.k) : '—');
+  // Forward projection from where the payments actually put you — drives the next
+  // payment, the (adjusted) payoff date, and the schedule below.
+  const fwd = loanForwardSchedule(loan, comp, act);
+  const next = fwd.rows[0];
+  const payoffStr = paidOff ? 'Paid off' : (fwd.payoffDate ? fmtDate(fwd.payoffDate) : (next ? (next.date ? fmtDate(next.date) : '#' + next.n) : '—'));
+  // Original (as-scheduled) payoff, so we can show how far the extra payments moved it in.
+  const origPayoff = comp.rows.length ? comp.rows[comp.rows.length - 1].date : null;
+  const totalPayments = fwd.made + fwd.count;   // real payments made + remaining projected
   html += '<div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">' +
     loanStatCard('Monthly Payment', comp.noAmortize ? '—' : fmt(comp.firstMonthly), comp.changeCount ? ('first payment · adjusts ' + comp.changeCount + '×') : (comp.extra > 0 ? 'incl. ' + fmt(comp.extra) + ' extra' : 'principal + interest')) +
     loanStatCard('Remaining Balance', fmt(remaining), act.count ? (act.count + ' payment' + (act.count > 1 ? 's' : '') + ' made') : 'no payments yet', paidOff ? 'color:var(--green)' : '') +
     loanStatCard('Total Interest', comp.noAmortize ? '—' : fmt(comp.totalInterest), act.interestPaid > 0.005 ? (fmt(act.interestPaid) + ' paid so far') : 'projected over the loan', 'color:var(--red)') +
-    loanStatCard(paidOff ? 'Payoff' : 'Next Payment', paidOff ? payoffStr : (next ? fmt(next.pay) : '—'), paidOff ? (comp.payoffCount + ' payments') : (next ? (next.date ? fmtDate(next.date) : 'payment #' + next.k) : '—')) +
-  '</div>';
+    (paidOff
+      ? loanStatCard('Payoff', 'Paid off', act.count + ' payments', 'color:var(--green)')
+      : loanStatCard('Next Payment', next ? fmt(next.pay) : '—', next ? (next.date ? fmtDate(next.date) : 'payment #' + next.n) : '—')) +
+  '</div>' +
+  (!paidOff && fwd.payoffDate ? '<div class="card" style="margin-top:.75rem;padding:.7rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem">' +
+      '<div style="font-size:11px;color:var(--text3);font-family:\'JetBrains Mono\',monospace;text-transform:uppercase;letter-spacing:.5px">Projected payoff</div>' +
+      '<div style="text-align:right;font-family:\'JetBrains Mono\',monospace"><div style="font-weight:800;font-size:15px">' + fmtDate(fwd.payoffDate) + '</div>' +
+        (origPayoff && origPayoff.slice(0, 7) !== fwd.payoffDate.slice(0, 7)
+          ? '<div style="font-size:10.5px;color:var(--text3);margin-top:.1rem">' + (origPayoff > fwd.payoffDate ? 'was ' : 'behind: was ') + fmtDate(origPayoff) + '</div>' : '') +
+      '</div>' +
+    '</div>' : '');
 
   // ── Payment calendar for this loan (its own month cursor) ──
   if (!_loanCalCursor) {
@@ -6048,8 +6112,11 @@ function renderLoanDetail(body, loan) {
   }
   const cy = _loanCalCursor.getFullYear(), cm = _loanCalCursor.getMonth();
   const ymPref = cy + '-' + String(cm + 1).padStart(2, '0');
+  // Real recorded payments show as PAID (green); the forward projection fills in the
+  // UPCOMING dots — so the calendar never again dots a future month as already paid.
   const byDay = {};
-  comp.rows.forEach(row => { if (row.date && row.date.slice(0, 7) === ymPref) byDay[parseInt(row.date.slice(8, 10), 10)] = row; });
+  loanPays(loan).forEach(p => { if (p.date && p.date.slice(0, 7) === ymPref) byDay[parseInt(p.date.slice(8, 10), 10)] = { date: p.date, pay: loanNum(p.amount), paid: true }; });
+  fwd.rows.forEach(row => { if (row.date && row.date.slice(0, 7) === ymPref && !byDay[parseInt(row.date.slice(8, 10), 10)]) byDay[parseInt(row.date.slice(8, 10), 10)] = { date: row.date, pay: row.pay, paid: false, n: row.n }; });
   const firstDow = new Date(cy, cm, 1).getDay();
   const dim = new Date(cy, cm + 1, 0).getDate();
   const todayStr = today();
@@ -6059,11 +6126,10 @@ function renderLoanDetail(body, loan) {
   for (let d = 1; d <= dim; d++) {
     const ds = ymPref + '-' + String(d).padStart(2, '0');
     const row = byDay[d];
-    const done = row && row.k <= act.covered;
     cal += '<div class="loan-cal-cell' + (ds === todayStr ? ' today' : '') + (row ? ' loan-cal-has' : '') + (row && ds === _loanSelDay ? ' sel' : '') + '"' +
       (row ? ' onclick="loanSelDay(\'' + ds + '\')"' : '') + '>' +
       '<span class="loan-cal-d">' + d + '</span>' +
-      (row ? '<span class="loan-cal-dot' + (done ? ' done' : '') + '"></span>' : '') +
+      (row ? '<span class="loan-cal-dot' + (row.paid ? ' done' : '') + '"></span>' : '') +
     '</div>';
   }
   cal += '</div>';
@@ -6071,11 +6137,10 @@ function renderLoanDetail(body, loan) {
   const selRow = (_loanSelDay && _loanSelDay.slice(0, 7) === ymPref) ? byDay[parseInt(_loanSelDay.slice(8, 10), 10)] : null;
   let selLine = '';
   if (selRow) {
-    const selDone = selRow.k <= act.covered;
     selLine = '<div style="margin-top:.7rem;text-align:center;font-size:12.5px;font-family:\'JetBrains Mono\',monospace">' +
-      '<span style="color:var(--text2)">' + (selRow.date ? fmtDate(selRow.date) : '#' + selRow.k) + ' · payment ' + selRow.k + '</span>' +
+      '<span style="color:var(--text2)">' + fmtDate(selRow.date) + (selRow.paid ? '' : (selRow.n ? ' · payment ' + selRow.n : '')) + '</span>' +
       '<span style="font-weight:700;margin-left:.5rem">' + fmt(selRow.pay) + '</span>' +
-      '<span style="margin-left:.5rem;color:' + (selDone ? 'var(--green)' : 'var(--text3)') + '">' + (selDone ? 'paid' : 'upcoming') + '</span>' +
+      '<span style="margin-left:.5rem;color:' + (selRow.paid ? 'var(--green)' : 'var(--text3)') + '">' + (selRow.paid ? 'paid' : 'upcoming') + '</span>' +
     '</div>';
   }
   const calOpen = lsGet('bk-loan-cal-open') === '1';   // collapsed by default
@@ -6114,8 +6179,8 @@ function renderLoanDetail(body, loan) {
     payList +
   '</div>';
 
-  // ── Projected schedule (paid rows checked off) ──
-  html += loanScheduleHtml(comp, act);
+  // ── Projected schedule (re-forecast forward from your actual balance) ──
+  html += loanScheduleHtml(comp, fwd);
   body.innerHTML = html;
 }
 function loanCalNav(delta) { if (!_loanCalCursor) return; _loanCalCursor = new Date(_loanCalCursor.getFullYear(), _loanCalCursor.getMonth() + delta, 1); _loanSelDay = null; renderLoan(); }
@@ -6124,11 +6189,20 @@ function loanCalNav(delta) { if (!_loanCalCursor) return; _loanCalCursor = new D
 // never toggles the card.
 function toggleLoanCal(header) { const card = header.closest('.card'); if (!card) return; const collapsed = card.classList.toggle('collapsed'); try { lsSet('bk-loan-cal-open', collapsed ? '0' : '1'); } catch (e) {} }
 
-function loanScheduleHtml(comp, act) {
-  const rows = comp.rows; if (!rows.length) return '';
+// Renders the FORWARD-projected schedule (from loanForwardSchedule): only the
+// payments still to come, re-forecast from your real remaining balance, so the
+// list ends on the adjusted payoff. Past payments live in the Payments card.
+function loanScheduleHtml(comp, fwd) {
+  const card = inner => '<div class="card" style="margin-top:1rem"><div class="card-header"><h3>Schedule</h3></div>' + inner + '</div>';
+  if (fwd.paidOff) return card('<div style="padding:1.25rem;text-align:center;color:var(--green);font-weight:700">This loan is paid off. 🎉</div>');
+  const rows = fwd.rows;
+  if (!rows.length) return card('<div style="padding:1.25rem;text-align:center;color:var(--text3);font-size:13px">' +
+    (fwd.noAmortize ? 'At this payment the balance never pays down — raise the payment or lower the rate.' : 'Add the loan amount, rate, and term to see the schedule.') + '</div>');
+
+  // Year-by-year of the REMAINING schedule (each group = 12 upcoming payments).
   const yearly = [];
-  rows.forEach(row => {
-    const yi = Math.floor((row.k - 1) / 12);
+  rows.forEach((row, idx) => {
+    const yi = Math.floor(idx / 12);
     if (!yearly[yi]) yearly[yi] = { yr: yi + 1, pay: 0, principal: 0, interest: 0, bal: row.bal };
     yearly[yi].pay += row.pay; yearly[yi].principal += row.principal;
     yearly[yi].interest += row.interest; yearly[yi].bal = row.bal;
@@ -6136,23 +6210,15 @@ function loanScheduleHtml(comp, act) {
   const yhead = '<tr><th>Year</th><th>Paid</th><th>Principal</th><th>Interest</th><th>Balance</th></tr>';
   const yrows = yearly.map(y => '<tr class="loan-yr"><td>Year ' + y.yr + '</td><td>' + fmt(y.pay) + '</td><td>' + fmt(y.principal) + '</td><td>' + fmt(y.interest) + '</td><td>' + fmt(y.bal) + '</td></tr>').join('');
   const yearBlock = '<div class="loan-sched-wrap" style="padding:.4rem .5rem 1rem"><table class="loan-sched">' + yhead + yrows + '</table></div>';
-  // The next payment due (balance-derived, so it honors skipped / extra / lump-sum
-  // payments) — the row we anchor the default view on.
-  const nextK = act.paidOff ? 0 : act.covered + 1;
-  // Each payment is its own clean two-line row: date + principal/interest split on
-  // the left, payment amount + running balance on the right. (A 5-column table
-  // collapsed into unlabeled stacked dollar figures on a phone.)
-  const payRow = row => {
-    const paid = row.k <= act.covered;
-    const isNext = row.k === nextK;
-    const mark = paid ? '✓' : (isNext ? '▸' : '');
-    const step = row.isStep ? ' · <span style="color:var(--accent-text)">rate ' + (row.rateM * 1200).toFixed(2).replace(/\.?0+$/, '') + '%</span>' : '';
-    const tag = isNext ? '<span class="loan-ptag">NEXT</span>' : '';
-    return '<div class="loan-prow' + (paid ? ' paid' : '') + (isNext ? ' next' : '') + '">' +
-      '<div class="loan-pmark">' + mark + '</div>' +
+
+  // Clean two-line rows; the first upcoming payment is the NEXT one due.
+  const payRow = (row, idx) => {
+    const isNext = idx === 0;
+    return '<div class="loan-prow' + (isNext ? ' next' : '') + '">' +
+      '<div class="loan-pmark">' + (isNext ? '▸' : '') + '</div>' +
       '<div class="loan-pmain">' +
-        '<div class="loan-pdate">' + row.label + tag + '</div>' +
-        '<div class="loan-psub">interest ' + fmt(row.interest) + step + '</div>' +
+        '<div class="loan-pdate">' + row.label + (isNext ? '<span class="loan-ptag">NEXT</span>' : '') + '</div>' +
+        '<div class="loan-psub">interest ' + fmt(row.interest) + '</div>' +
       '</div>' +
       '<div class="loan-pright">' +
         '<div class="loan-pamt">' + fmt(row.pay) + '</div>' +
@@ -6160,41 +6226,27 @@ function loanScheduleHtml(comp, act) {
       '</div>' +
     '</div>';
   };
-  const listOf = rowSet => '<div class="loan-plist">' + rowSet.map(payRow).join('') + '</div>';
-
-  // Short loan — the whole thing fits, just show every payment.
-  if (rows.length <= 12) {
-    return '<div class="card" style="margin-top:1rem">' +
-      '<div class="card-header"><h3>Schedule</h3></div>' +
-      listOf(rows) +
-    '</div>';
-  }
-
-  // Long loan — LEAD with where you actually are (a few paid rows behind for
-  // context, then the upcoming payments) so the Schedule opens on today instead
-  // of a list you scroll past forever. The complete list and the year-by-year
-  // breakdown are tucked into toggles below.
-  const BACK = 3, FWD = 12;
-  let from = Math.max(0, act.covered - BACK);
-  let to = Math.min(rows.length, act.covered + FWD);
-  if (to - from < 15) to = Math.min(rows.length, from + 15);   // keep a useful window near the very end
-  if (to - from < 15) from = Math.max(0, to - 15);
-  const pos = act.paidOff ? 'Paid off · ' + comp.payoffCount + ' payments'
-    : 'Payment ' + (act.covered + 1) + ' of ' + comp.payoffCount + ' coming up';
+  const listOf = rs => '<div class="loan-plist">' + rs.map(payRow).join('') + '</div>';
   const summaryStyle = 'cursor:pointer;font-size:12px;color:var(--accent-text);font-family:\'JetBrains Mono\',monospace;padding:.7rem 0';
-  return '<div class="card" style="margin-top:1rem">' +
-    '<div class="card-header"><h3>Schedule</h3></div>' +
+  const total = fwd.made + fwd.count;
+  const pos = fwd.count + ' payment' + (fwd.count === 1 ? '' : 's') + ' left' + (fwd.made ? ' · ' + fwd.made + ' of ' + total + ' made' : ' of ' + total);
+
+  if (rows.length <= 15) {
+    return card(
+      '<div style="padding:.2rem 1rem .1rem;font-size:11px;color:var(--text3);font-family:\'JetBrains Mono\',monospace;text-transform:uppercase;letter-spacing:.5px">' + pos + '</div>' +
+      listOf(rows));
+  }
+  return card(
     '<div style="padding:.2rem 1rem .1rem;font-size:11px;color:var(--text3);font-family:\'JetBrains Mono\',monospace;text-transform:uppercase;letter-spacing:.5px">' + pos + '</div>' +
-    listOf(rows.slice(from, to)) +
+    listOf(rows.slice(0, 15)) +
     '<div style="border-top:1px solid var(--border)">' +
-      '<details style="padding:0 1rem"><summary style="' + summaryStyle + '">Show all ' + rows.length + ' payments</summary>' +
+      '<details style="padding:0 1rem"><summary style="' + summaryStyle + '">Show all ' + rows.length + ' remaining payments</summary>' +
         listOf(rows) + '</details>' +
     '</div>' +
     '<div style="border-top:1px solid var(--border)">' +
       '<details style="padding:0 1rem 1rem"><summary style="' + summaryStyle + '">Year-by-year breakdown</summary>' +
         yearBlock + '</details>' +
-    '</div>' +
-  '</div>';
+    '</div>');
 }
 
 // ── Loan editor (doubles as the calculator, with a live preview) ──
@@ -6280,7 +6332,7 @@ function openLoanPayment(loanId, payId) {
   document.getElementById('loan-pay-id').value = pay ? pay.id : '';
   document.getElementById('loan-pay-title').textContent = pay ? 'Edit Payment' : 'Record a Payment';
   const comp = computeLoan(loanToObj(loan)), act = loanActual(loan, comp);
-  const next = comp.rows[act.covered];
+  const next = loanForwardSchedule(loan, comp, act).rows[0];   // next real payment due (re-forecast)
   // A recorded payment defaults to TODAY — the day you're actually logging it — not the
   // next scheduled amortization date. Lump-sum / irregular payers cover several scheduled
   // months at once, which pushes `next.date` years into the future; defaulting to that
@@ -6290,7 +6342,7 @@ function openLoanPayment(loanId, payId) {
   document.getElementById('loan-pay-note').value = pay ? (pay.note || '') : '';
   document.getElementById('loan-pay-delete-btn').style.display = pay ? '' : 'none';
   const hint = document.getElementById('loan-pay-hint');
-  if (hint) hint.textContent = (!pay && next) ? ('Scheduled payment ' + (act.covered + 1) + ': ' + fmt(next.pay)) : '';
+  if (hint) hint.textContent = (!pay && next) ? ('Next payment ' + next.n + ': ' + fmt(next.pay)) : '';
   openModal('modal-loan-payment');
 }
 async function saveLoanPayment() {
@@ -6822,17 +6874,22 @@ function calItemsByDate() {
       (out[ds] = out[ds] || []).push({ kind:'bill', id:b.id, label:(b.name||'Bill'), time:'', done:isBillPaid(b.id,py,pm), onclick:`showPage('budget',null)` });
     });
   }
-  // Loan payment due dates: drop a chip on each scheduled payment in (or adjacent
-  // to) the shown month, marked done once that payment number has been recorded.
+  // Loan payments: recorded payments (done) plus the forward-projected upcoming
+  // payments — re-forecast from the real balance, so future months are never
+  // mislabeled as already paid.
   if (!isModuleHidden('loan')) {
     const ly = calCursor.getFullYear(), lm = calCursor.getMonth();
     const wantYM = new Set([0,1,-1].map(o => { const d = new Date(ly, lm + o, 1); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0'); }));
     (cache.loans||[]).forEach(l => {
       const comp = computeLoan(loanToObj(l)); if (!comp.valid) return;
-      const covered = loanActual(l, comp).covered;
-      comp.rows.forEach(row => {
+      const act = loanActual(l, comp);
+      loanPays(l).forEach(p => {
+        if (!p.date || !wantYM.has(p.date.slice(0,7))) return;
+        (out[p.date] = out[p.date] || []).push({ kind:'loan', id:l.id, label:(l.name||'Loan')+' · '+fmt(loanNum(p.amount)), time:'', done:true, onclick:`openLoanFromCal('${l.id}')` });
+      });
+      loanForwardSchedule(l, comp, act).rows.forEach(row => {
         if (!row.date || !wantYM.has(row.date.slice(0,7))) return;
-        (out[row.date] = out[row.date] || []).push({ kind:'loan', id:l.id, label:(l.name||'Loan')+' · '+fmt(row.pay), time:'', done: row.k <= covered, onclick:`openLoanFromCal('${l.id}')` });
+        (out[row.date] = out[row.date] || []).push({ kind:'loan', id:l.id, label:(l.name||'Loan')+' · '+fmt(row.pay), time:'', done:false, onclick:`openLoanFromCal('${l.id}')` });
       });
     });
   }
