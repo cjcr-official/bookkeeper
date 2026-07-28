@@ -7668,23 +7668,45 @@ function buildLoanReportDoc(loan, monthKey) {
   const monthRow = (monthKey && monthKey !== 'all')
     ? fwd.rows.find(r => (r.date || ('#' + r.n)) === monthKey)
     : null;
-  const total = fwd.made + fwd.count;
 
   let body, period = name, docTitle = 'Loan Summary';
   if (monthRow) {
-    // ── Single selected month: a lean payment slip (rate for THIS payment) ──
+    // ── Single selected month: a Note Payment Slip (current balance → interest
+    //    for the period, broken out as days × per-day → principal → new balance) ──
     period = name + ' · ' + monthRow.label;
-    docTitle = 'Loan Payment';
-    lastReportTitle = 'Loan Payment — ' + (loan.name || 'Loan') + ' ' + monthRow.label;
+    docTitle = 'Note Payment Slip';
+    lastReportTitle = 'Note Payment Slip — ' + (loan.name || 'Loan') + ' ' + monthRow.label;
     const payRate = rateFmt(loanRateOn(comp, monthRow.date));
+    const balBefore = monthRow.bal + monthRow.principal;   // balance BEFORE this payment
+    // Day-count for the interest line: previous payment date → this one (falls back
+    // to the last recorded payment, then to one month before this payment).
+    const idx = fwd.rows.indexOf(monthRow);
+    const pays = loanPays(loan);
+    let prevDate = null;
+    if (idx > 0) prevDate = fwd.rows[idx - 1].date;
+    else if (pays.length && pays[pays.length - 1].date) prevDate = pays[pays.length - 1].date;
+    else if (monthRow.date) { const d0 = new Date(monthRow.date + 'T12:00:00'); prevDate = ymd(new Date(d0.getFullYear(), d0.getMonth() - 1, d0.getDate())); }
+    let days = 0;
+    if (prevDate && monthRow.date) days = Math.round((new Date(monthRow.date + 'T12:00:00') - new Date(prevDate + 'T12:00:00')) / 86400000);
+    const perDay = days > 0 ? monthRow.interest / days : 0;
+    const intLabel = days > 0
+      ? `Interest — ${payRate} (${days} days × ${fmt(perDay)}/day)`
+      : `Interest — ${payRate}`;
+    const dateTxt = monthRow.date ? fmtDate(monthRow.date) : ('#' + monthRow.n);
     body = `<div class="rsec">PAYMENT · ${esc(monthRow.label.toUpperCase())}</div>
-      ${monthRow.date?`<div class="rrow"><span>Due date</span><span class="mono">${fmtDate(monthRow.date)}</span></div>`:''}
-      <div class="rrow"><span>Payment number</span><span class="mono">${monthRow.n} of ${total}</span></div>
-      <div class="rrow"><span>Interest rate</span><span class="mono">${payRate}</span></div>
+      <div class="rrow"><span>Date</span><span class="mono">${dateTxt}</span></div>
+      <div class="rrow"><span>Current loan balance</span><span class="mono">${fmt(balBefore)}</span></div>
+      <div class="rrow"><span>${esc(intLabel)}</span><span class="mono">${fmt(monthRow.interest)}</span></div>
       <div class="rrow"><span>Principal</span><span class="mono">${fmt(monthRow.principal)}</span></div>
-      <div class="rrow"><span>Interest</span><span class="mono">${fmt(monthRow.interest)}</span></div>
-      <div class="rrow bold"><span>Balance after payment</span><span class="mono">${fmt(monthRow.bal)}</span></div>
-      <div class="rtotal"><span>PAYMENT DUE</span><span class="mono">${fmt(monthRow.pay)}</span></div>`;
+      <div class="rrow bold"><span>Payment amount</span><span class="mono">${fmt(monthRow.pay)}</span></div>
+      <div class="rsec">NEW BALANCE</div>
+      <div class="rrow"><span>Current balance</span><span class="mono">${fmt(balBefore)}</span></div>
+      <div class="rrow"><span>Less principal</span><span class="mono">-${fmt(monthRow.principal)}</span></div>
+      <div class="rtotal"><span>NEW BALANCE${monthRow.date ? ' · ' + fmtDate(monthRow.date) : ''}</span><span class="mono">${fmt(monthRow.bal)}</span></div>
+      <div style="margin-top:2.5rem;max-width:340px">
+        <div style="border-bottom:1px solid #1a1a1a;height:2.4rem"></div>
+        <div style="font-size:11px;color:#444;margin-top:.4rem;font-weight:700;letter-spacing:.4px;text-transform:uppercase">Prepared by${p.company ? ' · ' + esc(p.company) : ''}</div>
+      </div>`;
   } else {
     // ── Entire schedule: a compact summary + the remaining table ──
     lastReportTitle = 'Loan Summary — ' + (loan.name || 'Loan');
