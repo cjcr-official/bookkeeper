@@ -1,1 +1,1 @@
-{"version":453,"note":"v453: Fixed the Loan payment calendar's huge gap under the weekday header. The first week (with blank leading cells) was rendered ~double height by iOS Safari's aspect-ratio grid sizing; calendar rows now use a fixed uniform height, so every week lines up and the calendar is more compact."}
+{"version":454,"note":"v454: Modal/popup titles now use the same Plus Jakarta Sans font as the top-bar page title (was the serif DM Serif Display), so every popup header matches the home/dashboard title in the top-left."}
