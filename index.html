@@ -403,11 +403,13 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .mod-ico{width:34px;height:34px;flex-shrink:0;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--accent-bg);color:var(--accent);font-size:17px}
 #module-toggles .setting-row{padding:.7rem 0;border-bottom:1px solid var(--border)}
 #module-toggles .setting-row:last-child{border-bottom:none}
-/* Section rows: tappable label (expands its settings) + on/off switch. */
-#module-toggles .mod-row{display:flex;align-items:center;gap:.5rem;padding:.7rem 0;border-bottom:1px solid var(--border)}
-#module-toggles .mod-main{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:.7rem;cursor:pointer;text-align:left}
+/* Section rows: tappable label (expands its settings) + on/off switch. The switch
+   is absolutely positioned in a reserved right-hand gutter so it can never be
+   pushed off the card by the label — Safari won't shrink a flex item reliably. */
+#module-toggles .mod-row{position:relative;padding:.7rem 54px .7rem 0;border-bottom:1px solid var(--border)}
+#module-toggles .mod-main{display:flex;align-items:center;gap:.7rem;min-width:0;cursor:pointer;text-align:left}
 #module-toggles .mod-label{flex:1 1 auto;min-width:0}
-#module-toggles .mod-sw-btn{background:none;border:none;padding:0;margin:0;cursor:pointer;flex:0 0 auto}
+#module-toggles .mod-sw-btn{position:absolute;right:0;top:50%;transform:translateY(-50%);background:none;border:none;padding:0;margin:0;cursor:pointer}
 #module-toggles .mod-chev{margin-left:.35rem;color:var(--text3);font-size:16px;flex-shrink:0;transition:transform .18s}
 #module-toggles .mod-chev.open{transform:rotate(180deg)}
 #module-toggles .mod-settings{padding:.1rem 0 .7rem 2.9rem;border-bottom:1px solid var(--border)}
