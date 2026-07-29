@@ -6353,16 +6353,19 @@ function openLoanPayment(loanId, payId) {
   document.getElementById('loan-pay-title').textContent = pay ? 'Edit Payment' : 'Record a Payment';
   const comp = computeLoan(loanToObj(loan)), act = loanActual(loan, comp);
   const next = loanForwardSchedule(loan, comp, act).rows[0];   // next real payment due (re-forecast)
-  // A recorded payment defaults to TODAY — the day you're actually logging it — not the
-  // next scheduled amortization date. Lump-sum / irregular payers cover several scheduled
-  // months at once, which pushes `next.date` years into the future; defaulting to that
-  // stamped recorded payments with far-future dates (the "dates make no sense" bug).
-  document.getElementById('loan-pay-date').value = pay ? (pay.date || today()) : today();
+  // Default a NEW payment's date to the next SCHEDULED payment day — the same day-of-month
+  // as the first payment (e.g. the 23rd), re-forecast one month past the last recorded
+  // payment. That's the date the borrower is almost always recording, and it keeps the
+  // ledger landing on the loan's real due day instead of "whatever today is". The forward
+  // schedule caps this at ~one month past the last payment (never years out), so lump-sum /
+  // irregular payers no longer hit the old far-future-date bug. Editing an existing payment
+  // keeps its own date; with no first-payment date to key off, we fall back to today.
+  document.getElementById('loan-pay-date').value = pay ? (pay.date || today()) : ((next && next.date) ? next.date : today());
   document.getElementById('loan-pay-amount').value = pay ? (pay.amount != null ? pay.amount : '') : (next ? next.pay.toFixed(2) : (comp.firstMonthly ? comp.firstMonthly.toFixed(2) : ''));
   document.getElementById('loan-pay-note').value = pay ? (pay.note || '') : '';
   document.getElementById('loan-pay-delete-btn').style.display = pay ? '' : 'none';
   const hint = document.getElementById('loan-pay-hint');
-  if (hint) hint.textContent = (!pay && next) ? ('Next payment ' + next.n + ': ' + fmt(next.pay)) : '';
+  if (hint) hint.textContent = (!pay && next) ? ('Next payment ' + next.n + (next.date ? ' · ' + fmtDate(next.date) : '') + ': ' + fmt(next.pay)) : '';
   openModal('modal-loan-payment');
 }
 async function saveLoanPayment() {
