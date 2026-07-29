@@ -168,6 +168,16 @@ this first (silent refresh) and only opens Plaid Link when `needs_reauth` — so
 "Reconnect" fixes both stale-data and login-required breakage without a
 disconnect/re-add.
 
+**Per-bank nicknames (v460+):** Plaid only gives the institution name, so two
+accounts at the same bank (or a generic "Your bank") are indistinguishable.
+`profiles.bank_labels` (jsonb `{item_id: nickname}`) lets the user name each account;
+`bankDisplayName(bank|item_id)` returns nickname → institution → "Your bank" and is
+used everywhere a bank is shown (the Statements bank list, the "Paid from" picker,
+the finder's "Paid from &lt;bank&gt;" chip, the restore-history confirm). A pencil on
+each bank row calls `renameBank()` (a `prompt()`, matching the app's other inline
+edits); when a nickname overrides the real name the row shows the institution as a
+sub-line so both stay visible. Works before the migration (`bankLabels()` → `{}`).
+
 **Multi-bank (v275+):** a user can link several banks. `/plaid/status` returns a
 `banks: [{item_id, institution}]` array. `/plaid/link-token` takes an optional
 `{item_id}` to mint an **update-mode** token (re-auth a bank in place, no duplicate).
@@ -219,6 +229,10 @@ alter table profiles add column if not exists plaid_recon jsonb default '{}'::js
 -- bank; untagged records match any bank (the default). App works before this runs
 -- (reconBankMap() falls back to {}).
 alter table profiles add column if not exists recon_bank jsonb default '{}'::jsonb;
+-- Per-bank nicknames so same-institution accounts are distinguishable. Flat map
+-- {item_id: nickname}; bankDisplayName() falls back to institution then "Your bank".
+-- App works before this runs (bankLabels() falls back to {}).
+alter table profiles add column if not exists bank_labels jsonb default '{}'::jsonb;
 -- Plaid access tokens live here, NOT on profiles: RLS is enabled with NO policy for
 -- authenticated users, so PostgREST returns nothing to the browser — only the Worker
 -- (service key) can read/write it. MULTI-BANK (v275+): the PK is item_id (unique per
