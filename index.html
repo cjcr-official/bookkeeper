@@ -8085,6 +8085,7 @@ async function renderPlaidBlock() {
   renderPlaidPendingNote();
   if (!_recState) renderAuditBlock(_selBank, '', '', null);   // per-bank audit grid, tap-to-pull
   refreshLiveAudit();   // background: stamp the selected bank's current-month dot
+  seedOtherBanksMatched();   // background: learn the OTHER accounts' matches so their records leave this account's lists/suggestions
 }
 // Switch which bank the month buttons reconcile. Clears the open month view and
 // re-renders the card + this bank's audit grid; the per-bank pull cache is kept.
@@ -8328,6 +8329,58 @@ async function refreshLiveAudit() {
   } catch (e) { console.error(e); }
   finally { _liveAuditBusy = false; }
 }
+
+// Background cross-account learning (multi-bank). The reconcile view + its "Dated
+// near this month" suggestions should only show records that belong to the account
+// you're reconciling. A record's account is learned from where it matches (persisted
+// as matched_fps), but that only exists once an account has been reconciled — so on
+// a fresh session the OTHER account's records still surface here. This quietly pulls
+// each NON-selected bank's last ~12 months once per session, runs the matcher, and
+// stamps matched_fps + audit dots, so those records are recognized as belonging to
+// their own account and drop out of THIS account's lists/suggestions automatically —
+// no "Check all 12 months" chore. Fire-and-forget; re-renders the open view only if
+// something changed.
+let _seededBanks = new Set();
+let _seedingBusy = false;
+async function seedOtherBanksMatched() {
+  if (_seedingBusy || !_plaidConnected || (_plaidBanks || []).length < 2) return;
+  const targets = _plaidBanks.filter(b => b.item_id && b.item_id !== _selBank && !_seededBanks.has(b.item_id));
+  if (!targets.length) return;
+  _seedingBusy = true;
+  // 13 months (12 full + the current one) so recent records are attributed too.
+  const months = [];
+  const d0 = new Date(); d0.setDate(1);
+  for (let k = 12; k >= 0; k--) { const x = new Date(d0); x.setMonth(x.getMonth() - k); months.push(x.toISOString().slice(0, 7)); }
+  const first = months[0], lastM = months[months.length - 1];
+  const [ly, lm] = lastM.split('-').map(Number);
+  const end = `${lastM}-${String(new Date(ly, lm, 0).getDate()).padStart(2, '0')}`;
+  let changed = false;
+  try {
+    for (const b of targets) {
+      _seededBanks.add(b.item_id);   // mark up front; on error we remove it to allow a retry
+      try {
+        const data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ item_id: b.item_id, start_date: first + '-01', end_date: end }) });
+        const byMonth = {};
+        (data.transactions || []).forEach(t => { const m = (t.date || '').slice(0, 7); (byMonth[m] = byMonth[m] || []).push(t); });
+        const bc = (_plaidCache[b.item_id] = _plaidCache[b.item_id] || {});
+        months.forEach(m => {
+          bc[m] = { transactions: byMonth[m] || [], institution: data.institution };   // cache so a later tap on this bank is instant
+          const comp = reconcileMatch(buildPlaidStmt(m, bc[m], b.item_id), null);
+          if (setMatchedFps(b.item_id, m, comp.matchedFps)) changed = true;
+          if (setAuditResult(b.item_id, m, comp.passed)) changed = true;
+        });
+      } catch (e) { console.error('seed bank', b.item_id, e); _seededBanks.delete(b.item_id); }
+    }
+    if (changed) {
+      try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon, audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); }
+      // Refresh the open month (its suggestions now exclude the other account's
+      // records) or the audit grid; skip if the user has since navigated away.
+      const s = _recState;
+      if (s && s.stmt) renderReconcile(s.stmt, s.acctId, s.path);
+      else if (currentPage === 'accounts') renderAuditBlock(_selBank, '', '', null);
+    }
+  } finally { _seedingBusy = false; }
+}
 // Disconnect one bank (by item_id) — or, with no id, every bank (legacy).
 async function plaidDisconnect(itemId) {
   if (!confirm('Disconnect this bank? You can reconnect any time.')) return;
@@ -8387,7 +8440,8 @@ async function plaidReconnect(itemId) {
 // Rebuild a Plaid month's statement object from raw pulled data: stable sort,
 // then re-apply the user's saved per-month line edits (splits / amount fixes)
 // and manual reconcile state from profiles.plaid_recon.
-function buildPlaidStmt(month, data) {
+function buildPlaidStmt(month, data, bankKey) {
+  bankKey = bankKey || _selBank;   // defaults to the selected bank; background seeding passes another
   const [y, m] = month.split('-').map(Number);
   const start = month + '-01';
   const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
@@ -8395,11 +8449,11 @@ function buildPlaidStmt(month, data) {
   // indices stay valid across re-pulls — Plaid may return rows in a different order.
   const txns = (data.transactions || []).slice().sort((a, b) =>
     (a.date || '').localeCompare(b.date || '') || (a.description || '').localeCompare(b.description || '') || ((a.amount || 0) - (b.amount || 0)));
-  const saved = reconBucket(_selBank)[month] || {};
+  const saved = reconBucket(bankKey)[month] || {};
   applyTxnEdits(txns, saved.txn_edits);
   return {
     account_name: data.institution || 'Bank (Plaid)',
-    bankKey: _selBank,   // audit grid + saved matches are namespaced per bank
+    bankKey: bankKey,   // audit grid + saved matches are namespaced per bank
     period_start: start, period_end: end, statement_month: start,
     opening_balance: null, closing_balance: null,   // Plaid doesn't give a per-month opening/closing balance
     transactions: txns, source: 'plaid',
