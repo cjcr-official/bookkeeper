@@ -106,9 +106,16 @@ on unrelated edits). `matched_fps` is what keeps ACCOUNTS separate without manua
 tagging: a record that reconciled on one account clears through THAT account, so
 `reconcileMatch`'s `gManual` walk consumes both `manual_matches` AND `matched_fps`
 from every OTHER bank's months and marks those records used, dropping them from this
-account's "in your books" list (the finder shows them "On &lt;account&gt;", tap to
-switch). Needs one `plaidCheckYear` per account to seed the claims; self-heals on
-every later reconcile. `gManual` maps fp → `{m, bank}` for that labeling.
+account's "in your books" list AND its "Dated near this month" finder suggestions
+(the finder shows them "On &lt;account&gt;", tap to switch). `gManual` maps fp →
+`{m, bank}` for that labeling. The claims are seeded automatically:
+`seedOtherBanksMatched()` (fired from `renderPlaidBlock`, so on Statements-page open
+and on every bank switch) does one background ~13-month `/plaid/transactions` pull per
+NON-selected bank, once per session (`_seededBanks`), runs the matcher, and stamps
+their `matched_fps` + audit dots — no manual `plaidCheckYear` needed. It re-renders the
+open month only if something changed. `buildPlaidStmt(month, data, bankKey?)` takes an
+optional bankKey (defaults to `_selBank`) so seeding can build another bank's statement.
+Everything self-heals on every later reconcile.
 Cash records are NOT excluded from matching — this business deposits cash income,
 so a cash-paid invoice hits the bank as a deposit and reconciles like everything
 else (several cash payments deposited together match via the combo pass). A
