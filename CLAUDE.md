@@ -82,7 +82,10 @@ Worker secrets (Cloudflare dashboard → Workers & Pages → `bookkeeper` → Se
 Statements (Accounts) page — no modal, no PDF upload (the PDF/pdf.js/
 `/reconcile-extract`/Claude flow was removed; Plaid is the single source). The
 client pulls a month's transactions from the bank, matches them against recorded
-expenses + invoice payments + owner activity + gift cards (amount ±$0.01, date
+expenses + invoice payments + owner activity + gift cards + loan payments
+(recorded `loans.payments`, money out; fp `l:<loanId>:<payId>`) + paid budget
+bills (each `bill_paid[YYYY-MM]` occurrence at its due day for the FULL bill
+amount, money out; fp `b:<billId>:<YYYY-MM>`) (amount ±$0.01, date
 window), and shows matched / in-records-only / on-statement-only buckets. It writes
 a per-month audit result: `profiles.audited_months` (jsonb, keyed
 `{accountId: {"YYYY-MM": {passed, at}}}`) — a month "passes" when nothing is
@@ -125,8 +128,12 @@ into the books and explicit-pairs it via `manual_matches`: Add as expense
 (pre-fills the expense modal; `_recPairTxn` makes `saveExpense` pair it), Payment
 on an invoice (picker over `balanceDue > 0`, exact-balance match first), income
 without an invoice (creates a paid invoice dated the deposit day), owner
-draw/contribution, gift-card split, prior-year income/refund, plus
-split/rejoin/fix-amount. Matching itself never silently alters records — only the
+draw/contribution, gift-card split, prior-year income/refund, **Loan payment**
+(`loanPayFromTxn` → pick a loan; records a `loans.payments` row and pairs it),
+**Bill payment** (`billPayFromTxn` → pick one of the statement month's unpaid
+budget bills; flips `bill_paid` and pairs it), plus
+split/rejoin/fix-amount. (The Loan/Bill charge actions only appear when the user
+has loans / budget bills.) Matching itself never silently alters records — only the
 ⋯ actions the user picks write anything. The combo passes (one line ↔ several
 records) cap their candidate pool at the 30 nearest-by-date so a big ledger can't
 freeze the page.
