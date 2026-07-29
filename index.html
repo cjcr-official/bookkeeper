@@ -8323,6 +8323,7 @@ async function refreshLiveAudit() {
     if (setAuditResult(_selBank, m, comp.passed)) {
       try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); }
     }
+    stampMatchedFps(_selBank, m, comp.matchedFps);   // keep this account's cross-account claims fresh
     if (!_recState) renderAuditBlock(_selBank, '', '', null);
   } catch (e) { console.error(e); }
   finally { _liveAuditBusy = false; }
@@ -8471,14 +8472,16 @@ async function plaidCheckYear() {
     const byMonth = {};
     (data.transactions || []).forEach(t => { const m = (t.date || '').slice(0, 7); (byMonth[m] = byMonth[m] || []).push(t); });
     const bc = bankCache();
-    let changed = false;
+    let changed = false, reconChanged = false;
     const results = months.map(m => {
       bc[m] = { transactions: byMonth[m] || [], institution: data.institution };   // month taps are instant now
       const comp = reconcileMatch(buildPlaidStmt(m, bc[m]), null);
       changed = setAuditResult(_selBank, m, comp.passed) || changed;
+      reconChanged = setMatchedFps(_selBank, m, comp.matchedFps) || reconChanged;   // stamp cross-account claims for all 12 months
       return { m, passed: comp.passed, label: comp.monthLabel || m, issues: comp.onBankOnly.length + comp.inRecordsOnly.length };
     });
     if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
+    if (reconChanged) { try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
     _recState = null;   // the summary replaces any open month view
     const bad = results.filter(r => !r.passed);
     const chip = r => `<button class="btn btn-sm" onclick="plaidPullMonth('${r.m}')" style="font-size:11.5px">${escHtml(r.label)} · ${r.issues} to review</button>`;
@@ -8515,7 +8518,9 @@ function reconBucket(bankKey) {
 async function savePlaidRecon(stmt) {
   const month = (stmt.statement_month || '').slice(0, 7);
   if (!month) return;
-  reconBucket(stmt.bankKey || _selBank)[month] = {
+  const bucket = reconBucket(stmt.bankKey || _selBank);
+  const prev = bucket[month] || {};
+  bucket[month] = {
     manual_matches: stmt.manual_matches || [],
     unmatch_t: stmt.unmatch_t || [],
     unmatch_r: stmt.unmatch_r || [],
@@ -8523,10 +8528,31 @@ async function savePlaidRecon(stmt) {
     txn_edits: stmt.txn_edits || [],   // splits + amount fixes, re-applied on the next pull
     skip_fps: stmt.skip_fps || [],     // records set aside for this month ("not on this statement")
     keep_fps: stmt.keep_fps || [],     // cash records the user restored into this month's pool
+    matched_fps: Array.isArray(prev.matched_fps) ? prev.matched_fps : [],   // preserve cross-account claims (stamped by setMatchedFps)
     statement_month: stmt.statement_month || (month + '-01')
   };
   try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); }
   catch (e) { console.error('plaid_recon save failed', e); showToast('Save failed: ' + (e.message || e), 'error'); }
+}
+
+// Record which fingerprints matched a bank line for a bank+month (auto + manual), so
+// OTHER accounts can tell those records already clear through this one. Writes into
+// the plaid_recon bucket; returns true only when the set actually changed (so the
+// caller can skip a redundant DB write). stampMatchedFps saves the change.
+function setMatchedFps(bankKey, month, fps) {
+  if (!month) return false;
+  const bucket = reconBucket(bankKey);
+  const prevArr = (bucket[month] && Array.isArray(bucket[month].matched_fps)) ? bucket[month].matched_fps : [];
+  const next = [...new Set(fps || [])].sort();
+  const prev = [...prevArr].sort();
+  if (prev.length === next.length && prev.every((v, i) => v === next[i])) return false;   // unchanged
+  bucket[month] = { ...(bucket[month] || {}), matched_fps: next };
+  return true;
+}
+async function stampMatchedFps(bankKey, month, fps) {
+  if (!currentUser || !setMatchedFps(bankKey, month, fps)) return;
+  try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); }
+  catch (e) { console.error('matched_fps save failed', e); }
 }
 
 // Search across EVERY record (not just other-month unmatched ones) and show
@@ -9411,13 +9437,17 @@ function reconcileMatch(stmt, acctId) {
     matched.push({ tIdxs, rIdxs, manualIdx: mi });
   });
 
-  // A record manually matched in ANOTHER month is spoken for — mark it used so it
-  // can't auto-match here, and it leaves "In your books". The all-record search
-  // still shows it, labeled with the claiming month (gManual maps fp → month).
-  // (This month's own claims were consumed by Pass 0 above, so they always win.)
-  // plaid_recon is namespaced per bank ({item_id: {month: {...}}}), so walk every
-  // bank's months. A record claimed in ANY other bank+month is spoken for (records
-  // aren't bank-specific), skipping only THIS view's own bank+month (Pass 0 above).
+  // A record already reconciled in ANOTHER account/month is spoken for — mark it used
+  // so it can't auto-match here and it leaves "In your books". This is what keeps
+  // BUSINESS records off the PERSONAL statement (and vice versa): a record that
+  // cleared through one account doesn't clutter another's unmatched list. Two sources,
+  // both walked across every bank's saved months (plaid_recon is {item_id:{month:{}}}),
+  // skipping only THIS view's own bank+month (its live matches, re-derived by Pass 0
+  // above + the auto passes, always win):
+  //   • manual_matches — explicit pairings the user made there
+  //   • matched_fps    — records that AUTO-matched there, persisted after each
+  //                      reconcile (setMatchedFps) so the inference survives reloads.
+  // gManual maps fp → {m, bank} so the finder can label where it's accounted for.
   const thisMonth = (stmt.statement_month || '').slice(0,7);
   const thisBank = stmt.bankKey || '_';
   const gManual = new Map();
@@ -9425,8 +9455,10 @@ function reconcileMatch(stmt, acctId) {
     if (!byMonth || typeof byMonth !== 'object') return;
     Object.entries(byMonth).forEach(([m, saved]) => {
       if (bankKey === thisBank && m === thisMonth) return;
-      if (!saved || !Array.isArray(saved.manual_matches)) return;
-      saved.manual_matches.forEach(mm => (mm.rFps||[]).forEach(fp => { if (!gManual.has(fp)) gManual.set(fp, m); }));
+      if (!saved) return;
+      const claim = fp => { if (fp && !gManual.has(fp)) gManual.set(fp, { m, bank: bankKey }); };
+      if (Array.isArray(saved.manual_matches)) saved.manual_matches.forEach(mm => (mm.rFps||[]).forEach(claim));
+      if (Array.isArray(saved.matched_fps)) saved.matched_fps.forEach(claim);
     });
   });
   recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
@@ -9573,7 +9605,11 @@ function reconcileMatch(stmt, acctId) {
   // as _recState.matchedGroups and the rendered rows share indices (unmatchByIdx).
   const grpDate = g => (g.tIdxs.length && txns[g.tIdxs[0]] && txns[g.tIdxs[0]].date) || (g.rIdxs.length && recs[g.rIdxs[0]] && recs[g.rIdxs[0]].date) || '';
   matched.sort((a,b) => (grpDate(b)||'').localeCompare(grpDate(a)||''));
-  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceOk, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned, assignedAway };
+  // Fingerprints of records that matched a bank line HERE — persisted per bank+month
+  // (setMatchedFps) so other accounts know these records clear through this one.
+  const matchedFps = [];
+  matched.forEach(g => (g.rIdxs||[]).forEach(ri => { const r = recs[ri]; if (r) matchedFps.push(r.fp); }));
+  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceOk, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned, assignedAway, matchedFps };
 }
 
 // Reconcile VIEW: compute matches, stash view state, persist tight-match ownership,
@@ -9593,6 +9629,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     _recState = null;
     out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No bank activity and nothing in your books for ${escHtml(monthLabel||'this month')} — nothing to reconcile. If this is an older month that should have transactions, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`;
     recordAudit(aKey, monthKey, passed, monthLabel);
+    stampMatchedFps(aKey, monthKey, comp.matchedFps);
     return;
   }
   _recState = { stmt, acctId, path, monthKey, searchPool: [], matchedGroups: matched, recs };
@@ -9724,8 +9761,11 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       html = chipRow(r, chip('Set aside by you', 'eye-off', MUTED[0], MUTED[1]),
         skipInP.has(r.fp) ? `<button onclick="unskipRec('${r.fp}')" class="btn btn-sm" style="font-size:10.5px;padding:.16rem .55rem;min-height:0;min-width:0">Restore</button>` : '');
     } else if (st === 'claimed') {
-      const m = gManual.get(r.fp);
-      html = chipRow(r, chip('Matched · ' + escHtml(monthName(m)), 'check', GREEN[0], GREEN[1], _plaidConnected ? `plaidPullMonth('${m}')` : ''));
+      const cm = gManual.get(r.fp) || {};
+      const cross = cm.bank && cm.bank !== aKey;   // accounted for on a DIFFERENT account
+      const label = cross ? 'On ' + escHtml(bankDisplayName(cm.bank)) : 'Matched · ' + escHtml(monthName(cm.m));
+      const js = cross ? `plaidSelectBank('${escHtml(cm.bank)}')` : (_plaidConnected ? `plaidPullMonth('${cm.m}')` : '');
+      html = chipRow(r, chip(label, 'check', GREEN[0], GREEN[1], js));
     } else {   // 'listed' (or anything else in-period + unmatched)
       rank = 1;
       html = chipRow(r, chip('Unmatched · in the list above', 'alert-triangle', AMBER[0], AMBER[1]));
@@ -9789,6 +9829,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     </div>`;
   searchOtherRecs();   // pre-fill the finder with unmatched records dated near this month
   recordAudit(aKey, monthKey, passed, monthLabel);
+  stampMatchedFps(aKey, monthKey, comp.matchedFps);   // persist so other accounts drop these from "in your books"
 }
 
 // Open a record's editor from its reconcile fingerprint — one tap to fix a

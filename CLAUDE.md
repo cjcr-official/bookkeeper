@@ -98,16 +98,26 @@ persists in `profiles.plaid_recon` (there's no PDF sidecar): `manual_matches`,
 `unmatch_t/r`, **`txn_edits`** (splits + amount fixes, re-applied deterministically
 on every pull by `applyTxnEdits` inside `buildPlaidStmt` so match indices stay
 valid), **`skip_fps`** (records the user set aside as "not on this statement" for
-that month), and **`keep_fps`** (cash records restored into the month's pool).
+that month), and **`keep_fps`** (cash records restored into the month's pool),
+and **`matched_fps`** (fingerprints that AUTO- or manually matched a bank line for
+this bank+month, stamped by `setMatchedFps`/`stampMatchedFps` after every reconcile —
+`renderReconcile`, `plaidCheckYear`, `refreshLiveAudit`; `savePlaidRecon` preserves it
+on unrelated edits). `matched_fps` is what keeps ACCOUNTS separate without manual
+tagging: a record that reconciled on one account clears through THAT account, so
+`reconcileMatch`'s `gManual` walk consumes both `manual_matches` AND `matched_fps`
+from every OTHER bank's months and marks those records used, dropping them from this
+account's "in your books" list (the finder shows them "On &lt;account&gt;", tap to
+switch). Needs one `plaidCheckYear` per account to seed the claims; self-heals on
+every later reconcile. `gManual` maps fp → `{m, bank}` for that labeling.
 Cash records are NOT excluded from matching — this business deposits cash income,
 so a cash-paid invoice hits the bank as a deposit and reconciles like everything
 else (several cash payments deposited together match via the combo pass). A
 record that genuinely never hits the bank is set aside per month via the eye-off
 button (`skip_fps`; `keep_fps` is a vestige of the removed cash auto-set-aside).
-Cross-month double-claims are prevented inside `reconcileMatch`: records manually
-matched in another month (per `plaid_recon`) are marked used up front, dropping
-them from that month's lists and auto-match pool (`gManual` maps fp → claiming
-month). The **"Find any record"** search (`searchOtherRecs` over
+Cross-month AND cross-account double-claims are prevented inside `reconcileMatch`:
+records matched in another month/account (per `plaid_recon` — see `matched_fps`
+above) are marked used up front, dropping them from that month's lists and
+auto-match pool (`gManual` maps fp → `{m, bank}`). The **"Find any record"** search (`searchOtherRecs` over
 `_recState.searchPool`) covers EVERY record with its status — matched here,
 matched in another month (button opens that month), set aside (cash/user, with
 Restore), in this month's list, or unmatched in another month (actionable
