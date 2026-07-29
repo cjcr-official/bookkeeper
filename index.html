@@ -8891,6 +8891,10 @@ function openTxnMenu(idx) {
   if (amt < 0) {
     html += grp('Record this charge as', true);
     html += act(`addExpenseFromTxn(${idx})`, 'receipt', 'Add as expense', 'A business purchase you haven\'t recorded — opens the expense form pre-filled, then matches it.');
+    if ((cache.loans||[]).length)
+      html += act(`loanPayFromTxn(${idx})`, 'building-bank', 'Loan payment', 'A payment toward a loan you track on the Loan tab — records it and matches it.');
+    if ((typeof getBills==='function'?getBills():[]).length)
+      html += act(`billPayFromTxn(${idx})`, 'pig-money', 'Bill payment', 'Mark a budgeted bill for this month paid and match it here.');
     html += act(`recordOwnerFromTxn(${idx})`, 'wallet', 'Owner draw', 'You paid yourself / moved money to personal. Equity, not an expense.');
     html += act(`recordPartialReturn(${idx})`, 'gift', 'Partly returned to a gift card', 'Part of this charge came back as store credit instead of a bank refund.');
   } else {
@@ -8960,6 +8964,76 @@ async function applyPaymentFromTxn(idx, invId) {
   closeModal('modal-txn-menu');
   showToast('Payment recorded on #' + (inv.number||''), 'success');
   renderInvoices();
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
+// "Loan payment": pick which tracked loan this bank charge pays. Records it as an
+// actual payment on that loan (same shape saveLoanPayment writes) and pairs it.
+function loanPayFromTxn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const amt = parseFloat(t.amount)||0;
+  const loans = (cache.loans||[]);
+  if (!loans.length) { showToast('No loans yet — add one on the Loan tab first.', 'error'); return; }
+  document.getElementById('txn-menu-title').textContent = 'Record ' + fmt(amt);
+  document.getElementById('txn-menu-body').innerHTML =
+    `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">Which loan does this ${t.date?fmtDate(t.date):''} payment go toward?</div>` +
+    loans.map(l=>`<button class="btn" onclick="applyLoanPayFromTxn(${idx},'${l.id}')" style="display:flex;width:100%;align-items:center;gap:.7rem;margin-bottom:.5rem;padding:.65rem .8rem;white-space:normal;text-align:left">
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">${escHtml(l.name||'Loan')}</span>${l.amount?`<span style="display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px">${fmt(parseFloat(l.amount)||0)} original</span>`:''}</span>
+        <i class="ti ti-chevron-right" style="color:var(--text3)"></i>
+      </button>`).join('');
+  openModal('modal-txn-menu');
+}
+async function applyLoanPayFromTxn(idx, loanId) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const loan = (cache.loans||[]).find(l=>l.id===loanId); if (!loan) return;
+  const amt = Math.abs(parseFloat(t.amount)||0); if (!amt) return;
+  const nid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('p'+Date.now()+Math.random().toString(36).slice(2));
+  const pays = (Array.isArray(loan.payments)?loan.payments:[]).slice();
+  pays.push({ id:nid, date:t.date||today(), amount:amt, note:'Reconciled from bank' });
+  const { error } = await sb.from('loans').update({ payments: pays }).eq('id', loanId);
+  if (error) { showToast(error.message, 'error'); return; }
+  loan.payments = pays;
+  s.stmt.manual_matches = (s.stmt.manual_matches||[]).concat([{ tIdxs:[idx], rFps:['l:'+loanId+':'+nid] }]);
+  await saveStmtSidecar(s.stmt, s.path);
+  closeModal('modal-txn-menu');
+  showToast('Loan payment recorded on ' + (loan.name||'loan'), 'success');
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
+// "Bill payment": mark one of this month's budgeted bills paid and pair it. Picks
+// from bills that belong to the statement's month and aren't already paid; an
+// exact-amount match floats to the top.
+function billPayFromTxn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const amt = Math.abs(parseFloat(t.amount)||0);
+  const mk = (s.monthKey||'').slice(0,7);
+  if (!mk) { showToast('This statement has no month to file the bill under.', 'error'); return; }
+  const by = +mk.split('-')[0], bm = +mk.split('-')[1];
+  const bills = (typeof getBills==='function'?getBills():[]).filter(b=>billInMonth(b,by,bm-1) && !isBillPaid(b.id,by,bm-1));
+  if (!bills.length) { showToast('No unpaid bills for this month on the Budget tab.', 'error'); return; }
+  const exact = b => Math.abs((parseFloat(b.amount)||0)-amt) <= 0.01;
+  bills.sort((a,b)=>(exact(a)?0:1)-(exact(b)?0:1) || (a.name||'').localeCompare(b.name||''));
+  document.getElementById('txn-menu-title').textContent = 'Mark paid · ' + fmt(t.amount);
+  document.getElementById('txn-menu-body').innerHTML =
+    `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">Which ${parseDate(mk+'-01').toLocaleDateString(undefined,{month:'long'})} bill does this pay?</div>` +
+    bills.map(b=>`<button class="btn" onclick="applyBillPayFromTxn(${idx},'${b.id}')" style="display:flex;width:100%;align-items:center;gap:.7rem;margin-bottom:.5rem;padding:.65rem .8rem;white-space:normal;text-align:left${exact(b)?';border-color:var(--accent)':''}">
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">${escHtml(b.name||'Bill')}</span>${exact(b)?'<span style="display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px">exact amount match</span>':''}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--red)">${fmt(-(parseFloat(b.amount)||0))}</span>
+      </button>`).join('');
+  openModal('modal-txn-menu');
+}
+async function applyBillPayFromTxn(idx, billId) {
+  const s = _recState; if (!s) return;
+  const mk = (s.monthKey||'').slice(0,7); if (!mk) return;
+  const by = +mk.split('-')[0], bm = +mk.split('-')[1];
+  if (!isBillPaid(billId, by, bm-1)) await toggleBillPaid(billId, by, bm-1);   // marks paid + persists
+  s.stmt.manual_matches = (s.stmt.manual_matches||[]).concat([{ tIdxs:[idx], rFps:['b:'+billId+':'+mk] }]);
+  await saveStmtSidecar(s.stmt, s.path);
+  closeModal('modal-txn-menu');
+  showToast('Bill marked paid', 'success');
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
@@ -9213,6 +9287,36 @@ function reconcileMatch(stmt, acctId) {
     const label = 'Gift card credit — ' + (c.merchant||'merchant') + (c.note?' ('+c.note+')':'');
     recs.push({ kind:'Gift Card', date:c.date, amount:amt, label, fp:'sc:'+c.id });
   });
+  // Loan payments — each recorded actual payment on a tracked loan leaves the bank
+  // as money out, so it reconciles like an expense. fp = l:<loanId>:<payId> (loan
+  // and payment ids are UUIDs/no-colon, so split(':')[0..1] still gives the type).
+  (cache.loans||[]).forEach(l=>{
+    (Array.isArray(l.payments)?l.payments:[]).forEach(p=>{
+      const amt = -(parseFloat(p.amount)||0); if (!amt) return;
+      const label = 'Loan payment — ' + (l.name||'Loan') + (p.note?' ('+p.note+')':'');
+      recs.push({ kind:'Loan', date:p.date, amount:amt, label, fp:'l:'+l.id+':'+p.id });
+    });
+  });
+  // Budget bills marked paid — the FULL bill amount leaves the bank the month it's
+  // paid (the budget plans against the full amount; reimbursement is tracked apart).
+  // Only PAID occurrences are candidates (an unpaid bill hasn't hit the bank).
+  // fp = b:<billId>:<YYYY-MM> so the same recurring bill reconciles per month.
+  {
+    const bpm = (typeof billPaidMap==='function') ? billPaidMap() : {};
+    const bills = (typeof getBills==='function') ? getBills() : [];
+    Object.keys(bpm).forEach(mk=>{
+      const paid = bpm[mk]; if (!paid || typeof paid!=='object') return;
+      const parts = mk.split('-'); const by = +parts[0], bm = +parts[1];
+      Object.keys(paid).forEach(billId=>{
+        if (!paid[billId]) return;
+        const b = bills.find(x=>x.id===billId); if (!b) return;
+        const amt = -(parseFloat(b.amount)||0); if (!amt) return;
+        const dd = billDueDay(b);
+        const date = (dd && by && bm) ? ymd(budDateAt(by, bm-1, dd)) : (mk+'-01');
+        recs.push({ kind:'Bill', date, amount:amt, label:'Bill — '+(b.name||'Bill'), fp:'b:'+billId+':'+mk });
+      });
+    });
+  }
   const dayDiff = (a,b)=>Math.abs((parseDate(a)-parseDate(b))/86400000);
   const close = (a,b)=>Math.abs(a-b) <= 0.01;
   const usedT = new Array(txns.length).fill(false);
@@ -9602,6 +9706,8 @@ function editRecFromFp(fp) {
   else if (t === 'p') editInvoice(id);
   else if (t === 'o') editOwnerTx(id);
   else if (t === 'sc') editStoreCredit(id);
+  else if (t === 'l') openLoanFromCal(id);          // l:<loanId>:<payId> — open the loan
+  else if (t === 'b') showPage('budget', null);     // b:<billId>:<YYYY-MM> — open the budget
 }
 
 // "Not on this statement": set a record aside for this month — it stops blocking
