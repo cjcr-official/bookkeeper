@@ -515,12 +515,14 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .loan-field .loan-pre,.loan-field .loan-post{font-size:14px;color:var(--text3);font-family:'JetBrains Mono',monospace;flex-shrink:0}
 .loan-field .loan-unit{border:none;background:transparent;font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace;flex-shrink:0;padding:.5rem 0}
 .loan-field .loan-unit:focus{outline:none}
-.loan-step-row{display:flex;align-items:center;gap:.45rem;margin-bottom:.5rem;flex-wrap:wrap}
+.loan-step-row{position:relative;display:flex;align-items:center;gap:.45rem;margin-bottom:.5rem;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.55rem 1.95rem .55rem .6rem}
 .loan-step-lbl{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;white-space:nowrap}
-.loan-step-row .loan-field{padding:0 .5rem}
+.loan-step-row .loan-field{padding:0 .5rem;background:var(--surface)}
 .loan-step-row .loan-field input{padding:.4rem 0;font-size:14px;width:100%}
-.loan-step-del{flex-shrink:0;background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:17px;line-height:1;padding:.2rem;display:flex;align-items:center}
-.loan-step-del:hover{color:var(--red)}
+.loan-step-del{position:absolute;top:50%;right:.45rem;transform:translateY(-50%);background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:15px;line-height:1;padding:.25rem;display:flex;align-items:center;border-radius:8px}
+.loan-step-del:hover{color:var(--red);background:var(--surface)}
+.loan-step-add{width:100%;justify-content:center;background:transparent;border:1px dashed var(--border);color:var(--text2);font-weight:600}
+.loan-step-add:hover{border-color:var(--accent);color:var(--accent)}
 /* Weekday letters live in their OWN header grid, so .loan-cal-grid holds only the
    uniform aspect-ratio day cells (mixing the short weekday cells into the same grid made
    iOS Safari size the rows unevenly — tall/stretched cells). Mirrors .spend-cal-head. */
@@ -2372,7 +2374,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <label class="loan-lbl">Rate changes <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(optional — adjustable-rate loans)</span></label>
         <div style="font-size:11px;color:var(--text3);margin:-.1rem 0 .5rem;line-height:1.4" id="loan-steps-hint">Set a <b>First payment</b> date above to enter the exact date each rate takes effect.</div>
         <div id="loan-steps"></div>
-        <button class="btn btn-sm" style="margin-top:.25rem" onclick="addLoanStep()"><i class="ti ti-plus"></i> Add a rate change</button>
+        <button class="btn btn-sm loan-step-add" style="margin-top:.35rem" onclick="addLoanStep()"><i class="ti ti-plus"></i> Add a rate change</button>
       </div>
       <div id="loan-preview" style="margin-top:1.1rem"></div>
     </div>
@@ -6013,7 +6015,7 @@ function renderLoanSteps() {
   host.innerHTML = _loanSteps.map((s, i) => {
     const when = hasStart
       ? '<span class="loan-step-lbl">on</span>' +
-        '<div class="loan-field" style="width:158px"><input type="date" value="' + (s.date || '') + '" oninput="updateLoanStep(' + i + ',\'date\',this.value)" style="padding-right:.4rem"></div>'
+        '<div class="loan-field" style="flex:1;min-width:120px"><input type="date" value="' + (s.date || '') + '" oninput="updateLoanStep(' + i + ',\'date\',this.value)" style="padding-right:.4rem"></div>'
       : '<span class="loan-step-lbl">from payment #</span>' +
         '<div class="loan-field" style="width:70px"><input type="number" min="2" step="1" inputmode="numeric" value="' + (s.month != null ? s.month : '') + '" oninput="updateLoanStep(' + i + ',\'month\',this.value)"></div>';
     return '<div class="loan-step-row">' + when +
@@ -6299,9 +6301,9 @@ function previewLoan() {
   if (comp.noAmortize) { el.innerHTML = '<div style="font-size:12.5px;color:var(--red);text-align:center;padding:.5rem">At this payment the balance never pays off — raise the payment or term.</div>'; return; }
   const years = Math.floor(comp.payoffCount / 12), months = comp.payoffCount % 12;
   const payoff = years > 0 ? (years + 'y' + (months ? ' ' + months + 'm' : '')) : (comp.payoffCount + ' mo');
-  const cell = (lbl, val, cls) => '<div style="flex:1;min-width:0"><div style="font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-family:\'JetBrains Mono\',monospace">' + lbl + '</div><div style="font-weight:800;font-size:17px;font-family:\'JetBrains Mono\',monospace;' + (cls || '') + '">' + val + '</div></div>';
-  el.innerHTML = '<div style="display:flex;gap:.75rem;background:var(--surface2,var(--surface));border:1px solid var(--border);border-radius:var(--radius-sm);padding:.7rem .85rem">' +
-    cell(comp.changeCount ? 'First payment' : 'Monthly', fmt(comp.firstMonthly)) +
+  const cell = (lbl, val, cls, first) => '<div style="flex:1;min-width:0;' + (first ? '' : 'border-left:1px solid var(--border);padding-left:.8rem') + '"><div style="font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-family:\'JetBrains Mono\',monospace;margin-bottom:.15rem">' + lbl + '</div><div style="font-weight:800;font-size:17px;font-family:\'JetBrains Mono\',monospace;' + (cls || '') + '">' + val + '</div></div>';
+  el.innerHTML = '<div style="display:flex;gap:.8rem;background:var(--surface2,var(--surface));border:1px solid var(--border);border-radius:var(--radius-sm);padding:.75rem .9rem">' +
+    cell(comp.changeCount ? 'First payment' : 'Monthly', fmt(comp.firstMonthly), '', true) +
     cell('Interest', fmt(comp.totalInterest), 'color:var(--red)') +
     cell('Payoff', payoff) +
   '</div>';

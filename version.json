@@ -1,1 +1,1 @@
-{"version":454,"note":"v454: Modal/popup titles now use the same Plus Jakarta Sans font as the top-bar page title (was the serif DM Serif Display), so every popup header matches the home/dashboard title in the top-left."}
+{"version":455,"note":"v455: Polished the loan editor's Rate changes section — each rate change is now grouped into its own inset card with the remove button pinned to the right, the 'Add a rate change' button is a full-width dashed add-row, and the payment/interest/payoff summary gets subtle dividers between its three figures."}
