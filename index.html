@@ -9250,6 +9250,32 @@ async function changeStmtMonth(newM) {
 // the matched/unmatched buckets, balance check, resolved month, and pass/fail.
 // Records manually matched in ANOTHER month (saved in profiles.plaid_recon) are
 // excluded from this month's pool, lists, and cross-month search, so one record
+// ── "Paid from" bank assignment (multi-bank reconciliation) ──
+// One record → one bank, keyed by reconcile fingerprint: profiles.recon_bank is a
+// flat { fp: item_id } map. A tagged record only reconciles against that bank; an
+// untagged record (the default) still matches any bank, so the feature is inert
+// for single-bank users and untouched records. Stored/merged like the other
+// profile jsonb settings, so the app works before the column migration runs.
+function reconBankMap(){ return (profile && profile.recon_bank && typeof profile.recon_bank==='object') ? profile.recon_bank : {}; }
+// Tag key: recurring records (loans, budget bills) tag by their PARENT so one tag
+// covers EVERY occurrence (all a loan's payments / a bill's months); one-off records
+// (expense, invoice payment, owner, gift card) tag by their own fingerprint.
+function reconBankKey(fp){
+  const p = (fp||'').split(':');
+  if (p[0]==='l') return 'l:'+p[1];   // whole loan (any payment)
+  if (p[0]==='b') return 'b:'+p[1];   // whole bill (any month)
+  return fp;
+}
+function recBankFor(fp){ return reconBankMap()[reconBankKey(fp)] || ''; }
+async function setReconBank(fp, itemId){
+  const key = reconBankKey(fp);
+  const map = {...reconBankMap()};
+  if (!itemId) delete map[key]; else map[key] = itemId;
+  profile.recon_bank = map;
+  if (currentUser){ const { error } = await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: map });
+    if (error && !/recon_bank/i.test(error.message||'')) showToast(error.message, 'error'); }
+}
+
 // can never be claimed by two months. Only manual claims persist across months;
 // auto-matches are re-derived per pull and already date-scoped.
 function reconcileMatch(stmt, acctId) {
@@ -9365,6 +9391,18 @@ function reconcileMatch(stmt, acctId) {
   recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
   const gOwned = new Set();   // tight-ownership retired in v226; kept for return-shape compat
   const tightFps = [];
+
+  // Per-bank "Paid from" assignment (multi-bank only): a record the user tagged to
+  // a SPECIFIC bank belongs only to that bank's statements. Assigned to ANOTHER
+  // bank → spoken for here: mark it used (drops from this bank's lists + auto-match
+  // pool) and remember it in assignedAway so the finder can show "Paid from <bank>"
+  // with a Change action. Unassigned records still match ANY bank (the default), so
+  // single-bank users and untagged records behave exactly as before.
+  const assignedAway = new Map();   // fp -> the item_id it's assigned to
+  recs.forEach((r,i) => {
+    const b = recBankFor(r.fp);   // tag key folds loan/bill occurrences to their parent
+    if (b && b !== thisBank) { usedR[i] = true; assignedAway.set(r.fp, b); }
+  });
 
   // Set-aside pass: ONLY records the user explicitly skipped for this month via
   // the eye-off button ("not on this statement"). Cash records are NOT excluded
@@ -9494,7 +9532,7 @@ function reconcileMatch(stmt, acctId) {
   // as _recState.matchedGroups and the rendered rows share indices (unmatchByIdx).
   const grpDate = g => (g.tIdxs.length && txns[g.tIdxs[0]] && txns[g.tIdxs[0]].date) || (g.rIdxs.length && recs[g.rIdxs[0]] && recs[g.rIdxs[0]].date) || '';
   matched.sort((a,b) => (grpDate(b)||'').localeCompare(grpDate(a)||''));
-  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceOk, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned };
+  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceOk, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned, assignedAway };
 }
 
 // Reconcile VIEW: compute matches, stash view state, persist tight-match ownership,
@@ -9505,7 +9543,8 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   // any bank — but the audit grid + saved matches key off the statement's bank.
   const aKey = stmt.bankKey || acctId || '_';
   const comp = reconcileMatch(stmt, acctId);
-  const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned } = comp;
+  const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned, assignedAway } = comp;
+  const multiBank = (_plaidBanks||[]).length > 1;   // "Paid from" tagging only makes sense with 2+ banks
   const setAside = skippedRecs.filter(r => r.inP);   // this month's set-asides (cash + skips)
   // A truly empty month (no bank lines, nothing recorded, nothing set aside)
   // still records its audit result — an empty month reconciles clean by definition.
@@ -9533,13 +9572,17 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <button onclick="openTxnMenu(${editTxnIdx})" class="btn btn-sm" style="flex-shrink:0;margin-top:.05rem;padding:.3rem .6rem" title="Record this line into your books, or split / fix it"><i class="ti ti-dots"></i>Record</button>` : '';
     const skipBtn = skippable ? `
       <button onclick="skipRec('${fp}')" class="btn btn-sm" style="flex-shrink:0;margin-top:.05rem;padding:.3rem .6rem" title="Not on this statement — set it aside for this month"><i class="ti ti-eye-off"></i>Set aside</button>` : '';
+    // Multi-bank only: tag a record to the bank it clears through, so it stops
+    // showing on the OTHER banks' statements. Record rows only (fp not a bank line).
+    const assignBtn = (multiBank && fp && !fp.startsWith('t:')) ? `
+      <button onclick="event.stopPropagation();openBankAssignMenu('${fp}')" class="btn btn-sm" style="flex-shrink:0;margin-top:.05rem;padding:.3rem .6rem" title="Which bank is this paid from?"><i class="ti ti-building-bank"></i>Paid from</button>` : '';
     // whole row toggles the checkbox — the 18px box alone is a precision tap on a phone
     const rowTap = fp ? ` onclick="if(event.target.closest('button,input'))return;const c=this.querySelector('.rec-check');if(c){c.checked=!c.checked;updateMatchBar()}"` : '';
-    return `<div${rowTap} style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)${fp?';cursor:pointer':''}">
+    return `<div${rowTap} style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)${fp?';cursor:pointer':''};flex-wrap:wrap">
       ${check}
       <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:var(--red)':'color:var(--green)'}">${fmt(amt)}</div>
-      ${bankBtns}${skipBtn}</div>`;
+      ${bankBtns}${skipBtn}${assignBtn}</div>`;
   };
   const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.55rem 0 .15rem;text-align:center">Nothing here</div>';
   // Design-system section chrome: mono uppercase micro-label + count pill,
@@ -9609,6 +9652,15 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     </div>`;
   const GREEN = ['var(--green)','var(--green-bg)'], AMBER = ['var(--amber)','var(--amber-bg)'], MUTED = ['var(--text3)','var(--bg2)'];
   _recState.searchPool = recs.map(r => {
+    // A record tagged to ANOTHER bank isn't a stray here — it clears through that
+    // bank. Show where it lives, with a chip to jump there and a Change action.
+    if (assignedAway.has(r.fp)) {
+      const bid = assignedAway.get(r.fp);
+      const bname = ((_plaidBanks||[]).find(b=>b.item_id===bid)||{}).institution || 'another bank';
+      const html = chipRow(r, chip('Paid from ' + escHtml(bname), 'building-bank', MUTED[0], MUTED[1], _plaidConnected ? `plaidSelectBank('${escHtml(bid)}')` : ''),
+        `<button onclick="openBankAssignMenu('${r.fp}')" class="btn btn-sm" style="font-size:10.5px;padding:.16rem .55rem;min-height:0;min-width:0">Change</button>`);
+      return { fp: r.fp, amount: r.amount, date: r.date || '', text: (r.label + ' ' + r.kind).toLowerCase(), html, nearby: false, rank: 2 };
+    }
     const st = statusByFp[r.fp] || (gManual.has(r.fp) ? 'claimed' : (inListFps.has(r.fp) ? 'listed' : (otherFps.has(r.fp) ? 'other' : '')));
     const periodTag = r.date ? monthName((r.date+'').slice(0,7)) : '';
     let html, nearby = false, rank = 3;
@@ -9726,6 +9778,32 @@ async function unskipRec(fp) {
   s.stmt.keep_fps = [...new Set([...(s.stmt.keep_fps || []), fp])];
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
+}
+
+// "Paid from which bank?" — tag a record to the bank it clears through (multi-bank
+// only). Reuses the generic txn-menu modal for the picker. Assigning to a bank hides
+// the record from every OTHER bank's statement; "Any bank" clears the tag (default,
+// matches anywhere). Records match unfiltered, so the tag is purely a scoping hint.
+function openBankAssignMenu(fp) {
+  const s = _recState; if (!s) return;
+  const banks = _plaidBanks || []; if (banks.length < 2) return;
+  const rec = (s.recs || []).find(r => r.fp === fp);
+  const cur = recBankFor(fp);
+  document.getElementById('txn-menu-title').textContent = 'Paid from which bank?';
+  let html = `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem;word-break:break-word">${rec ? escHtml(rec.label) : 'This record'} — pick the bank it clears through. It’ll only show when you reconcile that bank.</div>`;
+  const opt = (id, name, active) => `<button class="btn" onclick="assignRecBank('${fp}','${escHtml(id)}')" style="display:flex;width:100%;align-items:center;gap:.7rem;margin-bottom:.5rem;padding:.65rem .8rem;white-space:normal;text-align:left${active?';border-color:var(--accent)':''}">
+      <i class="ti ti-${id?'building-bank':'circle'}" style="font-size:17px;flex-shrink:0;color:var(--accent)"></i>
+      <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">${escHtml(name)}</span>${active?'<span style="display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px">current</span>':''}</span>
+    </button>`;
+  html += banks.map(b => opt(b.item_id, b.institution || 'Your bank', b.item_id === cur)).join('');
+  html += opt('', 'Any bank (match anywhere)', !cur);
+  document.getElementById('txn-menu-body').innerHTML = html;
+  openModal('modal-txn-menu');
+}
+async function assignRecBank(fp, itemId) {
+  await setReconBank(fp, itemId || null);
+  closeModal('modal-txn-menu');
+  const s = _recState; if (s) renderReconcile(s.stmt, s.acctId, s.path);
 }
 
 // Stamp one month's pass/fail into profile.audited_months (in memory only).

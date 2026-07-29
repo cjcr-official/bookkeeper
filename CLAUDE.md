@@ -189,6 +189,22 @@ does a one-time move of legacy single-bank data (audit key `'_'`, bare-month
 double-claims are prevented: a record manually matched in any other bank+month is
 marked used (`gManual` walks every bank's months, skipping the current bank+month).
 
+**"Paid from" per-bank record tagging (v459+, multi-bank only):** the ONE exception
+to unfiltered matching. A user with 2+ banks can tag a record to the specific bank it
+clears through, stored as a flat `profiles.recon_bank` map `{fp: item_id}`
+(`reconBankMap()`/`setReconBank()`). In `reconcileMatch`, a record tagged to a bank
+OTHER than `stmt.bankKey` is marked used up front (dropped from this bank's lists +
+auto-match pool) and collected in the returned `assignedAway` map; the finder renders
+those as "Paid from &lt;bank&gt;" with a Change action. An UNTAGGED record still
+matches any bank (the default), so single-bank users and untouched records are
+unaffected — the feature is inert until something is tagged. The UI is gated on
+`_plaidBanks.length > 1`: unmatched "in your books" rows get a **Paid from** button
+(`openBankAssignMenu` → `assignRecBank`, reusing the `modal-txn-menu` shell) offering
+each bank + "Any bank". The map key folds recurring records to their parent
+(`reconBankKey()`: `l:<loanId>` / `b:<billId>` drop the payment/month suffix), so one
+tag on a loan or bill covers all its occurrences; one-off records key by full fp. The
+app works before the column migration (`reconBankMap()` → `{}`).
+
 ```sql
 alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;
 -- Plaid bank sync: the (non-sensitive) linked bank's name, shown in the UI.
@@ -198,6 +214,11 @@ alter table profiles add column if not exists plaid_institution text;
 -- month-override are stored here (jsonb, keyed {"YYYY-MM": {...}}) and merged back
 -- into the statement on the next pull.
 alter table profiles add column if not exists plaid_recon jsonb default '{}'::jsonb;
+-- "Paid from" per-bank record tagging (multi-bank reconciliation). Flat map
+-- {reconcile-fingerprint: item_id}: a tagged record only reconciles against that
+-- bank; untagged records match any bank (the default). App works before this runs
+-- (reconBankMap() falls back to {}).
+alter table profiles add column if not exists recon_bank jsonb default '{}'::jsonb;
 -- Plaid access tokens live here, NOT on profiles: RLS is enabled with NO policy for
 -- authenticated users, so PostgREST returns nothing to the browser — only the Worker
 -- (service key) can read/write it. MULTI-BANK (v275+): the PK is item_id (unique per
