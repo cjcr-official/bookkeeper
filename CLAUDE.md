@@ -236,6 +236,16 @@ each bank + "Any bank". The map key folds recurring records to their parent
 tag on a loan or bill covers all its occurrences; one-off records key by full fp. The
 app works before the column migration (`reconBankMap()` → `{}`).
 
+The SAME tag is also settable up front from the forms (v464): the **Expense** and
+**Invoice** editors have a "Bank account" `<select>` (`exp-recon-bank` /
+`inv-recon-bank`, gated to 2+ banks via `renderReconBankPicker`/`applyReconBankPicker`,
+fp `e:<id>` / `p:<id>`) so a record can be attributed as it's created, not only from
+the reconcile screen. `knownPlaidBanks()` falls back to a `bk-plaid-banks` localStorage
+cache so the picker works even from a tab where the Statements page hasn't populated
+`_plaidBanks` this session. New records apply the tag after insert (once they have an
+id). This is the reliable manual override when the automatic `matched_fps` inference
+can't attribute a record (it never matched anywhere yet).
+
 ```sql
 alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;
 -- Plaid bank sync: the (non-sensitive) linked bank's name, shown in the UI.

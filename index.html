@@ -1969,6 +1969,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Paid Date</label><input id="inv-paid-date" type="date"></div>
       </div>
       <button class="btn btn-sm" type="button" onclick="markInvoicePaidFull()" style="margin-bottom:.25rem"><i class="ti ti-cash"></i> Mark Paid in Full</button>
+      <div class="form-group" id="inv-recon-bank-group" style="display:none;margin-top:.35rem"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(which account the payment clears — for reconciliation)</span></label>
+        <select id="inv-recon-bank"></select>
+      </div>
       <div class="form-group" style="margin-bottom:.35rem"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(round trip = customer one-way × 2)</span></label></div>
       <div class="form-row">
         <div class="form-group"><label>Trips Made</label><input id="inv-trips" type="number" inputmode="numeric" min="0" step="1" value="0" oninput="calcInvMiles()"></div>
@@ -2466,6 +2469,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
         <div class="form-group"><label>Account <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span> <span onclick="addAccountForExpense()" style="float:right;font-weight:600;font-size:11px;color:var(--accent);cursor:pointer">New</span></label>
           <select id="exp-account"></select>
         </div>
+      </div>
+      <div class="form-group" id="exp-recon-bank-group" style="display:none"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(which account it clears — for reconciliation)</span></label>
+        <select id="exp-recon-bank"></select>
       </div>
       <div class="form-group"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
       <div class="form-group"><label>Description</label><textarea id="exp-desc" rows="2"></textarea></div>
@@ -4251,6 +4257,7 @@ function openInvoiceModal(inv) {
     editingInvLines = [{desc:'',qty:1,rate:0,amount:0}];
     editingInvExpenses = [];
   }
+  renderReconBankPicker('inv-recon-bank', 'inv-recon-bank-group', inv ? 'p:'+inv.id : null);
   renderInvLines();
   openModal('modal-invoice');
 }
@@ -4377,7 +4384,9 @@ async function saveInvoice() {
   if (!err && invId) { await syncInvoiceTrip(invId, row, totalMiles, milesPer, tripCount, cust); await syncInvoiceExpenses(invId, row, cust); }
   btn.disabled=false; btn.innerHTML='<i class="ti ti-check"></i> Save Invoice';
   if (err) { showToast(err.message,'error'); return; }
-  showToast('Invoice saved','success'); closeModal('modal-invoice'); renderInvoices();
+  // Tag which bank account this invoice's payment reconciles with (multi-bank only).
+  if (invId) await applyReconBankPicker('inv-recon-bank', 'p:'+invId);
+  showToast('Invoice saved','success'); closeModal('modal-invoice'); renderInvoices(); refreshReconcileIfOpen();
 }
 
 async function syncInvoiceTrip(invId, inv, totalMiles, milesPer, tripCount, cust) {
@@ -7199,6 +7208,7 @@ function openExpenseModal(exp) {
   document.getElementById('exp-desc').value = e.description||'';
   document.getElementById('exp-reimbursed').checked = !!e.reimbursed;
   renderExpAccountOptions(e.account_id||'');
+  renderReconBankPicker('exp-recon-bank', 'exp-recon-bank-group', e.id ? 'e:'+e.id : null);
   renderReceiptState(exp);
   document.getElementById('cat-manager-inline').setAttribute('hidden','');  // start collapsed each open
   openModal('modal-expense');
@@ -7227,6 +7237,35 @@ function renderExpAccountOptions(sel) {
   el.innerHTML = '<option value="">— None —</option>' +
     (cache.accounts||[]).map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('');
   el.value = sel||'';
+}
+
+// Fill a record's "Bank account" (reconciles-with) picker from the connected Plaid
+// banks, preselecting its current tag. Only shown with 2+ banks (nothing to choose
+// otherwise). fp = the record's reconcile fingerprint ('e:'+id / 'p:'+id); pass null
+// for a brand-new record (tag is applied after it's saved and has an id).
+function renderReconBankPicker(selectId, groupId, fp) {
+  const sel = document.getElementById(selectId), grp = document.getElementById(groupId);
+  if (!sel || !grp) return;
+  const banks = knownPlaidBanks().filter(b => b.item_id);
+  if (banks.length < 2) { grp.style.display = 'none'; sel.innerHTML = ''; return; }
+  grp.style.display = '';
+  sel.innerHTML = '<option value="">— Any account —</option>' +
+    banks.map(b => `<option value="${escHtml(b.item_id)}">${escHtml(bankDisplayName(b))}</option>`).join('');
+  sel.value = fp ? recBankFor(fp) : '';
+}
+// Apply the picker's choice to the record's reconcile tag once it has an id. No-op
+// when there are fewer than 2 banks (the picker is hidden and must not clear a tag).
+async function applyReconBankPicker(selectId, fp) {
+  if (knownPlaidBanks().filter(b => b.item_id).length < 2) return;
+  const sel = document.getElementById(selectId); if (!sel) return;
+  await setReconBank(fp, sel.value || null);
+}
+// The connected banks, falling back to the localStorage cache when the Statements
+// page hasn't populated _plaidBanks this session (so the pickers work from any tab).
+function knownPlaidBanks() {
+  if ((_plaidBanks || []).length) return _plaidBanks;
+  try { const c = JSON.parse(lsGet('bk-plaid-banks') || '[]'); if (Array.isArray(c) && c.length) _plaidBanks = c; } catch (e) {}
+  return _plaidBanks || [];
 }
 // "＋ New" beside the Account label: add a bank account without leaving the
 // expense. Opens the account modal (stacked on top); saveAccount() returns the
@@ -7257,6 +7296,8 @@ async function saveExpense() {
   if (id) { const r=await sb.from('expenses').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.expenses.findIndex(e=>e.id===id);cache.expenses[idx]={...cache.expenses[idx],...row};} }
   else { const r=await sb.from('expenses').insert(row).select().single(); err=r.error; if(!err){cache.expenses.unshift(r.data); newId=r.data.id;} }
   if (err) { showToast(err.message,'error'); return; }
+  // Tag which bank account this expense reconciles with (multi-bank only).
+  await applyReconBankPicker('exp-recon-bank', 'e:'+(id||newId));
   // Launched from a reconcile bank line ("Add as expense") → explicit-pair it.
   if (newId && _recPairTxn != null && _recState) {
     _recState.stmt.manual_matches = (_recState.stmt.manual_matches||[]).concat([{ tIdxs:[_recPairTxn], rFps:['e:'+newId] }]);
@@ -8034,6 +8075,9 @@ async function renderPlaidBlock() {
     return;
   }
   _plaidBanks = banks;
+  // Cache the bank list so the expense/invoice "Bank account" picker works even when
+  // the user hasn't opened the Statements page this session (item_ids + names only).
+  try { lsSet('bk-plaid-banks', JSON.stringify(banks.map(b => ({ item_id: b.item_id, institution: b.institution })))); } catch (e) {}
   // Keep a valid selected bank: default to the first, or clear if it vanished.
   if (!_selBank || !banks.some(b => b.item_id === _selBank)) _selBank = banks[0].item_id;
   // One-time move of legacy single-bank reconcile data under the primary bank's id.
