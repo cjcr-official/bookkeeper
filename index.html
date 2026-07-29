@@ -509,12 +509,15 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 /* ── LOAN CALCULATOR ── */
 .loan-lbl{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.3rem;font-family:'JetBrains Mono',monospace}
 .loan-field{display:flex;align-items:center;gap:.4rem;background:var(--surface2,var(--surface));border:1px solid var(--border);border-radius:var(--radius-sm);padding:0 .6rem}
-.loan-field:focus-within{border-color:var(--accent)}
+.loan-field:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
 .loan-field input{flex:1;min-width:0;border:none;background:transparent;padding:.55rem 0;font-size:16px;font-family:'JetBrains Mono',monospace;color:var(--text)}
-.loan-field input:focus{outline:none}
+/* The bare input sits inside a :focus-within wrapper that already draws the ring +
+   glow; kill the global input:focus border/box-shadow so it doesn't paint a SECOND
+   concentric ring inside the wrapper (the "double circle"). */
+.loan-field input:focus{outline:none;box-shadow:none;border-color:transparent}
 .loan-field .loan-pre,.loan-field .loan-post{font-size:14px;color:var(--text3);font-family:'JetBrains Mono',monospace;flex-shrink:0}
 .loan-field .loan-unit{border:none;background:transparent;font-size:13px;color:var(--text2);font-family:'JetBrains Mono',monospace;flex-shrink:0;padding:.5rem 0}
-.loan-field .loan-unit:focus{outline:none}
+.loan-field .loan-unit:focus{outline:none;box-shadow:none;border-color:transparent}
 .loan-step-row{position:relative;display:flex;align-items:center;gap:.45rem;margin-bottom:.5rem;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.55rem 1.95rem .55rem .6rem}
 .loan-step-lbl{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;white-space:nowrap}
 .loan-step-row .loan-field{padding:0 .5rem;background:var(--surface)}
