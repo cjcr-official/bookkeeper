@@ -7917,6 +7917,35 @@ function bankCache() {
   return (_plaidCache[_selBank] = _plaidCache[_selBank] || {});
 }
 
+// ── Per-bank nicknames ──
+// Plaid only tells us the institution name, so two accounts at the same bank (or a
+// generic "Your bank") look identical. profiles.bank_labels {item_id: nickname} lets
+// the user name each account ("Business checking", "Personal ••4521"); the nickname
+// wins wherever a bank is shown, falling back to the institution then "Your bank".
+function bankLabels() { return (profile && profile.bank_labels && typeof profile.bank_labels === 'object') ? profile.bank_labels : {}; }
+function bankInstitution(id) { return ((_plaidBanks || []).find(b => b.item_id === id) || {}).institution || ''; }
+function bankDisplayName(bank) {
+  const id = (bank && typeof bank === 'object') ? bank.item_id : bank;
+  const inst = (bank && typeof bank === 'object' && bank.institution != null) ? bank.institution : bankInstitution(id);
+  return (bankLabels()[id] || '').trim() || inst || 'Your bank';
+}
+async function renameBank(itemId) {
+  const cur = (bankLabels()[itemId] || '').trim();
+  const inst = bankInstitution(itemId);
+  const v = window.prompt('Name this account so you can tell it apart — e.g. "Business checking" or "Personal ••4521".' + (inst ? '\n\nBank: ' + inst : ''), cur);
+  if (v === null) return;   // cancelled
+  const map = { ...bankLabels() };
+  const t = v.trim();
+  if (!t) delete map[itemId]; else map[itemId] = t;
+  profile.bank_labels = map;
+  if (currentUser) {
+    const { error } = await sb.from('profiles').upsert({ id: currentUser.id, bank_labels: map });
+    if (error && !/bank_labels/i.test(error.message || '')) { showToast(error.message, 'error'); return; }
+  }
+  showToast(t ? 'Renamed' : 'Name cleared', 'success');
+  renderPlaidBlock();
+}
+
 // ─── Plaid bank sync ─────────────────────────────────────────────────────────
 // Link a bank once, then pull a month's cleared transactions on demand and
 // reconcile them against the books. Plaid is the only reconciliation source.
@@ -8019,14 +8048,22 @@ async function renderPlaidBlock() {
   const multi = banks.length > 1;
   const bankRows = banks.map(bk => {
     const active = bk.item_id === _selBank;
+    const nm = bankDisplayName(bk);
+    // When a nickname overrides the bank's real name, show the institution as a
+    // small sub-line so both the label and the actual bank are visible.
+    const hasNick = !!(bankLabels()[bk.item_id] || '').trim();
+    const inst = bk.institution || '';
+    const sub = hasNick && inst && inst !== nm ? inst : '';
     return `
     <div onclick="plaidSelectBank('${escHtml(bk.item_id)}')" style="min-width:0;padding:.7rem;margin-top:.5rem;border-radius:12px;cursor:pointer;border:1.5px solid ${active ? 'var(--accent)' : 'var(--border)'};background:${active ? 'var(--accent-bg)' : 'var(--surface2)'}">
       <div style="display:flex;align-items:center;gap:.7rem;min-width:0">
         <div style="width:38px;height:38px;border-radius:11px;background:${active ? 'var(--accent)' : 'var(--accent-bg)'};display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ti ti-building-bank" style="color:${active ? '#fff' : 'var(--accent)'};font-size:19px"></i></div>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:14px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${bk.institution ? escHtml(bk.institution) : 'Your bank'}</div>
+          <div style="font-weight:700;font-size:14px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(nm)}</div>
+          ${sub ? `<div style="font-size:10.5px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(sub)}</div>` : ''}
           <div style="font-size:11px;display:flex;align-items:center;gap:.28rem;margin-top:2px;color:${active ? 'var(--accent)' : 'var(--green)'}"><i class="ti ti-${active ? 'checkbox' : 'circle-check'}" style="font-size:12px"></i> ${active ? 'Reconciling this bank' : 'Tap to reconcile'}</div>
         </div>
+        <button class="btn btn-sm" onclick="event.stopPropagation();renameBank('${escHtml(bk.item_id)}')" title="Name this account" style="flex-shrink:0;padding:.3rem .5rem"><i class="ti ti-pencil"></i></button>
       </div>
       <div style="display:flex;gap:.5rem;margin-top:.65rem" onclick="event.stopPropagation()">
         <button class="btn btn-sm" onclick="plaidReconnect('${escHtml(bk.item_id)}')" title="Reconnect / fix sign-in" style="flex:1"><i class="ti ti-refresh"></i>Reconnect</button>
@@ -8128,7 +8165,7 @@ async function restoreReconToSelected() {
   const am = profile.audited_months || {}, pr = profile.plaid_recon || {};
   const monthsSet = new Set();
   orphans.forEach(k => { Object.keys(am[k] || {}).forEach(m => monthsSet.add(m)); Object.keys(pr[k] || {}).forEach(m => monthsSet.add(m)); });
-  const targetName = ((_plaidBanks || []).find(b => b.item_id === _selBank) || {}).institution || 'the selected bank';
+  const targetName = _selBank ? bankDisplayName(_selBank) : 'the selected bank';
   if (!confirm(`Restore ${monthsSet.size} month(s) of reconciliation history onto ${targetName}? This moves your earlier audit results and manual matches from the old (broken) bank link onto the reconnected one. Months you've already redone are kept.`)) return;
   // Existing (already-redone) months on the target win; old months fill the gaps.
   mergeOrphansOnto(_selBank, orphans);
@@ -9656,7 +9693,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     // bank. Show where it lives, with a chip to jump there and a Change action.
     if (assignedAway.has(r.fp)) {
       const bid = assignedAway.get(r.fp);
-      const bname = ((_plaidBanks||[]).find(b=>b.item_id===bid)||{}).institution || 'another bank';
+      const bname = bankDisplayName(bid);
       const html = chipRow(r, chip('Paid from ' + escHtml(bname), 'building-bank', MUTED[0], MUTED[1], _plaidConnected ? `plaidSelectBank('${escHtml(bid)}')` : ''),
         `<button onclick="openBankAssignMenu('${r.fp}')" class="btn btn-sm" style="font-size:10.5px;padding:.16rem .55rem;min-height:0;min-width:0">Change</button>`);
       return { fp: r.fp, amount: r.amount, date: r.date || '', text: (r.label + ' ' + r.kind).toLowerCase(), html, nearby: false, rank: 2 };
@@ -9795,7 +9832,7 @@ function openBankAssignMenu(fp) {
       <i class="ti ti-${id?'building-bank':'circle'}" style="font-size:17px;flex-shrink:0;color:var(--accent)"></i>
       <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">${escHtml(name)}</span>${active?'<span style="display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px">current</span>':''}</span>
     </button>`;
-  html += banks.map(b => opt(b.item_id, b.institution || 'Your bank', b.item_id === cur)).join('');
+  html += banks.map(b => opt(b.item_id, bankDisplayName(b), b.item_id === cur)).join('');
   html += opt('', 'Any bank (match anywhere)', !cur);
   document.getElementById('txn-menu-body').innerHTML = html;
   openModal('modal-txn-menu');
