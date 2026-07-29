@@ -186,7 +186,11 @@ The non-sensitive bank names are mirrored (comma-joined) to
 
 **Per-bank reconciliation (v276+):** the Statements card is a **clickable list of
 banks** — tapping one sets `_selBank` (the selected `item_id`), and the audit grid +
-"Check all 12 months" + month taps all act on THAT bank only. `/plaid/transactions`
+"Check all 12 months" + month taps all act on THAT bank only. `plaidSelectBank()`
+must redraw the new bank's audit grid **synchronously** (`renderAuditBlock` reads the
+in-memory `audited_months`, no network) before kicking off the async
+`renderPlaidBlock()` — otherwise the month grid blanks out while `/plaid/status`
+reloads and the Owner Activity card below pops up, then back down (v461 fix). `/plaid/transactions`
 takes an optional `{item_id}` and pulls just that one bank (omit it → legacy
 merge-all). Everything downstream is namespaced per bank: the session pull cache
 (`_plaidCache[item_id][month]` via `bankCache()`), the audit grid (`audited_months`

@@ -8093,7 +8093,11 @@ function plaidSelectBank(itemId) {
   _selBank = itemId;
   _plaidPending = null;   // pending count is per bank
   _recState = null;       // drop any open reconcile view from the previous bank
-  const out = document.getElementById('rec-result'); if (out) out.innerHTML = '<div id="rec-audit"></div>';
+  // Redraw the NEW bank's audit grid synchronously (it's built from in-memory
+  // profile.audited_months, no network) so the month buttons never disappear while
+  // renderPlaidBlock's /plaid/status call is in flight — that gap was the "pop".
+  const out = document.getElementById('rec-result');
+  if (out) { out.innerHTML = '<div id="rec-audit"></div>'; renderAuditBlock(_selBank, '', '', null); }
   renderPlaidBlock();
 }
 // One-time: legacy single-bank data lived under the audit key '_' and bare-month
