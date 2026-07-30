@@ -150,7 +150,16 @@ without an invoice (creates a paid invoice dated the deposit day), owner
 draw/contribution, gift-card split, prior-year income/refund, **Loan payment**
 (`loanPayFromTxn` → pick a loan; records a `loans.payments` row and pairs it),
 **Bill payment** (`billPayFromTxn` → pick one of the statement month's unpaid
-budget bills; flips `bill_paid` and pairs it),
+budget bills; flips `bill_paid` and pairs it — plus **"New bill from this charge"**
+(v478): `newBillFromTxn` renders a small inline form in the same menu shell,
+prefilled from the line (`cleanBankDesc` name, abs amount, its own date) with a
+"Repeats every month" toggle defaulting OFF (one-time, matching the Budget tab's
+default — an unwanted recurring bill would silently alter every future month's
+budget AND add a reconcile candidate per month). `createBillFromTxn` writes the same
+row shape as `saveBill` and hands off to `applyBillPayFromTxn`, so it's identical to
+picking an existing bill from there on. The action is gated on the budget MODULE
+being enabled, not on `getBills().length` — otherwise a user with no bills yet can
+never create their first one from here),
 **Reimbursement of an expense** (v474, deposits only: `reimburseFromTxn` → pick the
 expense being paid back, exact-amount candidates first → `applyReimburseFromTxn`
 writes a NEGATIVE expense in that expense's own category and pairs it, so the cost
