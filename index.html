@@ -2503,15 +2503,13 @@ tr.bulk-sel{background:var(--accent-bg)}
         </div>
         <div class="form-group"><label>Amount</label><input id="exp-amount" type="number" step="0.01" min="0"></div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label>Payment Method</label>
-          <select id="exp-method"><option>Credit Card</option><option>Debit Card</option><option>Cash</option><option>Check</option><option>ACH/Wire</option></select>
-        </div>
-        <div class="form-group"><label>Account <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span> <span onclick="addAccountForExpense()" style="float:right;font-weight:600;font-size:11px;color:var(--accent);cursor:pointer">New</span></label>
-          <select id="exp-account"></select>
-        </div>
+      <div class="form-group"><label>Payment Method</label>
+        <select id="exp-method"><option>Credit Card</option><option>Debit Card</option><option>Cash</option><option>Check</option><option>ACH/Wire</option></select>
       </div>
-      <div class="form-group" id="exp-recon-bank-group" style="display:none"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(which account it clears — sets its categories too)</span></label>
+      <!-- The connected (Plaid) bank is the ONLY account concept on this form. The old
+           chart-of-accounts "Account" select was removed in v472 — its list page was
+           already gone, and having two "account" fields was just confusing. -->
+      <div class="form-group" id="exp-recon-bank-group" style="display:none"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(where it clears — sets its categories)</span></label>
         <select id="exp-recon-bank" onchange="onExpBankChange()"></select>
       </div>
       <div class="form-group"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
@@ -7200,8 +7198,6 @@ function bulkExpFieldsHTML(){
       `<select id="bulk-exp-category"><option value="">— Leave unchanged —</option>${cats.map(c=>`<option>${escHtml(c)}</option>`).join('')}</select>`)
     + bulkFieldRow('Payment method',
       `<select id="bulk-exp-method"><option value="">— Leave unchanged —</option>${EXP_METHODS.map(m=>`<option>${escHtml(m)}</option>`).join('')}</select>`)
-    + bulkFieldRow('Account <span style="color:var(--text3);font-weight:400;font-size:11px">(your accounts)</span>',
-      `<select id="bulk-exp-account"><option value="">— Leave unchanged —</option><option value="__none__">No account</option>${(cache.accounts||[]).map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('')}</select>`)
     + (multiBank ? bulkFieldRow('Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(Paid from — for reconciliation)</span>',
       `<select id="bulk-exp-bank">${bulkBankOptionsHTML()}</select>`) : '')
     + bulkFieldRow('Reimbursed by customer',
@@ -7238,7 +7234,6 @@ async function bulkEditApply(){
       const patch = {};
       const cat=_bv('bulk-exp-category'); if (cat) patch.category=cat;
       const method=_bv('bulk-exp-method'); if (method) patch.method=method;
-      const acct=_bv('bulk-exp-account'); if (acct) patch.account_id=(acct==='__none__'?null:acct);
       const reimb=_bv('bulk-exp-reimb'); if (reimb) patch.reimbursed=(reimb==='yes');
       const date=_bv('bulk-exp-date'); if (date) patch.date=date;
       const bank=_bv('bulk-exp-bank');
@@ -7569,7 +7564,6 @@ function openExpenseModal(exp) {
   document.getElementById('exp-method').value = e.method||'Debit Card';
   document.getElementById('exp-desc').value = e.description||'';
   document.getElementById('exp-reimbursed').checked = !!e.reimbursed;
-  renderExpAccountOptions(e.account_id||'');
   renderReceiptState(exp);
   document.getElementById('cat-manager-inline').setAttribute('hidden','');  // start collapsed each open
   openModal('modal-expense');
@@ -7593,12 +7587,6 @@ function duplicateExpense(id) {
 
 // Fills the expense Account picker: a "— None —" default (linking is optional)
 // followed by every bank/credit account, keeping `sel` selected.
-function renderExpAccountOptions(sel) {
-  const el = document.getElementById('exp-account');
-  el.innerHTML = '<option value="">— None —</option>' +
-    (cache.accounts||[]).map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('');
-  el.value = sel||'';
-}
 
 // Fill a record's "Bank account" (reconciles-with) picker from the connected Plaid
 // banks, preselecting its current tag. Only shown with 2+ banks (nothing to choose
@@ -7664,16 +7652,11 @@ function ensurePlaidBanks() {
   })();
   return _plaidBanksPromise;
 }
-// "＋ New" beside the Account label: add a bank account without leaving the
-// expense. Opens the account modal (stacked on top); saveAccount() returns the
-// new account to the expense dropdown via the _expAccountReturn flag.
-let _expAccountReturn = false;
-function addAccountForExpense() { openAccountModal({ type:'Bank' }); _expAccountReturn = true; }
 
 async function saveExpense() {
   const id = document.getElementById('exp-id').value;
   const invLink = document.getElementById('exp-invoice').value||null;
-  const row = {user_id:currentUser.id,date:document.getElementById('exp-date').value,vendor:document.getElementById('exp-vendor').value,category:document.getElementById('exp-category').value,amount:parseFloat(document.getElementById('exp-amount').value)||0,method:document.getElementById('exp-method').value,account_id:document.getElementById('exp-account').value||null,description:document.getElementById('exp-desc').value,reimbursed:document.getElementById('exp-reimbursed').checked,invoice_id:invLink};
+  const row = {user_id:currentUser.id,date:document.getElementById('exp-date').value,vendor:document.getElementById('exp-vendor').value,category:document.getElementById('exp-category').value,amount:parseFloat(document.getElementById('exp-amount').value)||0,method:document.getElementById('exp-method').value,description:document.getElementById('exp-desc').value,reimbursed:document.getElementById('exp-reimbursed').checked,invoice_id:invLink};
   if (!row.vendor) { showToast('Vendor is required','error'); return; }
   // Receipt: upload a newly picked file, or clear an existing one. Leaving both
   // untouched preserves the current receipt_path on update.
@@ -7926,7 +7909,6 @@ function renderAccounts() {
 
 function openAccountModal(a) {
   a = a || {};
-  _expAccountReturn = false;   // cleared here so a cancelled inline add can't leak into a later save
   document.getElementById('acc-id').value = a.id||'';
   document.getElementById('acc-name').value = a.name||'';
   document.getElementById('acc-type').value = a.type||'Bank';
@@ -7946,7 +7928,6 @@ async function saveAccount() {
   if (err) { showToast(err.message,'error'); return; }
   closeModal('modal-account');
   // Added inline from the expense modal → drop the new account into that picker.
-  if (_expAccountReturn) { _expAccountReturn=false; if (newAcc) renderExpAccountOptions(newAcc.id); }
   showToast('Account saved','success'); renderAccounts();
 }
 

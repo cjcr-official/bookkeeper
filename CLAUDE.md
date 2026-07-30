@@ -337,7 +337,14 @@ right one.
 
 - Global **`cache`** object holds all data: `cache.customers`, `.invoices`,
   `.expenses`, `.accounts`, `.trips`, `.recurring`, `.jobs`. (`vendors` was
-  removed — do not reintroduce it.) `loadAllData()` fills it on login via a
+  removed — do not reintroduce it. **`accounts` (the old chart of accounts) is
+  vestigial as of v472:** its list page is long gone (`renderAccounts()` early-returns
+  because nothing mounts `#accounts-table`), and the Expense form's "Account" select
+  was removed — two competing "account" fields confused the owner, who wants the
+  connected **Plaid bank** to be the only one. `expenses.account_id` is no longer
+  written (existing values are left alone); the only live consumer is the Owner
+  Activity modal. Don't add a chart-of-accounts picker back to a form — use the
+  "Paid from" / bank picker.) `loadAllData()` fills it on login via a
   `safe()` wrapper that catches errors → empty arrays (so the app keeps working
   before a new SQL migration is run). **`profile`** holds the user's settings row.
 - Every entity follows: **`render<Thing>()`** draws the list → **`open<Thing>Modal()`**
