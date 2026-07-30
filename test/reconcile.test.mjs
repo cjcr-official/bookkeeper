@@ -271,6 +271,37 @@ test('an unlinked pair can still be re-matched by hand', ({ reconcileMatch }) =>
   eq(r.passed, true, 'month balances again');
 });
 
+// 5g. TWO paychecks on ONE payday (two earners). paycheck_amounts holds a single
+//     amount per payday, so both deposits are recorded as that payday's combined
+//     total and paired to BOTH lines (manual_matches is N↔1). Real numbers from
+//     a Jul 10 payroll pair.
+test('two same-day paychecks record as one payday total and both lines clear', ({ reconcileMatch }) => {
+  sandbox.profile.paycheck_amounts = { '2026-07-10': 1143.62 + 1139.14 };
+  const s = stmt('2026-07', [
+    { date: '2026-07-10', amount: 1143.62, description: 'GLACIER BANCORP PAYROLL PPD JOHNSTON CASE' },
+    { date: '2026-07-10', amount: 1139.14, description: 'GLACIER BANCORP PAYROLL PPD JOHNSTON MADISON' },
+  ], { manual_matches: [{ tIdxs: [0, 1], rFps: ['pc:2026-07-10'] }] });
+  const r = reconcileMatch(s, null);
+  eq(r.matched.length, 1, 'one group covering both deposits');
+  eq(r.matched[0].tIdxs, [0, 1], 'both bank lines are in it');
+  eq(r.onBankOnly.length, 0, 'neither deposit is left over');
+  eq(r.passed, true, 'month balances');
+});
+
+// 5h. The combined total also auto-matches on a later pull, with no manual pairing —
+//     Pass 4 (one record = several bank lines) covers it, so the pairing is durable.
+test('a combined payday total auto-matches its two deposits', ({ reconcileMatch }) => {
+  sandbox.profile.paycheck_amounts = { '2026-07-10': 2282.76 };
+  const s = stmt('2026-07', [
+    { date: '2026-07-10', amount: 1143.62, description: 'PAYROLL CASE' },
+    { date: '2026-07-10', amount: 1139.14, description: 'PAYROLL MADISON' },
+  ]);
+  const r = reconcileMatch(s, null);
+  eq(r.matched.length, 1, 'auto-matched as one group');
+  eq(r.matched[0].tIdxs.length, 2, 'both deposits consumed');
+  eq(r.passed, true, 'month balances without any manual pairing');
+});
+
 // 6. skip_fps sets a record aside; it neither matches nor blocks the pass.
 test('skip_fps sets a record aside without failing the month', ({ reconcileMatch }) => {
   sandbox.cache.expenses = [{ id: 'e1', date: '2026-03-10', amount: 7, vendor: 'Cash only' }];
