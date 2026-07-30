@@ -358,6 +358,15 @@ alter table profiles add column if not exists push_subscription jsonb;
 -- expense_categories: user-editable spending categories (jsonb array of strings).
 -- Source of truth; localStorage bk-expense-cats is now just a local cache.
 alter table profiles add column if not exists expense_categories jsonb;
+-- account_categories: PER-BANK-ACCOUNT category lists (multi-bank). jsonb map
+-- {item_id: [categories]}. In the Expense form, picking a Bank account shows ONLY
+-- that account's categories: getCategories(itemId) returns the account's own list
+-- when set, else falls back to the global expense_categories. Copy-on-write — the
+-- inline "Manage" panel (currentExpBank()-scoped) forks an account's list from the
+-- global default on its first add/remove (saveCategories(arr, itemId)); other
+-- accounts and single-bank users are untouched. App works before this runs
+-- (accountCatMap() falls back to {}).
+alter table profiles add column if not exists account_categories jsonb default '{}'::jsonb;
 -- notify_hour: hour (America/Denver, 6–11) the recurring-due morning push fires.
 alter table profiles add column if not exists notify_hour integer default 8;
 -- invoice defaults (Settings → Invoice Defaults): payment window in days + a
