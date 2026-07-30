@@ -652,6 +652,18 @@ minute until the cache refreshes.
   "Reimbursed by customer" flag excludes from net profit / P&L / chart (green
   Reimbursed badge); "Link to Invoice"; receipt photo upload to private
   `receipts` bucket (signed URLs; paperclip indicator; removed on delete).
+- **Bulk select / edit (expenses + invoices):** the topbar **Select** button on
+  either list enters select mode (`bulkStart(kind)`; `_bulkMode` + `_bulkSel`).
+  `renderExpenses`/`renderInvoices` read `_bulkMode` to draw a checkbox per row
+  (`bulkCheckHTML`, `data-bulk-id`) instead of the per-row action buttons; a fixed
+  `#bulk-bar` tracks the count with select-all / Edit / Delete / Done. `showPage`
+  drops the mode on navigation. **Edit** opens `#modal-bulk-edit`, whose fields are
+  built per type (`bulkExpFieldsHTML`/`bulkInvFieldsHTML`) and each default to
+  "Leave unchanged" so only set fields apply (`bulkEditApply` → one `.update().in('id',
+  ids)` for column fields; `setReconBankBulk` for the "Paid from" tag in one profile
+  write; invoice "Paid" is per-row since `amount_paid = each total`). **Delete**
+  (`bulkDelete`) mirrors the single-delete cleanup (receipts, linked trips/expenses,
+  invoice retotal) with `.in('id', ids)` and one confirm.
 - **Invoice ↔ expense linking (both ways):** customer-expense rows on an invoice
   are saved as reimbursed expenses linked by `invoice_id`, appear as invoice line
   rows, and add to the invoice total. `invoiceRevenue(inv)` = `inv.total` minus

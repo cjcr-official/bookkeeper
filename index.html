@@ -1297,6 +1297,16 @@ input,select,textarea{border-radius:var(--radius-sm)}
 /* Past due: amber is this app's due/overdue colour (invoices, calendar chips).
    The word "past due" carries it too, so it never rests on colour alone. */
 .bill-row.is-late .bill-sub{color:var(--amber)}
+/* Bulk select / edit (expenses + invoices) */
+.bulk-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(62px + env(safe-area-inset-bottom,0px) + 12px);width:min(560px,calc(100% - 1.5rem));z-index:800;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--radius-pill);box-shadow:var(--shadow);display:flex;align-items:center;gap:.4rem;padding:.5rem .6rem}
+@media(min-width:769px){.bulk-bar{bottom:1.5rem}}
+.bulk-bar .bulk-count{font-weight:700;font-size:13px;margin-right:auto;white-space:nowrap;padding-left:.35rem;font-variant-numeric:tabular-nums}
+.bulk-check{width:22px;height:22px;border-radius:6px;border:2px solid var(--border2);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:transparent;font-size:14px;transition:background .12s,border-color .12s}
+.bulk-check.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.m-card.bulk-sel{border-color:var(--accent);background:var(--accent-bg)}
+.bulk-td{width:38px;text-align:center;cursor:pointer}
+.bulk-td .bulk-check{margin:0 auto;cursor:pointer}
+tr.bulk-sel{background:var(--accent-bg)}
 </style>
 </head>
 <body>
@@ -2550,6 +2560,32 @@ input,select,textarea{border-radius:var(--radius-sm)}
 
 <div class="toast" id="toast"></div>
 
+<!-- Bulk select action bar: appears while a list (expenses/invoices) is in select
+     mode. The count + Edit/Delete act on the checked rows; Cancel leaves the mode. -->
+<div class="bulk-bar" id="bulk-bar" hidden>
+  <span class="bulk-count" id="bulk-count">0 selected</span>
+  <button class="btn btn-sm" type="button" onclick="bulkSelectAllToggle()" title="Select / clear all shown"><i class="ti ti-checks"></i></button>
+  <button class="btn btn-sm btn-primary" type="button" onclick="bulkEditOpen()"><i class="ti ti-edit"></i> Edit</button>
+  <button class="btn btn-sm btn-danger" type="button" onclick="bulkDelete()" title="Delete selected"><i class="ti ti-trash"></i></button>
+  <button class="btn btn-sm" type="button" onclick="bulkCancel()">Done</button>
+</div>
+
+<!-- BULK EDIT MODAL: fields are built per list type in bulkEditOpen(); each field
+     defaults to "Leave unchanged" so only the ones you set are applied. -->
+<div class="modal-overlay" id="modal-bulk-edit">
+  <div class="modal">
+    <div class="modal-header"><h2 id="bulk-edit-title">Edit selected</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-bulk-edit')"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div id="bulk-edit-hint" class="bud-hint" style="margin-bottom:.75rem"></div>
+      <div id="bulk-edit-fields"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-bulk-edit')">Cancel</button>
+      <button class="btn btn-primary" onclick="withBusy(this,bulkEditApply)"><i class="ti ti-check"></i> Apply to selected</button>
+    </div>
+  </div>
+</div>
+
 <!-- TRIP SLEEP SCREEN: near-black overlay that keeps the wake lock so GPS tracking
      survives (a truly sleeping screen kills geolocation in an iOS PWA). Rendered by
      renderSleep(); tap anywhere outside the buttons to wake. Sits under the forced
@@ -3249,6 +3285,7 @@ async function toggleSectionLogo(col) {
 // two-page loop).
 function showPage(page, el, fromBack) {
   if (isPageHidden(page)) { page = 'dashboard'; el = null; }   // guard deep-links to a hidden section
+  if (_bulkMode) { _bulkMode = null; _bulkSel.clear(); hideBulkBar(); }   // leaving a list drops select mode
   if (!fromBack && page !== currentPage) {
     _pageHistory.push(currentPage);
     if (_pageHistory.length > 20) _pageHistory.shift();
@@ -3275,9 +3312,9 @@ function showPage(page, el, fromBack) {
   // aria-labels: the <span> labels are display:none on mobile, which drops them
   // from the accessibility tree — the label must live on the button itself.
   const actions = {
-    invoices:`<button class="btn" aria-label="Recurring invoices" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New invoice" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> <span>New Invoice</span></button>`,
+    invoices:`<button class="btn" aria-label="Select invoices" onclick="bulkStart('invoices')"><i class="ti ti-checkbox"></i> <span>Select</span></button> <button class="btn" aria-label="Recurring invoices" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New invoice" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> <span>New Invoice</span></button>`,
     customers:`<button class="btn btn-primary" aria-label="New customer" onclick="openCustomerModal()"><i class="ti ti-plus"></i> <span>New Customer</span></button>`,
-    expenses:`<button class="btn" aria-label="Recurring expenses" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New expense" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
+    expenses:`<button class="btn" aria-label="Select expenses" onclick="bulkStart('expenses')"><i class="ti ti-checkbox"></i> <span>Select</span></button> <button class="btn" aria-label="Recurring expenses" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New expense" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
     mileage:`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
     time:`<button class="btn btn-primary" aria-label="Add time entry" onclick="openTimeEntry(null)"><i class="ti ti-plus"></i> <span>Add Entry</span></button>`,
     budget:`<button class="btn" aria-label="Pay schedule" onclick="openPayScheduleModal()"><i class="ti ti-calendar"></i> <span>Paydays</span></button> <button class="btn btn-primary" aria-label="Add bill" onclick="openBillModal(null)"><i class="ti ti-plus"></i> <span>Add Bill</span></button>`,
@@ -4150,9 +4187,11 @@ function renderInvoices() {
   if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-file-invoice"></i><p>No invoices found</p></div>`; return; }
   const isMobile = window.innerWidth <= 768;
   const esc = escHtml;
+  const bulk = _bulkMode === 'invoices';
   if (isMobile) {
     el.innerHTML = list.map(i=>`
-      <div class="m-card" onclick="editInvoice('${i.id}')">
+      <div class="m-card ${bulk&&_bulkSel.has(i.id)?'bulk-sel':''}" onclick="${bulk?`bulkToggle('${i.id}')`:`editInvoice('${i.id}')`}">
+        ${bulk?bulkCheckHTML(i.id):''}
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem">
             <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent);font-weight:700">${esc(i.number)}</span>
@@ -4163,16 +4202,16 @@ function renderInvoices() {
         </div>
         <div style="text-align:right;flex-shrink:0">
           <div style="font-size:15px;font-weight:700;color:var(--text)">${fmt(i.total)}</div>${(balanceDue(i)>0&&parseFloat(i.amount_paid||0)>0)?`<div style="font-size:10.5px;color:var(--text3);margin-top:.05rem">Owes ${fmt(balanceDue(i))}</div>`:''}
-          <div style="display:flex;gap:.35rem;margin-top:.4rem;justify-content:flex-end">
+          ${bulk?'':`<div style="display:flex;gap:.35rem;margin-top:.4rem;justify-content:flex-end">
             <button class="btn btn-sm" onclick="event.stopPropagation();viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button>
             <button class="btn btn-sm" onclick="event.stopPropagation();editInvoice('${i.id}')"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button>
-          </div>
+          </div>`}
         </div>
       </div>`).join('');
     rolodexTick();
   } else {
-    el.innerHTML = `<table><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr><td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="editInvoice('${i.id}')">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}${(balanceDue(i)>0&&parseFloat(i.amount_paid||0)>0)?`<div style="font-size:10.5px;color:var(--text3)">Owes ${fmt(balanceDue(i))}</div>`:''}</td><td>${statusBadge(effectiveStatus(i))}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
+    el.innerHTML = `<table><thead><tr>${bulk?'<th class="bulk-td"></th>':''}<th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>${list.map(i=>`<tr class="${bulk&&_bulkSel.has(i.id)?'bulk-sel':''}">${bulk?`<td class="bulk-td" onclick="bulkToggle('${i.id}')">${bulkCheckHTML(i.id)}</td>`:''}<td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;color:var(--accent)" onclick="${bulk?`bulkToggle('${i.id}')`:`editInvoice('${i.id}')`}">${esc(i.number)}</span></td><td>${esc(i.customer_name||'—')}</td><td>${fmtDate(i.date)}</td><td>${fmtDate(i.due)}</td><td style="font-weight:500">${fmt(i.total)}${(balanceDue(i)>0&&parseFloat(i.amount_paid||0)>0)?`<div style="font-size:10.5px;color:var(--text3)">Owes ${fmt(balanceDue(i))}</div>`:''}</td><td>${statusBadge(effectiveStatus(i))}</td><td style="white-space:nowrap"><button class="btn btn-sm" style="margin-right:4px" onclick="viewInvoice('${i.id}')" title="View / Print"><i class="ti ti-eye"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editInvoice('${i.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteInvoice('${i.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody></table>`;
   }
 }
 
@@ -7024,6 +7063,187 @@ function renderCalDayList() {
   el.innerHTML = `<div class="card" style="padding:1rem"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem"><h3 style="font-size:14px">${esc(heading)}</h3><button class="btn btn-sm btn-primary" onclick="openJobModal({date:'${calSelectedDate}'})"><i class="ti ti-plus"></i> Add</button></div>${body}</div>`;
 }
 
+// ====== BULK SELECT / EDIT (expenses + invoices) ======
+// A list page (expenses or invoices) can enter "select mode": each row shows a
+// checkbox, a floating bar tracks the count, and Edit/Delete act on the checked
+// rows. renderExpenses/renderInvoices read _bulkMode to draw checkboxes instead of
+// the per-row action buttons; showPage() drops the mode on navigation.
+let _bulkMode = null;               // 'expenses' | 'invoices' | null
+const _bulkSel = new Set();         // selected record ids
+
+function bulkCheckHTML(id){ return `<div class="bulk-check ${_bulkSel.has(id)?'on':''}" data-bulk-id="${id}"><i class="ti ti-check"></i></div>`; }
+function hideBulkBar(){ const b=document.getElementById('bulk-bar'); if(b) b.setAttribute('hidden',''); }
+function bulkRerenderFor(kind){ if (kind==='expenses') renderExpenses(); else if (kind==='invoices') renderInvoices(); }
+
+function bulkStart(kind){
+  _bulkMode = kind; _bulkSel.clear();
+  bulkRerenderFor(kind); updateBulkBar();
+}
+function bulkCancel(){
+  const k = _bulkMode;
+  _bulkMode = null; _bulkSel.clear(); hideBulkBar();
+  if (k) bulkRerenderFor(k);
+}
+function bulkToggle(id){
+  if (_bulkSel.has(id)) _bulkSel.delete(id); else _bulkSel.add(id);
+  bulkRerenderFor(_bulkMode); updateBulkBar();
+}
+function updateBulkBar(){
+  const bar = document.getElementById('bulk-bar'); if (!bar) return;
+  if (!_bulkMode){ bar.setAttribute('hidden',''); return; }
+  bar.removeAttribute('hidden');
+  document.getElementById('bulk-count').textContent = _bulkSel.size + ' selected';
+}
+// The ids currently rendered (respects search/filter/scope, since it reads the DOM).
+function bulkVisibleIds(){
+  if (!_bulkMode) return [];
+  const tbl = document.getElementById(_bulkMode==='expenses'?'expenses-table':'invoices-table');
+  if (!tbl) return [];
+  return [...tbl.querySelectorAll('[data-bulk-id]')].map(el=>el.getAttribute('data-bulk-id'));
+}
+function bulkSelectAllToggle(){
+  const ids = bulkVisibleIds();
+  const allOn = ids.length && ids.every(id=>_bulkSel.has(id));
+  if (allOn) ids.forEach(id=>_bulkSel.delete(id)); else ids.forEach(id=>_bulkSel.add(id));
+  bulkRerenderFor(_bulkMode); updateBulkBar();
+}
+
+// Persist a "Paid from" bank tag onto many records at once (one profile write).
+async function setReconBankBulk(fps, itemId){
+  const map = { ...reconBankMap() };
+  fps.forEach(fp=>{ const key=reconBankKey(fp); if(!itemId) delete map[key]; else map[key]=itemId; });
+  profile.recon_bank = map;
+  if (currentUser){ const { error } = await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: map });
+    if (error && !/recon_bank/i.test(error.message||'')) showToast(error.message, 'error'); }
+}
+
+const EXP_METHODS = ['Credit Card','Debit Card','Cash','Check','ACH/Wire'];
+const INV_METHODS = ['Check','Card','Bank Transfer','Zelle','Venmo','Cash','Other'];
+function bulkBankOptionsHTML(){
+  // "Leave unchanged" (''), "Any account" (clear the tag), then each bank.
+  const banks = knownPlaidBanks().filter(b=>b.item_id);
+  return '<option value="">— Leave unchanged —</option><option value="__any__">Any account (clear tag)</option>'
+    + banks.map(b=>`<option value="${escHtml(b.item_id)}">${escHtml(bankDisplayName(b))}</option>`).join('');
+}
+function bulkFieldRow(label, inner){
+  return `<div class="form-group"><label>${label}</label>${inner}</div>`;
+}
+function bulkExpFieldsHTML(){
+  const multiBank = knownPlaidBanks().filter(b=>b.item_id).length >= 2;
+  const cats = getCategories();   // global list for the bulk picker
+  return bulkFieldRow('Category',
+      `<select id="bulk-exp-category"><option value="">— Leave unchanged —</option>${cats.map(c=>`<option>${escHtml(c)}</option>`).join('')}</select>`)
+    + bulkFieldRow('Payment method',
+      `<select id="bulk-exp-method"><option value="">— Leave unchanged —</option>${EXP_METHODS.map(m=>`<option>${escHtml(m)}</option>`).join('')}</select>`)
+    + bulkFieldRow('Account <span style="color:var(--text3);font-weight:400;font-size:11px">(your accounts)</span>',
+      `<select id="bulk-exp-account"><option value="">— Leave unchanged —</option><option value="__none__">No account</option>${(cache.accounts||[]).map(a=>`<option value="${a.id}">${escHtml(a.name)}</option>`).join('')}</select>`)
+    + (multiBank ? bulkFieldRow('Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(Paid from — for reconciliation)</span>',
+      `<select id="bulk-exp-bank">${bulkBankOptionsHTML()}</select>`) : '')
+    + bulkFieldRow('Reimbursed by customer',
+      `<select id="bulk-exp-reimb"><option value="">— Leave unchanged —</option><option value="yes">Yes</option><option value="no">No</option></select>`)
+    + bulkFieldRow('Date <span style="color:var(--text3);font-weight:400;font-size:11px">(blank = leave unchanged)</span>',
+      `<input id="bulk-exp-date" type="date">`);
+}
+function bulkInvFieldsHTML(){
+  const multiBank = knownPlaidBanks().filter(b=>b.item_id).length >= 2;
+  return bulkFieldRow('Status',
+      `<select id="bulk-inv-status"><option value="">— Leave unchanged —</option><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid (mark fully paid)</option></select>`)
+    + bulkFieldRow('Payment method',
+      `<select id="bulk-inv-method"><option value="">— Leave unchanged —</option>${INV_METHODS.map(m=>`<option>${escHtml(m)}</option>`).join('')}</select>`)
+    + (multiBank ? bulkFieldRow('Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(Paid from — for reconciliation)</span>',
+      `<select id="bulk-inv-bank">${bulkBankOptionsHTML()}</select>`) : '')
+    + bulkFieldRow('Due date <span style="color:var(--text3);font-weight:400;font-size:11px">(blank = leave unchanged)</span>',
+      `<input id="bulk-inv-due" type="date">`);
+}
+function bulkEditOpen(){
+  if (!_bulkMode) return;
+  if (!_bulkSel.size){ showToast('Tap some rows to select them first','error'); return; }
+  const n = _bulkSel.size;
+  document.getElementById('bulk-edit-title').textContent = `Edit ${n} ${_bulkMode==='expenses'?'expense':'invoice'}${n===1?'':'s'}`;
+  document.getElementById('bulk-edit-hint').textContent = 'Only the fields you change below get applied — anything left on "Leave unchanged" stays as-is on each record.';
+  document.getElementById('bulk-edit-fields').innerHTML = _bulkMode==='expenses' ? bulkExpFieldsHTML() : bulkInvFieldsHTML();
+  openModal('modal-bulk-edit');
+}
+const _bv = id => (document.getElementById(id)||{}).value || '';
+async function bulkEditApply(){
+  if (!_bulkMode || !_bulkSel.size){ closeModal('modal-bulk-edit'); return; }
+  const kind = _bulkMode, ids = [..._bulkSel];
+  try {
+    if (kind==='expenses'){
+      const patch = {};
+      const cat=_bv('bulk-exp-category'); if (cat) patch.category=cat;
+      const method=_bv('bulk-exp-method'); if (method) patch.method=method;
+      const acct=_bv('bulk-exp-account'); if (acct) patch.account_id=(acct==='__none__'?null:acct);
+      const reimb=_bv('bulk-exp-reimb'); if (reimb) patch.reimbursed=(reimb==='yes');
+      const date=_bv('bulk-exp-date'); if (date) patch.date=date;
+      const bank=_bv('bulk-exp-bank');
+      if (Object.keys(patch).length){
+        const { error } = await sb.from('expenses').update(patch).in('id', ids);
+        if (error){ showToast(error.message,'error'); return; }
+        cache.expenses.forEach(e=>{ if(_bulkSel.has(e.id)) Object.assign(e, patch); });
+      }
+      if (bank) await setReconBankBulk(ids.map(id=>'e:'+id), bank==='__any__'?null:bank);
+    } else {
+      const patch = {};
+      const status=_bv('bulk-inv-status');
+      const method=_bv('bulk-inv-method'); if (method) patch.payment_method=method;
+      const due=_bv('bulk-inv-due'); if (due) patch.due=due;
+      const bank=_bv('bulk-inv-bank');
+      if (status==='draft'||status==='sent') patch.status=status;
+      if (Object.keys(patch).length){
+        const { error } = await sb.from('invoices').update(patch).in('id', ids);
+        if (error){ showToast(error.message,'error'); return; }
+        cache.invoices.forEach(i=>{ if(_bulkSel.has(i.id)) Object.assign(i, patch); });
+      }
+      // "Paid" needs each invoice's own total → per-row (amount_paid = total).
+      if (status==='paid'){
+        for (const inv of cache.invoices.filter(i=>_bulkSel.has(i.id))){
+          const p = { status:'paid', amount_paid: parseFloat(inv.total)||0, paid_date: inv.paid_date||today() };
+          const { error } = await sb.from('invoices').update(p).eq('id', inv.id);
+          if (error){ showToast(error.message,'error'); return; }
+          Object.assign(inv, p);
+        }
+      }
+      if (bank) await setReconBankBulk(ids.map(id=>'p:'+id), bank==='__any__'?null:bank);
+    }
+  } catch(e){ showToast('Bulk update failed: '+(e.message||e),'error'); return; }
+  closeModal('modal-bulk-edit');
+  const n = ids.length;
+  bulkCancel();
+  refreshReconcileIfOpen();
+  showToast(`Updated ${n} ${kind==='expenses'?'expense':'invoice'}${n===1?'':'s'}`,'success');
+}
+async function bulkDelete(){
+  if (!_bulkMode || !_bulkSel.size){ showToast('Tap some rows to select them first','error'); return; }
+  const kind=_bulkMode, ids=[..._bulkSel], n=ids.length;
+  if (!confirm(`Delete ${n} ${kind==='expenses'?'expense':'invoice'}${n===1?'':'s'}? This can't be undone.`)) return;
+  try {
+    if (kind==='expenses'){
+      const dels = cache.expenses.filter(e=>_bulkSel.has(e.id));
+      const { error } = await sb.from('expenses').delete().in('id', ids);
+      if (error){ showToast(error.message,'error'); return; }
+      const paths = dels.map(e=>e.receipt_path).filter(Boolean);
+      if (paths.length) sb.storage.from('receipts').remove(paths);
+      const linkedInv = [...new Set(dels.map(e=>e.invoice_id).filter(Boolean))];
+      cache.expenses = cache.expenses.filter(e=>!_bulkSel.has(e.id));
+      (cache.trips||[]).forEach(t=>{ if(ids.includes(t.expense_id)) t.expense_id=null; });
+      for (const invId of linkedInv) await recomputeInvoiceTotals(invId);
+    } else {
+      const { error } = await sb.from('invoices').delete().in('id', ids);
+      if (error){ showToast(error.message,'error'); return; }
+      cache.invoices = cache.invoices.filter(i=>!_bulkSel.has(i.id));
+      // linked trips + customer expenses cascade at the DB level; mirror in cache.
+      const linkedTrips = (cache.trips||[]).filter(t=>ids.includes(t.invoice_id));
+      if (linkedTrips.length){ await sb.from('trips').delete().in('id', linkedTrips.map(t=>t.id)); cache.trips = cache.trips.filter(t=>!ids.includes(t.invoice_id)); }
+      const linkedExp = (cache.expenses||[]).filter(e=>ids.includes(e.invoice_id));
+      if (linkedExp.length){ await sb.from('expenses').delete().in('id', linkedExp.map(e=>e.id)); cache.expenses = cache.expenses.filter(e=>!ids.includes(e.invoice_id)); }
+    }
+  } catch(e){ showToast('Bulk delete failed: '+(e.message||e),'error'); return; }
+  bulkCancel();
+  renderExpenses(); renderInvoices(); refreshReconcileIfOpen();
+  showToast(`Deleted ${n} ${kind==='expenses'?'expense':'invoice'}${n===1?'':'s'}`,'success');
+}
+
 // ====== EXPENSES ======
 function clearExpFilters() {
   const ids = ['exp-search','exp-cat-filter','exp-from','exp-to','exp-bank-filter'];
@@ -7113,9 +7333,11 @@ function renderExpenses() {
   const reimbAmt = list.reduce((s,e)=>s+(e.reimbursed?parseFloat(e.amount||0):0),0);
   setExpSummary(list.length, totalAmt, reimbAmt);
   const esc = escHtml;
+  const bulk = _bulkMode === 'expenses';
   if (window.innerWidth <= 768) {
     el.innerHTML = list.map(e=>`
-      <div class="m-card" onclick="editExpense('${e.id}')">
+      <div class="m-card ${bulk&&_bulkSel.has(e.id)?'bulk-sel':''}" onclick="${bulk?`bulkToggle('${e.id}')`:`editExpense('${e.id}')`}">
+        ${bulk?bulkCheckHTML(e.id):''}
         <div class="m-card-main">
           <div class="m-card-title">${esc(e.vendor)}</div>
           <div class="m-card-sub"><span class="badge badge-gray">${esc(e.category)}</span>${e.reimbursed?' <span class="badge badge-green">Reimbursed</span>':''}</div>
@@ -7124,16 +7346,16 @@ function renderExpenses() {
         </div>
         <div class="m-card-right">
           <div class="m-card-amount red">${fmt(e.amount)}</div>
-          <div class="m-card-actions">
+          ${bulk?'':`<div class="m-card-actions">
             <button class="btn btn-sm" title="Duplicate" onclick="event.stopPropagation();duplicateExpense('${e.id}')"><i class="ti ti-copy"></i></button>
             <button class="btn btn-sm" onclick="event.stopPropagation();editExpense('${e.id}')"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button>
-          </div>
+          </div>`}
         </div>
       </div>`).join('') + `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);display:flex;justify-content:space-between;align-items:center;font-weight:700"><span>${list.length} expense${list.length===1?'':'s'}${reimbAmt>0?`<br><span style="font-weight:400;font-size:11px;color:var(--text3)">excl. ${fmt(reimbAmt)} reimbursed</span>`:''}</span><span class="red">${fmt(totalAmt)}</span></div>`;
     rolodexTick();
   } else {
-    el.innerHTML = `<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${list.map(e=>`<tr><td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" title="Duplicate" onclick="duplicateExpense('${e.id}')"><i class="ti ti-copy"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody><tfoot><tr><td colspan="5" style="font-weight:700;text-align:right;padding:.85rem 1rem;border-top:2px solid var(--border)">${list.length} expense${list.length===1?'':'s'}${reimbAmt>0?` <span style="font-weight:400;color:var(--text3)">· excl. ${fmt(reimbAmt)} reimbursed</span>`:''}</td><td class="red" style="font-weight:700;font-family:'JetBrains Mono',monospace;padding:.85rem 1rem;border-top:2px solid var(--border)">${fmt(totalAmt)}</td><td style="border-top:2px solid var(--border)"></td></tr></tfoot></table>`;
+    el.innerHTML = `<table><thead><tr>${bulk?'<th class="bulk-td"></th>':''}<th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${list.map(e=>`<tr class="${bulk&&_bulkSel.has(e.id)?'bulk-sel':''}">${bulk?`<td class="bulk-td" onclick="bulkToggle('${e.id}')">${bulkCheckHTML(e.id)}</td>`:''}<td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" title="Duplicate" onclick="duplicateExpense('${e.id}')"><i class="ti ti-copy"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody><tfoot><tr><td colspan="${bulk?6:5}" style="font-weight:700;text-align:right;padding:.85rem 1rem;border-top:2px solid var(--border)">${list.length} expense${list.length===1?'':'s'}${reimbAmt>0?` <span style="font-weight:400;color:var(--text3)">· excl. ${fmt(reimbAmt)} reimbursed</span>`:''}</td><td class="red" style="font-weight:700;font-family:'JetBrains Mono',monospace;padding:.85rem 1rem;border-top:2px solid var(--border)">${fmt(totalAmt)}</td><td style="border-top:2px solid var(--border)"></td></tr></tfoot></table>`;
   }
 }
 
