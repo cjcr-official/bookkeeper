@@ -9046,13 +9046,20 @@ async function unmatchManual(idx) {
 async function unmatchByIdx(i) {
   const s = _recState; if (!s) return;
   const g = (s.matchedGroups||[])[i]; if (!g) return;
-  if (g.manualIdx != null) return unmatchManual(g.manualIdx);
+  // Park BOTH sides in unmatch_t/unmatch_r so passes 1-4 can't re-form the pair.
+  // This applies to MANUAL pairs too: dropping the manual_matches entry alone left
+  // both items free, and anything recorded FROM a bank line (paycheck, bill, expense)
+  // matches that line by construction — same amount, date inside the window — so the
+  // auto passes re-paired them on the very same render and Unlink looked broken.
+  // Pass 0 still consumes blocked items, so the user can explicitly re-Match either
+  // side to something else afterwards.
   const curT = new Set(s.stmt.unmatch_t || []);
   const curR = new Set(s.stmt.unmatch_r || []);
   (g.tIdxs||[]).forEach(idx => curT.add(idx));
   (g.rIdxs||[]).forEach(ri => { const r = s.recs[ri]; if (r && r.fp) curR.add(r.fp); });
   s.stmt.unmatch_t = [...curT];
   s.stmt.unmatch_r = [...curR];
+  if (g.manualIdx != null) s.stmt.manual_matches = (s.stmt.manual_matches || []).filter((_, mi) => mi !== g.manualIdx);
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
 }
@@ -9731,6 +9738,22 @@ async function applyPaycheckFromTxn(idx, dateKey) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// Undo a recorded paycheck from the reconcile screen (wrong payday / wrong amount).
+// Clears the Budget-tab entry, drops any pairing that referenced it, and clears the
+// stale unmatch_r block so the freed bank line can match again.
+async function removePaycheckRec(fp) {
+  const s = _recState; if (!s) return;
+  const dateKey = (fp||'').slice(3); if (!dateKey) return;
+  const cur = getPaycheckAmount(dateKey);
+  if (!confirm(`Remove the ${fmt(cur||0)} paycheck recorded for ${fmtDate(dateKey)}?`)) return;
+  await savePaycheckAmount(dateKey, null);
+  s.stmt.manual_matches = (s.stmt.manual_matches||[]).filter(m => !(m.rFps||[]).includes(fp));
+  s.stmt.unmatch_r = (s.stmt.unmatch_r||[]).filter(x => x !== fp);
+  await saveStmtSidecar(s.stmt, s.path);
+  showToast('Paycheck removed');
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // ====== OWNER ACTIVITY (equity transactions — contributions in, draws out) ======
 // One-line summary strip: money in, money out, net taken out.
 function renderOwnerTxStats(rows) {
@@ -10358,13 +10381,17 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     // showing on the OTHER banks' statements. Record rows only (fp not a bank line).
     const assignBtn = (multiBank && fp && !fp.startsWith('t:')) ? `
       <button onclick="event.stopPropagation();openBankAssignMenu('${fp}')" class="btn btn-sm" style="flex-shrink:0;margin-top:.05rem;padding:.3rem .6rem" title="Which bank is this paid from?"><i class="ti ti-building-bank"></i>Paid from</button>` : '';
+    // A paycheck recorded against the wrong payday would otherwise be stuck here as
+    // an unmatched record (its only editor is the Budget tab). Let it be undone in place.
+    const rmBtn = (fp && fp.startsWith('pc:')) ? `
+      <button onclick="event.stopPropagation();removePaycheckRec('${fp}')" class="btn btn-sm" style="flex-shrink:0;margin-top:.05rem;padding:.3rem .6rem" title="Remove this recorded paycheck"><i class="ti ti-trash"></i>Remove</button>` : '';
     // whole row toggles the checkbox — the 18px box alone is a precision tap on a phone
     const rowTap = fp ? ` onclick="if(event.target.closest('button,input'))return;const c=this.querySelector('.rec-check');if(c){c.checked=!c.checked;updateMatchBar()}"` : '';
     return `<div${rowTap} style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem 0;border-bottom:1px solid var(--border)${fp?';cursor:pointer':''};flex-wrap:wrap">
       ${check}
       <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${d?fmtDate(d):'—'}${sub?' · '+escHtml(sub):''}</div></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${amt<0?'color:var(--red)':'color:var(--green)'}">${fmt(amt)}</div>
-      ${bankBtns}${skipBtn}${assignBtn}</div>`;
+      ${bankBtns}${skipBtn}${assignBtn}${rmBtn}</div>`;
   };
   const list = rows => rows.length ? rows.join('') : '<div style="color:var(--text3);font-size:12px;padding:.55rem 0 .15rem;text-align:center">Nothing here</div>';
   // Design-system section chrome: mono uppercase micro-label + count pill,

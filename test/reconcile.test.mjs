@@ -241,6 +241,36 @@ test('an unrecorded payday creates no candidate', ({ reconcileMatch }) => {
   eq(r.onBankOnly.length, 1, 'the deposit is reported as needing a record');
 });
 
+// 5e. UNLINK (v480 regression). Unlinking a manual pair used to only drop the
+//     manual_matches entry — and since a record created from a bank line matches it
+//     by construction, the auto passes re-paired them on the same render, so Unlink
+//     appeared to do nothing. unmatchByIdx now also parks both sides.
+test('unlinking a manual pair does not let it re-form', ({ reconcileMatch }) => {
+  sandbox.profile.paycheck_amounts = { '2026-07-17': 1842.30 };
+  const txn = { date: '2026-07-17', amount: 1842.30, description: 'PAYROLL' };
+  // Paired by applyPaycheckFromTxn.
+  const paired = reconcileMatch(stmt('2026-07', [txn], { manual_matches: [{ tIdxs: [0], rFps: ['pc:2026-07-17'] }] }), null);
+  eq(paired.matched.length, 1, 'starts paired');
+  // What unmatchByIdx now writes: manual entry dropped AND both sides parked.
+  const after = reconcileMatch(stmt('2026-07', [txn], {
+    manual_matches: [], unmatch_t: [0], unmatch_r: ['pc:2026-07-17'] }), null);
+  eq(after.matched.length, 0, 'stays unlinked instead of instantly re-pairing');
+  eq(after.onBankOnly.length, 1, 'the deposit is free to match something else');
+  eq(after.inRecordsOnly.length, 1, 'the paycheck is back in your books');
+});
+
+// 5f. A blocked pair can still be re-linked explicitly (Pass 0 beats the block),
+//     which is the escape hatch that makes parking both sides safe.
+test('an unlinked pair can still be re-matched by hand', ({ reconcileMatch }) => {
+  sandbox.profile.paycheck_amounts = { '2026-07-17': 1842.30 };
+  const s = stmt('2026-07', [{ date: '2026-07-17', amount: 1842.30, description: 'PAYROLL' }], {
+    unmatch_t: [0], unmatch_r: ['pc:2026-07-17'],
+    manual_matches: [{ tIdxs: [0], rFps: ['pc:2026-07-17'] }] });
+  const r = reconcileMatch(s, null);
+  eq(r.matched.length, 1, 'explicit re-match wins over the block');
+  eq(r.passed, true, 'month balances again');
+});
+
 // 6. skip_fps sets a record aside; it neither matches nor blocks the pass.
 test('skip_fps sets a record aside without failing the month', ({ reconcileMatch }) => {
   sandbox.cache.expenses = [{ id: 'e1', date: '2026-03-10', amount: 7, vendor: 'Cash only' }];
