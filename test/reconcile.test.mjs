@@ -201,6 +201,25 @@ test('recon_bank tag routes a record to one bank', ({ reconcileMatch }) => {
   eq(r.onBankOnly.length, 1, 'bankA line unmatched (its record belongs to bankB)');
 });
 
+// 5b. A bill created from a bank line (createBillFromTxn's row shape) must become a
+//     matchable candidate for that month — both one-time and recurring.
+for (const recurring of [false, true]) {
+  test(`a bill created from a charge matches its line (${recurring ? 'recurring' : 'one-time'})`, ({ reconcileMatch }) => {
+    const ds = '2026-07-22';
+    // Exactly what createBillFromTxn writes.
+    const bill = { id: 'b1', name: 'Blackfoot Tele Auto',
+      due: recurring ? parseInt(ds.slice(8, 10), 10) : null,
+      date: recurring ? null : ds, recurring, amount: 69.95, reimbursed: 0, notes: '' };
+    sandbox.profile.budget_bills = [bill];
+    sandbox.profile.bill_paid = { '2026-07': { b1: true } };   // toggleBillPaid marks the occurrence
+    const s = stmt('2026-07', [{ date: ds, amount: -69.95, description: 'BLACKFOOT TELE AUTO' }]);
+    const r = reconcileMatch(s, null);
+    eq(r.matched.length, 1, 'the new bill matches the charge');
+    eq(r.matched[0].rIdxs.map(i => r.recs[i].fp), ['b:b1:2026-07'], 'paired via the bill occurrence fp');
+    eq(r.passed, true, 'month balances');
+  });
+}
+
 // 6. skip_fps sets a record aside; it neither matches nor blocks the pass.
 test('skip_fps sets a record aside without failing the month', ({ reconcileMatch }) => {
   sandbox.cache.expenses = [{ id: 'e1', date: '2026-03-10', amount: 7, vendor: 'Cash only' }];
