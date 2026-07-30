@@ -104,7 +104,11 @@ unmatched. The page shows a 12-month grid of ✅/⚠️/· marks with ‹ › ye
 through `reconcileMatch` and stamped into the audit grid, ending on a summary of
 the months that need attention (tap a chip to open one). All per-month state
 persists in `profiles.plaid_recon` (there's no PDF sidecar): `manual_matches`,
-`unmatch_t/r`, **`txn_edits`** (splits + amount fixes, re-applied deterministically
+`unmatch_t/r` (both sides of an Unlink — `unmatchByIdx` parks them for MANUAL pairs
+too, not just auto ones: dropping the `manual_matches` entry alone let the auto passes
+re-form the pair on the same render, since anything recorded FROM a bank line matches
+it by construction, so Unlink looked broken. Pass 0 still consumes blocked items, so
+an explicit re-Match is the escape hatch), **`txn_edits`** (splits + amount fixes, re-applied deterministically
 on every pull by `applyTxnEdits` inside `buildPlaidStmt` so match indices stay
 valid), and **`skip_fps`** (records the user set aside as "not on this statement" for
 that month).
