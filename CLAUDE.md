@@ -247,12 +247,23 @@ app works before the column migration (`reconBankMap()` → `{}`).
 
 The SAME tag is also settable up front from the forms (v464): the **Expense** and
 **Invoice** editors have a "Bank account" `<select>` (`exp-recon-bank` /
-`inv-recon-bank`, gated to 2+ banks via `renderReconBankPicker`/`applyReconBankPicker`,
+`inv-recon-bank`, via `renderReconBankPicker`/`applyReconBankPicker`,
 fp `e:<id>` / `p:<id>`) so a record can be attributed as it's created, not only from
-the reconcile screen. `knownPlaidBanks()` falls back to a `bk-plaid-banks` localStorage
-cache so the picker works even from a tab where the Statements page hasn't populated
-`_plaidBanks` this session. New records apply the tag after insert (once they have an
-id). This is the reliable manual override when the automatic `matched_fps` inference
+the reconcile screen. New records apply the tag after insert (once they have an id).
+
+**Making the pickers actually appear (v471).** They render whenever **≥1** bank is
+known (was 2+, which hid them for single-bank users). More importantly,
+`knownPlaidBanks()` alone is NOT enough: it reads `_plaidBanks` (only populated by
+the Statements page) falling back to the `bk-plaid-banks` localStorage cache — and
+iOS clears an installed PWA's local storage, the same reason `expense_categories`
+lives on the profile. So on a fresh launch every picker saw zero banks and silently
+hid itself. `ensurePlaidBanks()` fixes it: a memoized `/plaid/status` fetch that
+populates `_plaidBanks` + the cache, called fire-and-forget from `loadAllData()` so
+every tab has the list, and again from `renderReconBankPicker` itself (which re-draws
+when the list lands) so a modal opened mid-flight still gets its field. It never
+throws — no bank sync configured is a normal state. **If you add another "Paid from"
+picker, gate it on `knownPlaidBanks()` and let this path fill it in; never assume the
+Statements page ran first.** This is the reliable manual override when the automatic `matched_fps` inference
 can't attribute a record (it never matched anywhere yet).
 
 ```sql

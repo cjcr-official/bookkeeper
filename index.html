@@ -3149,6 +3149,11 @@ async function loadAllData() {
   cache.time_entries = timeEntries.data || [];
   cache.loans = loans.data || [];
 
+  // Warm the connected-bank list app-wide (fire-and-forget) so the "Paid from"
+  // pickers on the Loan / Expense / Invoice / Bill forms render on a fresh launch,
+  // instead of only after the Statements page has been opened this session.
+  ensurePlaidBanks();
+
   // Detect a real "couldn't reach Supabase" failure so the app can tell the user
   // instead of silently showing an empty ledger. A missing table or a brand-new
   // account with no profile row still returns an error per-query, so only flag
@@ -7189,7 +7194,7 @@ function bulkFieldRow(label, inner){
   return `<div class="form-group"><label>${label}</label>${inner}</div>`;
 }
 function bulkExpFieldsHTML(){
-  const multiBank = knownPlaidBanks().filter(b=>b.item_id).length >= 2;
+  const multiBank = !!knownPlaidBanks().filter(b=>b.item_id).length;
   const cats = getCategories();   // global list for the bulk picker
   return bulkFieldRow('Category',
       `<select id="bulk-exp-category"><option value="">— Leave unchanged —</option>${cats.map(c=>`<option>${escHtml(c)}</option>`).join('')}</select>`)
@@ -7205,7 +7210,7 @@ function bulkExpFieldsHTML(){
       `<input id="bulk-exp-date" type="date">`);
 }
 function bulkInvFieldsHTML(){
-  const multiBank = knownPlaidBanks().filter(b=>b.item_id).length >= 2;
+  const multiBank = !!knownPlaidBanks().filter(b=>b.item_id).length;
   return bulkFieldRow('Status',
       `<select id="bulk-inv-status"><option value="">— Leave unchanged —</option><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid (mark fully paid)</option></select>`)
     + bulkFieldRow('Payment method',
@@ -7606,7 +7611,15 @@ function renderReconBankPicker(selectId, groupId, fp, opts) {
   const sel = document.getElementById(selectId), grp = document.getElementById(groupId);
   if (!sel || !grp) return;
   const banks = knownPlaidBanks().filter(b => b.item_id);
-  if (banks.length < 2) { grp.style.display = 'none'; sel.innerHTML = ''; return; }
+  // Nothing known yet (fresh launch / iOS cleared local storage): hide for now, then
+  // fetch the list and draw again when it lands, so the field isn't silently missing.
+  if (!banks.length) {
+    grp.style.display = 'none'; sel.innerHTML = '';
+    if (!_plaidBanksPromise) ensurePlaidBanks().then(list => {
+      if (list && list.length && document.getElementById(selectId)) renderReconBankPicker(selectId, groupId, fp, opts);
+    });
+    return;
+  }
   grp.style.display = '';
   const o = opts || {};
   sel.innerHTML = `<option value="">${escHtml(o.anyLabel || '— Any account —')}</option>` +
@@ -7617,7 +7630,7 @@ function renderReconBankPicker(selectId, groupId, fp, opts) {
 // Apply the picker's choice to the record's reconcile tag once it has an id. No-op
 // when there are fewer than 2 banks (the picker is hidden and must not clear a tag).
 async function applyReconBankPicker(selectId, fp, opts) {
-  if (knownPlaidBanks().filter(b => b.item_id).length < 2) return;
+  if (!knownPlaidBanks().filter(b => b.item_id).length) return;
   const sel = document.getElementById(selectId); if (!sel) return;
   await setReconBank(fp, sel.value || null, opts && opts.exact);
 }
@@ -7627,6 +7640,29 @@ function knownPlaidBanks() {
   if ((_plaidBanks || []).length) return _plaidBanks;
   try { const c = JSON.parse(lsGet('bk-plaid-banks') || '[]'); if (Array.isArray(c) && c.length) _plaidBanks = c; } catch (e) {}
   return _plaidBanks || [];
+}
+// Load the bank list from the SERVER when we don't have it, so the "Paid from"
+// pickers work from any tab. The localStorage cache alone isn't enough: it's only
+// written by the Statements page, and iOS clears an installed PWA's local storage
+// (the same reason expense_categories lives on the profile) — so on a fresh launch
+// the Loan/Expense/Invoice pickers saw zero banks and silently hid themselves.
+// Memoized per session; never throws (no bank sync configured is a normal state).
+let _plaidBanksPromise = null;
+function ensurePlaidBanks() {
+  if (knownPlaidBanks().length) return Promise.resolve(_plaidBanks);
+  if (_plaidBanksPromise) return _plaidBanksPromise;
+  _plaidBanksPromise = (async () => {
+    try {
+      const status = await plaidFetch('/plaid/status', { method: 'GET' });
+      const banks = Array.isArray(status.banks) ? status.banks.filter(b => b && b.item_id) : [];
+      if (banks.length) {
+        _plaidBanks = banks;
+        try { lsSet('bk-plaid-banks', JSON.stringify(banks.map(b => ({ item_id: b.item_id, institution: b.institution })))); } catch (e) {}
+      }
+    } catch (e) { /* not configured / offline — pickers just stay hidden */ }
+    return _plaidBanks || [];
+  })();
+  return _plaidBanksPromise;
 }
 // "＋ New" beside the Account label: add a bank account without leaving the
 // expense. Opens the account modal (stacked on top); saveAccount() returns the
