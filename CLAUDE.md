@@ -105,10 +105,30 @@ this bank+month, stamped by `setMatchedFps`/`stampMatchedFps` after every reconc
 on unrelated edits). `matched_fps` is what keeps ACCOUNTS separate without manual
 tagging: a record that reconciled on one account clears through THAT account, so
 `reconcileMatch`'s `gManual` walk consumes both `manual_matches` AND `matched_fps`
-from every OTHER bank's months and marks those records used, dropping them from this
+from every OTHER bank's months, dropping them from this
 account's "in your books" list AND its "Dated near this month" finder suggestions
 (the finder shows them "On &lt;account&gt;", tap to switch). `gManual` maps fp →
-`{m, bank}` for that labeling. The claims are seeded automatically:
+`{m, bank}` for that labeling.
+
+**STRONG vs WEAK claims — do not collapse these again (v473).** The two sources are
+NOT equally trustworthy and are applied at different times:
+- `manual_matches` elsewhere = **strong** (the user explicitly paired it there).
+  Marked used BEFORE the auto passes, so it can't match here at all.
+- `matched_fps` elsewhere = **weak** (an auto-match is just an amount ±$0.01 + date
+  coincidence). Marked used only AFTER the passes, and only if nothing here matched
+  it; during the 1:1 passes it ranks LAST (`bestC`), so a free record always wins the
+  line first.
+
+Treating weak claims as strong is what made every business month stop balancing:
+`seedOtherBanksMatched()` reconciles the other banks in the background with matching
+deliberately unfiltered (`reconcileMatch(stmt, null)`), so a business expense that
+happened to line up with a personal bank line got stamped into personal's
+`matched_fps` — and was then withheld from the business statement, orphaning the real
+business bank line and failing the month. Deferring weak claims fixes it and
+self-heals stale data (the record re-matches here and gets re-stamped). Covered by a
+regression harness; the pre-fix code fails its scenario 2.
+
+The claims are seeded automatically:
 `seedOtherBanksMatched()` (fired from `renderPlaidBlock`, so on Statements-page open
 and on every bank switch) does one background ~13-month `/plaid/transactions` pull per
 NON-selected bank, once per session (`_seededBanks`), runs the matcher, and stamps

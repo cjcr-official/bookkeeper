@@ -9957,17 +9957,31 @@ function reconcileMatch(stmt, acctId) {
   const thisMonth = (stmt.statement_month || '').slice(0,7);
   const thisBank = stmt.bankKey || '_';
   const gManual = new Map();
+  const claimedStrong = new Set();   // explicit user pairings elsewhere — authoritative
+  const claimedWeak = new Set();     // auto-matches elsewhere — a guess, NOT authoritative
   Object.entries(profile.plaid_recon || {}).forEach(([bankKey, byMonth]) => {
     if (!byMonth || typeof byMonth !== 'object') return;
     Object.entries(byMonth).forEach(([m, saved]) => {
       if (bankKey === thisBank && m === thisMonth) return;
       if (!saved) return;
-      const claim = fp => { if (fp && !gManual.has(fp)) gManual.set(fp, { m, bank: bankKey }); };
-      if (Array.isArray(saved.manual_matches)) saved.manual_matches.forEach(mm => (mm.rFps||[]).forEach(claim));
-      if (Array.isArray(saved.matched_fps)) saved.matched_fps.forEach(claim);
+      const claim = (fp, strong) => {
+        if (!fp) return;
+        if (!gManual.has(fp)) gManual.set(fp, { m, bank: bankKey });
+        (strong ? claimedStrong : claimedWeak).add(fp);
+      };
+      if (Array.isArray(saved.manual_matches)) saved.manual_matches.forEach(mm => (mm.rFps||[]).forEach(fp => claim(fp, true)));
+      if (Array.isArray(saved.matched_fps)) saved.matched_fps.forEach(fp => claim(fp, false));
     });
   });
-  recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
+  // ONLY explicit pairings block matching here. An AUTO-match on another account is
+  // just an amount+date coincidence, and treating it as authoritative is what made
+  // whole months stop balancing (v473): seedOtherBanksMatched() reconciles every other
+  // bank in the background with matching left unfiltered, so a business expense that
+  // happened to line up with a personal bank line got stamped into that bank's
+  // matched_fps — and was then withheld from the business statement, orphaning the
+  // real business bank line. Weak claims are applied AFTER the passes instead (below),
+  // so they still de-clutter records that find nothing here without stealing matches.
+  recs.forEach((r,i) => { if (!usedR[i] && claimedStrong.has(r.fp)) usedR[i] = true; });
   const gOwned = new Set();   // tight-ownership retired in v226; kept for return-shape compat
   const tightFps = [];
 
@@ -10011,14 +10025,18 @@ function reconcileMatch(stmt, acctId) {
   for (const win of [7, 18]) {
     for (let ti=0; ti<txns.length; ti++) {
       if (usedT[ti] || blockedT.has(ti)) continue;
-      let best=-1, bestD=Infinity;
+      // Rank candidates by (not-claimed-elsewhere, then closest date): a record that
+      // auto-matched on another account is the LAST resort, so it can't take a line
+      // away from one that's free — but it's still available rather than withheld.
+      let best=-1, bestD=Infinity, bestC=2;
       for (let ri=0; ri<recs.length; ri++) {
         if (usedR[ri] || blockedR.has(recs[ri].fp) || !inWin(recs[ri].date) || !close(txns[ti].amount, recs[ri].amount)) continue;
+        const c = claimedWeak.has(recs[ri].fp) ? 1 : 0;
         if (txns[ti].date && recs[ri].date) {
           const d = dayDiff(txns[ti].date, recs[ri].date);
           if (d > win) continue;
-          if (d < bestD) { bestD = d; best = ri; }
-        } else if (best < 0) { best = ri; bestD = win; }
+          if (c < bestC || (c === bestC && d < bestD)) { bestC = c; bestD = d; best = ri; }
+        } else if (best < 0) { best = ri; bestD = win; bestC = c; }
       }
       if (best>=0) { usedT[ti]=true; usedR[best]=true; matched.push({ tIdxs:[ti], rIdxs:[best] }); }
     }
@@ -10075,6 +10093,13 @@ function reconcileMatch(stmt, acctId) {
     const combo = findCombo(capPool(pool, r.date), r.amount, 4);
     if (combo) { usedR[ri]=true; combo.forEach(ti=>usedT[ti]=true); matched.push({ tIdxs:combo, rIdxs:[ri] }); }
   }
+
+  // Provisional cross-account claims, applied only now that matching has run: a record
+  // that auto-matched on ANOTHER account and found nothing here really is that
+  // account's, so it drops out of this one's lists (the de-clutter those claims exist
+  // for). One that DID match a line here keeps its match — this account has a real bank
+  // line needing a counterpart, and withholding it was the whole bug.
+  recs.forEach((r,i) => { if (!usedR[i] && claimedWeak.has(r.fp)) usedR[i] = true; });
 
   const txnFp = i => 't:'+i;
   // Hide $0 bank lines (a "kept" split that turned out to be zero, etc.) from
