@@ -1606,6 +1606,14 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <i class="ti ti-search" style="position:absolute;left:.75rem;top:50%;transform:translateY(-50%);color:var(--text3);font-size:16px;pointer-events:none"></i>
           <input type="text" id="exp-search" placeholder="Search vendor, note, or category..." oninput="renderExpenses()" style="padding-left:2.2rem">
         </div>
+        <!-- Account switcher: only shown for multi-bank users. Filters the list to the
+             expenses that clear through the chosen bank account (explicit "Paid from"
+             tag, else inferred from what it reconciled against). -->
+        <div id="exp-bank-filter-row" style="display:none;margin-bottom:.6rem">
+          <div class="form-group" style="margin:0"><label>Account</label>
+            <select id="exp-bank-filter" onchange="renderExpenses()"><option value="">All accounts</option></select>
+          </div>
+        </div>
         <details style="margin-bottom:.85rem">
           <summary style="font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;user-select:none;padding:.2rem 0"><i class="ti ti-filter" style="font-size:13px;vertical-align:-2px"></i> Filters — category &amp; dates</summary>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem .6rem;margin-top:.5rem">
@@ -7009,7 +7017,7 @@ function renderCalDayList() {
 
 // ====== EXPENSES ======
 function clearExpFilters() {
-  const ids = ['exp-search','exp-cat-filter','exp-from','exp-to'];
+  const ids = ['exp-search','exp-cat-filter','exp-from','exp-to','exp-bank-filter'];
   ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   renderExpenses();
 }
@@ -7020,6 +7028,11 @@ function getFilteredExpenses() {
   const cat = document.getElementById('exp-cat-filter')?.value || '';
   const from = document.getElementById('exp-from')?.value || '';
   const to = document.getElementById('exp-to')?.value || '';
+  const bank = document.getElementById('exp-bank-filter')?.value || '';
+  if (bank) {
+    if (bank === '__none__') list = list.filter(e => !expenseReconBank(e));
+    else list = list.filter(e => expenseReconBank(e) === bank);
+  }
   if (q) {
     const num = parseFloat(q);
     list = list.filter(e => {
@@ -7050,6 +7063,20 @@ function renderExpenses() {
     const current = catSel.value;
     const cats = [...new Set((cache.expenses||[]).map(e=>e.category).filter(Boolean))].sort();
     catSel.innerHTML = '<option value="">All</option>' + cats.map(c=>`<option value="${escHtml(c)}"${c===current?' selected':''}>${escHtml(c)}</option>`).join('');
+  }
+  // Account switcher (multi-bank only): rebuild the bank options each render so newly
+  // linked banks appear, preserving the current pick. Hidden for single-bank users.
+  const bankSel = document.getElementById('exp-bank-filter'), bankRow = document.getElementById('exp-bank-filter-row');
+  if (bankSel && bankRow) {
+    const banks = knownPlaidBanks().filter(b => b.item_id);
+    if (banks.length < 2) { bankRow.style.display = 'none'; bankSel.value = ''; }
+    else {
+      bankRow.style.display = '';
+      const cur = bankSel.value;
+      bankSel.innerHTML = '<option value="">All accounts</option>'
+        + banks.map(b=>`<option value="${escHtml(b.item_id)}"${b.item_id===cur?' selected':''}>${escHtml(bankDisplayName(b))}</option>`).join('')
+        + `<option value="__none__"${cur==='__none__'?' selected':''}>Not attributed to an account</option>`;
+    }
   }
   // Scope toggle: "This year" (matches the Home card) vs "All time". Reflect the
   // active button, and label the summary with the scope in effect.
@@ -9439,6 +9466,26 @@ async function setReconBank(fp, itemId){
   profile.recon_bank = map;
   if (currentUser){ const { error } = await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: map });
     if (error && !/recon_bank/i.test(error.message||'')) showToast(error.message, 'error'); }
+}
+// Which bank account an expense is attributed to, for the Expenses-tab account
+// switcher. An explicit "Paid from" tag wins; otherwise infer from which bank the
+// expense actually reconciled against (its fp stamped into that bank's matched_fps).
+// Returns a real item_id, or '' when nothing has attributed it yet.
+function expenseReconBank(exp) {
+  if (!exp || !exp.id) return '';
+  const fp = 'e:' + exp.id;
+  const tagged = recBankFor(fp);
+  if (tagged) return tagged;
+  const pr = (profile && profile.plaid_recon && typeof profile.plaid_recon === 'object') ? profile.plaid_recon : {};
+  for (const bank of Object.keys(pr)) {
+    if (!bank || bank === '_') continue;   // '_' is legacy/unknown, not a real account
+    const months = pr[bank] || {};
+    for (const m of Object.keys(months)) {
+      const mf = months[m] && months[m].matched_fps;
+      if (Array.isArray(mf) && mf.includes(fp)) return bank;
+    }
+  }
+  return '';
 }
 
 // can never be claimed by two months. Only manual claims persist across months;
