@@ -7549,7 +7549,8 @@ async function viewReceipt(path) {
 function openExpenseModal(exp) {
   editingExpense = exp || null;
   pendingReceiptFile = null; pendingReceiptRemove = false;
-  _recPairTxn = null;   // only addExpenseFromTxn re-arms this after opening
+  _recPairTxn = null;      // only addExpenseFromTxn re-arms this after opening
+  _recDefaultBank = '';    // ditto — a normal open must not inherit a reconcile account
   const e = exp || {};
   document.getElementById('exp-title').textContent = exp?'Edit Expense':'New Expense';
   document.getElementById('exp-id').value = e.id||'';
@@ -7592,6 +7593,10 @@ function duplicateExpense(id) {
 // banks, preselecting its current tag. Only shown with 2+ banks (nothing to choose
 // otherwise). fp = the record's reconcile fingerprint ('e:'+id / 'p:'+id); pass null
 // for a brand-new record (tag is applied after it's saved and has an id).
+// While a form is opened FROM reconciliation this holds the account being reconciled,
+// so its "Bank account" field defaults to that account instead of "Any account".
+// Declared before renderReconBankPicker (its first reader) to avoid a TDZ trap.
+let _recDefaultBank = '';
 // opts.exact  → read/write the tag for THIS occurrence only (a single loan payment)
 //               rather than its folded parent; blank then means "inherit the parent".
 // opts.anyLabel → text for the blank option (e.g. "Same as the loan").
@@ -7614,6 +7619,9 @@ function renderReconBankPicker(selectId, groupId, fp, opts) {
     banks.map(b => `<option value="${escHtml(b.item_id)}">${escHtml(bankDisplayName(b))}</option>`).join('');
   // exact: read the raw key so an inherited parent tag doesn't look like an override.
   sel.value = fp ? (o.exact ? (reconBankMap()[fp] || '') : recBankFor(fp)) : '';
+  // Opened from reconciliation with no tag of its own → default to the account being
+  // reconciled. Skipped in exact mode, where blank means "inherit the parent".
+  if (!sel.value && !o.exact && _recDefaultBank && banks.some(b => b.item_id === _recDefaultBank)) sel.value = _recDefaultBank;
 }
 // Apply the picker's choice to the record's reconcile tag once it has an id. No-op
 // when there are fewer than 2 banks (the picker is hidden and must not clear a tag).
@@ -9147,6 +9155,7 @@ async function recordPriorRefund(idx) {
   cache.expenses.unshift(r.data);
   const fp = 'e:' + r.data.id;
   s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx], rFps:[fp] }]);
+  await tagFromRecon(fp);
   await saveStmtSidecar(s.stmt, s.path);
   showToast('Prior-year refund recorded','success');
   renderReconcile(s.stmt, s.acctId, s.path);
@@ -9215,6 +9224,7 @@ async function applyReimburseFromTxn(idx, expId) {
   if (r.error) { showToast(r.error.message, 'error'); return; }
   cache.expenses.unshift(r.data);
   s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs: [idx], rFps: ['e:' + r.data.id] }]);
+  await tagFromRecon('e:' + r.data.id);
   await saveStmtSidecar(s.stmt, s.path);
   showToast('Reimbursement recorded — not counted as income', 'success');
   renderReconcile(s.stmt, s.acctId, s.path);
@@ -9265,6 +9275,7 @@ async function recordPartialReturn(idx) {
   const fp = 'sc:' + r.data.id;
   const giftIdx = isFullCredit ? idx : idx + 1;
   s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[giftIdx], rFps:[fp] }]);
+  await tagFromRecon(fp);
   await saveStmtSidecar(s.stmt, s.path);
   showToast('Split + gift card credit recorded','success');
   renderStoreCredits();   // keep the Accounts page gift-card list in sync
@@ -9304,6 +9315,7 @@ async function recordPriorPayment(idx) {
   // can let it slip through. Pass 0 handles manual_matches first on next render.
   const fp = 'p:' + r.data.id;
   s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx], rFps:[fp] }]);
+  await tagFromRecon(fp);
   await saveStmtSidecar(s.stmt, s.path);
   showToast('Prior payment recorded','success');
   renderReconcile(s.stmt, s.acctId, s.path);
@@ -9336,6 +9348,7 @@ async function recordIncomeFromTxn(idx) {
   if (r.error) { showToast(r.error.message, 'error'); return; }
   cache.invoices.unshift(r.data);
   s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx], rFps:['p:'+r.data.id] }]);
+  await tagFromRecon('p:'+r.data.id);
   await saveStmtSidecar(s.stmt, s.path);
   showToast('Income recorded', 'success');
   renderInvoices();
@@ -9366,6 +9379,7 @@ async function recordOwnerFromTxn(idx) {
   cache.owner_transactions.unshift(r.data);
   const fp = 'o:' + r.data.id;
   s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs:[idx], rFps:[fp] }]);
+  await tagFromRecon(fp);
   await saveStmtSidecar(s.stmt, s.path);
   showToast(`Owner ${kind} recorded`, 'success');
   renderOwnerTx();   // keep the Accounts page owner list in sync
@@ -9529,6 +9543,23 @@ function openTxnMenu(idx) {
 // "Add as expense": open the real expense form pre-filled from the bank line;
 // saveExpense() explicit-pairs the new expense to this line via _recPairTxn.
 let _recPairTxn = null;   // bank txn index awaiting the next saved expense
+
+// The account currently being reconciled (the statement on screen, else the selected bank).
+function activeReconBank() {
+  const s = _recState;
+  return (s && s.stmt && s.stmt.bankKey) || _selBank || '';
+}
+// A record created FROM a bank line demonstrably cleared through that account, so give
+// it the same "Paid from" tag the forms set — otherwise it stays "any account" and can
+// drift onto another bank's statement. Never overrides a tag the user already set.
+// `exact` pins one loan payment / bill month instead of its parent (see reconBankKey).
+async function tagFromRecon(fp, exact) {
+  const bank = activeReconBank();
+  if (!fp || !bank) return;
+  if (!knownPlaidBanks().filter(b => b.item_id).length) return;
+  if (recBankFor(fp)) return;
+  try { await setReconBank(fp, bank, !!exact); } catch (e) { console.error('tagFromRecon', e); }
+}
 function addExpenseFromTxn(idx) {
   const s = _recState; if (!s) return;
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
@@ -9538,6 +9569,12 @@ function addExpenseFromTxn(idx) {
   document.getElementById('exp-vendor').value = cleanBankDesc(t.description).slice(0, 40);
   document.getElementById('exp-method').value = 'Debit Card';
   document.getElementById('exp-desc').value = (t.description||'').slice(0, 120);
+  // This charge cleared the account being reconciled, so pre-select it (and pull that
+  // account's category list with it). Re-render because openExpenseModal already drew
+  // the picker with _recDefaultBank cleared.
+  _recDefaultBank = activeReconBank();
+  renderReconBankPicker('exp-recon-bank', 'exp-recon-bank-group', null);
+  onExpBankChange();
   _recPairTxn = idx;
 }
 
@@ -9572,6 +9609,7 @@ async function applyPaymentFromTxn(idx, invId) {
   if (r.error) { showToast(r.error.message, 'error'); return; }
   Object.assign(inv, row);
   s.stmt.manual_matches = (s.stmt.manual_matches||[]).concat([{ tIdxs:[idx], rFps:['p:'+invId] }]);
+  await tagFromRecon('p:'+invId);
   await saveStmtSidecar(s.stmt, s.path);
   closeModal('modal-txn-menu');
   showToast('Payment recorded on #' + (inv.number||''), 'success');
@@ -9608,6 +9646,7 @@ async function applyLoanPayFromTxn(idx, loanId) {
   if (error) { showToast(error.message, 'error'); return; }
   loan.payments = pays;
   s.stmt.manual_matches = (s.stmt.manual_matches||[]).concat([{ tIdxs:[idx], rFps:['l:'+loanId+':'+nid] }]);
+  await tagFromRecon('l:'+loanId+':'+nid, true);   // this payment only — never retag the whole loan
   await saveStmtSidecar(s.stmt, s.path);
   closeModal('modal-txn-menu');
   showToast('Loan payment recorded on ' + (loan.name||'loan'), 'success');
@@ -9643,6 +9682,7 @@ async function applyBillPayFromTxn(idx, billId) {
   const by = +mk.split('-')[0], bm = +mk.split('-')[1];
   if (!isBillPaid(billId, by, bm-1)) await toggleBillPaid(billId, by, bm-1);   // marks paid + persists
   s.stmt.manual_matches = (s.stmt.manual_matches||[]).concat([{ tIdxs:[idx], rFps:['b:'+billId+':'+mk] }]);
+  await tagFromRecon('b:'+billId+':'+mk, true);   // this month's occurrence only
   await saveStmtSidecar(s.stmt, s.path);
   closeModal('modal-txn-menu');
   showToast('Bill marked paid', 'success');
