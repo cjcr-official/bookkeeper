@@ -863,6 +863,16 @@ behaviors are easy to break without noticing. What exists and must keep working:
 - **Test both phones after touching navigation, modals or the install flow.**
   An iPhone PWA has no back affordance, so an Android-breaking history bug is
   invisible on iOS. See the Android / Samsung section above.
+- **`hidden` loses to any author `display:` rule.** The `hidden` attribute only
+  works via the UA stylesheet's `[hidden]{display:none}`, which ANY author rule
+  setting `display` beats. `.bulk-bar{display:flex}` made the bulk bar permanently
+  visible on every page (v468 → fixed v469 by adding `.bulk-bar[hidden]{display:none}`).
+  If a `hidden`-toggled element needs a `display` value, ship the matching
+  `[hidden]` rule with it, or toggle a class instead.
+- **A tap-driven list must not re-render the whole list.** Same family as the
+  keystroke rule above: re-rendering on each bulk-select tap flickered and reset the
+  scroll position (and re-ran `rolodexTick`). `bulkPaint(id)` toggles only the touched
+  row's classes.
 - **Don't reintroduce the mileage auto-calc.** We exhausted Google Routes API,
   Distance Matrix API, Places API, US Census Geocoder + OSRM; none match the
   consumer Maps app. The Maps button (universal link to maps.google.com search)
