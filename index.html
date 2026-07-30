@@ -2412,6 +2412,11 @@ tr.bulk-sel{background:var(--accent-bg)}
         <div id="loan-steps"></div>
         <button class="btn btn-sm loan-step-add" style="margin-top:.35rem" onclick="addLoanStep()"><i class="ti ti-plus"></i> Add a rate change</button>
       </div>
+      <!-- Which bank account this loan is normally paid from. Covers every payment
+           on the loan; a single payment can override it in the payment modal. -->
+      <div class="form-group" id="loan-recon-bank-group" style="display:none;margin-top:1.1rem"><label for="loan-recon-bank">Paid from <span style="color:var(--text3);font-weight:400;font-size:11px">(which account the payments clear — for reconciliation)</span></label>
+        <select id="loan-recon-bank"></select>
+      </div>
       <div id="loan-preview" style="margin-top:1.1rem"></div>
     </div>
     <div class="modal-footer">
@@ -2434,6 +2439,11 @@ tr.bulk-sel{background:var(--accent-bg)}
         <div class="form-group"><label for="loan-pay-amount">Amount</label><input id="loan-pay-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" style="text-align:right"></div>
       </div>
       <div class="bud-hint" id="loan-pay-hint" style="margin-top:-.4rem"></div>
+      <!-- Per-payment account. Blank = inherit whatever the loan is set to, so you
+           only set this when ONE payment came out of a different account. -->
+      <div class="form-group" id="loan-pay-bank-group" style="display:none"><label for="loan-pay-bank">Paid from <span style="color:var(--text3);font-weight:400;font-size:11px">(this payment only)</span></label>
+        <select id="loan-pay-bank"></select>
+      </div>
       <div class="form-group"><label for="loan-pay-note">Note <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="loan-pay-note" type="text" placeholder="e.g. extra principal"></div>
     </div>
     <div class="modal-footer">
@@ -6352,6 +6362,7 @@ function openLoanModal(id) {
   document.getElementById('loan-start').value = (loan && loan.start_date) ? loan.start_date : '';
   _loanSteps = (loan && Array.isArray(loan.rate_steps)) ? loan.rate_steps.map(s => ({ month: s.month, date: s.date || '', rate: s.rate })) : [];
   document.getElementById('loan-delete-btn').style.display = loan ? '' : 'none';
+  renderReconBankPicker('loan-recon-bank', 'loan-recon-bank-group', loan ? 'l:'+loan.id : null);
   onLoanStartChange();   // renders the rate-change rows + hint, then previews
   openModal('modal-loan');
 }
@@ -6400,6 +6411,8 @@ async function saveLoan() {
   if (id) { const r = await sb.from('loans').update(row).eq('id', id); err = r.error; if (!err) { const i = cache.loans.findIndex(x => x.id === id); if (i > -1) cache.loans[i] = { ...cache.loans[i], ...row }; } }
   else { const r = await sb.from('loans').insert(row).select().single(); err = r.error; if (!err && r.data) { cache.loans.push(r.data); savedId = r.data.id; } }
   if (err) { console.error('saveLoan', err); showToast("Couldn't save the loan — check your connection and try again", 'error'); return; }
+  // "Paid from" for the loan as a whole (fp l:<id>) — covers every payment on it.
+  if (savedId) await applyReconBankPicker('loan-recon-bank', 'l:'+savedId);
   showToast('Loan saved', 'success'); closeModal('modal-loan');
   _selLoan = savedId; _loanCalCursor = null; renderLoan();
   if (typeof refreshNotifBadge === 'function') refreshNotifBadge();
@@ -6410,6 +6423,14 @@ async function deleteLoan() {
   const { error } = await sb.from('loans').delete().eq('id', id);
   if (error) { console.error('deleteLoan', error); showToast("Couldn't delete the loan — check your connection and try again", 'error'); return; }
   cache.loans = (cache.loans || []).filter(l => l.id !== id);
+  // Drop the loan's "Paid from" tag AND every per-payment override under it, in one write.
+  const rb = reconBankMap(), stale = Object.keys(rb).filter(k => k === 'l:'+id || k.startsWith('l:'+id+':'));
+  if (stale.length) {
+    const map = {...rb}; stale.forEach(k => delete map[k]);
+    profile.recon_bank = map;
+    if (currentUser) { const { error: e2 } = await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: map });
+      if (e2 && !/recon_bank/i.test(e2.message||'')) console.error('recon_bank cleanup', e2); }
+  }
   showToast('Deleted'); closeModal('modal-loan'); _selLoan = null; renderLoan();
 }
 
@@ -6433,6 +6454,11 @@ function openLoanPayment(loanId, payId) {
   document.getElementById('loan-pay-amount').value = pay ? (pay.amount != null ? pay.amount : '') : (next ? next.pay.toFixed(2) : (comp.firstMonthly ? comp.firstMonthly.toFixed(2) : ''));
   document.getElementById('loan-pay-note').value = pay ? (pay.note || '') : '';
   document.getElementById('loan-pay-delete-btn').style.display = pay ? '' : 'none';
+  // Per-payment account override. Blank inherits the loan's own tag, so name it in
+  // the blank option when there is one ("Same as the loan (Business checking)").
+  const loanTag = reconBankMap()['l:'+loanId] || '';
+  renderReconBankPicker('loan-pay-bank', 'loan-pay-bank-group', pay ? 'l:'+loanId+':'+pay.id : null,
+    { exact: true, anyLabel: loanTag ? ('— Same as the loan (' + bankDisplayName(loanTag) + ') —') : '— Same as the loan —' });
   const hint = document.getElementById('loan-pay-hint');
   if (hint) hint.textContent = (!pay && next) ? ('Next payment ' + next.n + (next.date ? ' · ' + fmtDate(next.date) : '') + ': ' + fmt(next.pay)) : '';
   openModal('modal-loan-payment');
@@ -6447,11 +6473,14 @@ async function saveLoanPayment() {
   if (!isFinite(amount) || amount <= 0) { showToast('Enter an amount', 'error'); return; }
   const note = document.getElementById('loan-pay-note').value.trim();
   const pays = (Array.isArray(loan.payments) ? loan.payments : []).slice();
+  let savedPayId = payId;
   if (payId) { const i = pays.findIndex(p => p.id === payId); if (i > -1) pays[i] = { ...pays[i], date, amount, note }; }
-  else { const nid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('p' + Date.now() + Math.random().toString(36).slice(2)); pays.push({ id: nid, date, amount, note }); }
+  else { savedPayId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('p' + Date.now() + Math.random().toString(36).slice(2)); pays.push({ id: savedPayId, date, amount, note }); }
   const { error } = await sb.from('loans').update({ payments: pays }).eq('id', loanId);
   if (error) { console.error('saveLoanPayment', error); showToast("Couldn't save the payment — check your connection and try again", 'error'); return; }
   loan.payments = pays;
+  // Per-payment "Paid from" (exact fp, so it overrides the loan's tag for this one only).
+  if (savedPayId) await applyReconBankPicker('loan-pay-bank', 'l:'+loanId+':'+savedPayId, { exact: true });
   showToast('Saved', 'success'); closeModal('modal-loan-payment'); renderLoan();
   if (typeof refreshNotifBadge === 'function') refreshNotifBadge();
 }
@@ -6464,6 +6493,8 @@ async function deleteLoanPayment() {
   const { error } = await sb.from('loans').update({ payments: pays }).eq('id', loanId);
   if (error) { console.error('deleteLoanPayment', error); showToast("Couldn't delete the payment — check your connection and try again", 'error'); return; }
   loan.payments = pays;
+  // Drop this payment's own "Paid from" tag so it can't linger as an orphan key.
+  if (reconBankMap()['l:'+loanId+':'+payId] != null) await setReconBank('l:'+loanId+':'+payId, null, true);
   showToast('Deleted'); closeModal('modal-loan-payment'); renderLoan();
 }
 
@@ -7568,22 +7599,27 @@ function renderExpAccountOptions(sel) {
 // banks, preselecting its current tag. Only shown with 2+ banks (nothing to choose
 // otherwise). fp = the record's reconcile fingerprint ('e:'+id / 'p:'+id); pass null
 // for a brand-new record (tag is applied after it's saved and has an id).
-function renderReconBankPicker(selectId, groupId, fp) {
+// opts.exact  → read/write the tag for THIS occurrence only (a single loan payment)
+//               rather than its folded parent; blank then means "inherit the parent".
+// opts.anyLabel → text for the blank option (e.g. "Same as the loan").
+function renderReconBankPicker(selectId, groupId, fp, opts) {
   const sel = document.getElementById(selectId), grp = document.getElementById(groupId);
   if (!sel || !grp) return;
   const banks = knownPlaidBanks().filter(b => b.item_id);
   if (banks.length < 2) { grp.style.display = 'none'; sel.innerHTML = ''; return; }
   grp.style.display = '';
-  sel.innerHTML = '<option value="">— Any account —</option>' +
+  const o = opts || {};
+  sel.innerHTML = `<option value="">${escHtml(o.anyLabel || '— Any account —')}</option>` +
     banks.map(b => `<option value="${escHtml(b.item_id)}">${escHtml(bankDisplayName(b))}</option>`).join('');
-  sel.value = fp ? recBankFor(fp) : '';
+  // exact: read the raw key so an inherited parent tag doesn't look like an override.
+  sel.value = fp ? (o.exact ? (reconBankMap()[fp] || '') : recBankFor(fp)) : '';
 }
 // Apply the picker's choice to the record's reconcile tag once it has an id. No-op
 // when there are fewer than 2 banks (the picker is hidden and must not clear a tag).
-async function applyReconBankPicker(selectId, fp) {
+async function applyReconBankPicker(selectId, fp, opts) {
   if (knownPlaidBanks().filter(b => b.item_id).length < 2) return;
   const sel = document.getElementById(selectId); if (!sel) return;
-  await setReconBank(fp, sel.value || null);
+  await setReconBank(fp, sel.value || null, opts && opts.exact);
 }
 // The connected banks, falling back to the localStorage cache when the Statements
 // page hasn't populated _plaidBanks this session (so the pickers work from any tab).
@@ -9756,9 +9792,19 @@ function reconBankKey(fp){
   if (p[0]==='b') return 'b:'+p[1];   // whole bill (any month)
   return fp;
 }
-function recBankFor(fp){ return reconBankMap()[reconBankKey(fp)] || ''; }
-async function setReconBank(fp, itemId){
-  const key = reconBankKey(fp);
+// Resolve a record's bank tag: an EXACT per-occurrence tag wins, else the folded
+// parent tag (a loan / bill tagged as a whole). That's what lets one loan payment
+// clear a different account than the loan's usual one — without the exact-first
+// lookup, tagging a single payment would retag every payment on that loan.
+// For records whose key doesn't fold (expenses, invoice payments) both are the same.
+function recBankFor(fp){
+  const map = reconBankMap();
+  if (map[fp] != null) return map[fp] || '';
+  return map[reconBankKey(fp)] || '';
+}
+// Pass exact=true to tag just THIS occurrence (one loan payment) instead of its parent.
+async function setReconBank(fp, itemId, exact){
+  const key = exact ? fp : reconBankKey(fp);
   const map = {...reconBankMap()};
   if (!itemId) delete map[key]; else map[key] = itemId;
   profile.recon_bank = map;
