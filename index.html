@@ -9152,6 +9152,74 @@ async function recordPriorRefund(idx) {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
+// "Reimbursement of an expense": a deposit that pays you back for something you
+// already expensed — NOT income. Booked the same way a refund is: a negative expense
+// in the ORIGINAL expense's category, so the two cancel out and that category's spend
+// nets to zero. Revenue is untouched, and the deposit gets a record to match.
+//
+// Deliberately does NOT set the original's `reimbursed` flag: that flag already
+// removes an expense from net profit, so doing both would take the cost out twice.
+// Use this OR the invoice route (bill it on an invoice with the expense linked and
+// marked reimbursed, which nets to zero via invoiceRevenue) — never both for one cost.
+function reimburseFromTxn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const amt = parseFloat(t.amount) || 0;
+  if (!(amt > 0)) { showToast('Use this on a deposit (money in).', 'error'); return; }
+  const dd = (a, b) => (a && b) ? Math.abs((parseDate(a) - parseDate(b)) / 86400000) : 9999;
+  // Only real (positive) expenses can be paid back; an existing credit isn't one.
+  // Exact-amount matches first, then whatever is nearest in date.
+  const cands = (cache.expenses || []).filter(e => (parseFloat(e.amount) || 0) > 0)
+    .map(e => ({ e, exact: Math.abs((parseFloat(e.amount) || 0) - amt) <= 0.01, d: dd(e.date, t.date) }))
+    .sort((a, b) => (b.exact - a.exact) || (a.d - b.d))
+    .slice(0, 12);
+  document.getElementById('txn-menu-title').textContent = 'Reimbursement · ' + fmt(amt);
+  const row = (label, sub, js, tint) => `<button class="btn" onclick="closeModal('modal-txn-menu');${js}" style="display:flex;width:100%;align-items:center;gap:.7rem;margin-bottom:.5rem;padding:.65rem .8rem;white-space:normal;text-align:left${tint?';border-color:var(--green-border);background:var(--green-bg)':''}">
+      <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">${label}</span><span style="display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px">${sub}</span></span>
+      <i class="ti ti-chevron-right" style="color:var(--text3)"></i></button>`;
+  document.getElementById('txn-menu-body').innerHTML =
+    `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem;line-height:1.5">Which expense does this ${t.date ? fmtDate(t.date) : ''} deposit pay back? It'll be credited against that expense, so it never counts as income.</div>`
+    + (cands.length ? cands.map(c => row(
+        escHtml(c.e.vendor || 'Expense'),
+        fmt(parseFloat(c.e.amount) || 0) + ' · ' + fmtDate(c.e.date) + ' · ' + escHtml(c.e.category || '') + (c.exact ? ' · same amount' : ''),
+        `applyReimburseFromTxn(${idx},'${c.e.id}')`, c.exact)).join('')
+      : '<div style="font-size:12.5px;color:var(--text3);margin-bottom:.6rem">No expenses recorded yet.</div>')
+    + `<div style="border-top:1px solid var(--border);margin:.8rem 0 .6rem"></div>`
+    + row('Not one of these', 'Enter the vendor yourself — still booked as a credit, not income.', `applyReimburseFromTxn(${idx},'')`);
+  openModal('modal-txn-menu');
+}
+async function applyReimburseFromTxn(idx, expId) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const amt = Math.abs(parseFloat(t.amount) || 0);
+  const src = expId ? (cache.expenses || []).find(e => e.id === expId) : null;
+  let vendor = src ? (src.vendor || '') : '';
+  if (!src) {
+    const v = prompt(`Record ${fmt(amt)} on ${fmtDate(t.date)} as a reimbursement (not income).\n\nWho paid you back?`, '');
+    if (v == null || !v.trim()) return;
+    vendor = v.trim();
+  }
+  const row = {
+    user_id: currentUser.id,
+    date: t.date || today(),
+    vendor,
+    // Credit the SAME category as the original so that category nets to zero.
+    category: src ? (src.category || 'Other') : 'Other',
+    amount: -amt,
+    method: 'bank',
+    description: 'Reimbursement' + (src ? ' — ' + (src.vendor || 'expense') + ' ' + fmtDate(src.date) : '') + (t.description ? ' · ' + String(t.description).slice(0, 40) : ''),
+    reimbursed: false,
+    invoice_id: null
+  };
+  const r = await sb.from('expenses').insert(row).select().single();
+  if (r.error) { showToast(r.error.message, 'error'); return; }
+  cache.expenses.unshift(r.data);
+  s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs: [idx], rFps: ['e:' + r.data.id] }]);
+  await saveStmtSidecar(s.stmt, s.path);
+  showToast('Reimbursement recorded — not counted as income', 'success');
+  renderReconcile(s.stmt, s.acctId, s.path);
+}
+
 // Split a bank line into the kept portion + a portion that was returned for a
 // gift card / store credit (not a bank refund). Creates a store_credit record
 // for the gift-card portion and explicitly pairs it to the new split child.
@@ -9445,6 +9513,7 @@ function openTxnMenu(idx) {
     html += act(`payInvoiceFromTxn(${idx})`, 'file-dollar', 'Payment on an invoice', 'A customer paid you — pick which invoice this deposit pays.');
     html += act(`recordIncomeFromTxn(${idx})`, 'coin', 'Income without an invoice', 'You were paid for work you never invoiced — creates a paid invoice dated this day.');
     html += act(`recordOwnerFromTxn(${idx})`, 'wallet', 'Owner contribution', 'You covered the business from personal funds. Equity, not income.');
+    html += act(`reimburseFromTxn(${idx})`, 'arrow-back-up', 'Reimbursement of an expense', 'Someone paid you back for something you already expensed — cancels out that expense instead of counting as income.');
     html += grp('From a previous year');
     html += act(`recordPriorPayment(${idx})`, 'calendar-plus', 'Prior-year invoice payment', 'Money for work billed last year — books the income in last year, not this one.');
     html += act(`recordPriorRefund(${idx})`, 'receipt-refund', 'Refund of a prior-year expense', 'A vendor refunded something you expensed last year — reduces last year\'s expenses.');

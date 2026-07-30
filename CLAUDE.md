@@ -168,9 +168,18 @@ without an invoice (creates a paid invoice dated the deposit day), owner
 draw/contribution, gift-card split, prior-year income/refund, **Loan payment**
 (`loanPayFromTxn` → pick a loan; records a `loans.payments` row and pairs it),
 **Bill payment** (`billPayFromTxn` → pick one of the statement month's unpaid
-budget bills; flips `bill_paid` and pairs it), plus
-split/rejoin/fix-amount. (The Loan/Bill charge actions only appear when the user
-has loans / budget bills.) Matching itself never silently alters records — only the
+budget bills; flips `bill_paid` and pairs it),
+**Reimbursement of an expense** (v474, deposits only: `reimburseFromTxn` → pick the
+expense being paid back, exact-amount candidates first → `applyReimburseFromTxn`
+writes a NEGATIVE expense in that expense's own category and pairs it, so the cost
+nets to zero and nothing lands in revenue — same vehicle as the prior-year refund),
+plus split/rejoin/fix-amount. (The Loan/Bill charge actions only appear when the user
+has loans / budget bills.) **Two ways to book a customer reimbursement, never both
+for the same cost:** the invoice route (bill it, link the expense via `invoice_id` +
+`reimbursed`, so `invoiceRevenue` nets it out) OR the deposit route above (a negative
+expense). `reimburseFromTxn` deliberately does NOT set the original's `reimbursed`
+flag — that flag already removes the cost from net profit, so doing both would deduct
+it twice. Matching itself never silently alters records — only the
 ⋯ actions the user picks write anything. The combo passes (one line ↔ several
 records) cap their candidate pool at the 30 nearest-by-date so a big ledger can't
 freeze the page.
