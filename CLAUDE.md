@@ -178,11 +178,15 @@ month's paydays this deposit is → `applyPaycheckFromTxn` writes
 `paycheck_amounts[payday]` and pairs it). **Two paychecks on ONE payday (v481):**
 `paycheck_amounts` holds a SINGLE amount per payday (the Budget page and report both
 read one scalar), so a household with two earners paid the same day can't store them
-separately — recording the second would overwrite the first. The picker lists the
-other unmatched **same-day** deposits with checkboxes (unchecked by default: a same-day
-deposit could be a customer payment, and folding that into "what I was paid" would be
-wrong), shows a live combined total, and records the SUM for that payday paired to
-every ticked line (`manual_matches` is N↔1). The combined total also auto-matches those
+separately — recording the second would overwrite the first. The picker lists **every**
+unmatched same-day deposit INCLUDING the tapped one (pre-ticked; others unticked, since
+a same-day deposit could be a customer payment and folding that into "what I was paid"
+would be wrong). Listing the tapped line as its own row is deliberate — with only the
+OTHER deposit boxed, the sheet read as one checkbox for two paychecks. It shows a live
+combined total (`pcTotal`, mirrored onto each payday button so the figure about to be
+saved is visible), spells out `now $X — this replaces it` on a payday that already has
+an amount, and records the SUM for that payday paired to every ticked line
+(`manual_matches` is N↔1). The combined total also auto-matches those
 lines on later pulls via Pass 4, so the pairing survives losing the manual match. If
 per-earner amounts are ever needed, that's a `paycheck_amounts` schema change plus the
 Budget page/report — don't fake it with extra date keys, they'd be invisible there.

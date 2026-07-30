@@ -9698,7 +9698,8 @@ function paycheckFromTxn(idx) {
   if (!mk) { showToast('This statement has no month to file the paycheck under.', 'error'); return; }
   const by = +mk.split('-')[0], bm = +mk.split('-')[1];
   const days = (typeof paydaysForMonth==='function') ? paydaysForMonth(by, bm-1) : [];
-  document.getElementById('txn-menu-title').textContent = 'Paycheck · ' + fmt(t.amount);
+  // Titled by the DAY, not one line's amount — the amount is now whatever is ticked.
+  document.getElementById('txn-menu-title').textContent = 'Paycheck · ' + (t.date ? fmtDate(t.date) : fmt(t.amount));
   const body = document.getElementById('txn-menu-body');
   // No pay schedule yet → don't dead-end; open the schedule setup right from here.
   if (!days.length) {
@@ -9708,46 +9709,59 @@ function paycheckFromTxn(idx) {
     openModal('modal-txn-menu');
     return;
   }
-  // Other unmatched deposits on the SAME day. A household can have two paychecks land
-  // together (two earners), and paycheck_amounts holds ONE amount per payday — so the
-  // only faithful way to record both is as that payday's combined total, paired to
-  // every line it came from. Left unchecked: a same-day deposit might be a customer
-  // payment, and silently folding that into "what I was paid" would be wrong.
+  // Every unmatched deposit on this day, INCLUDING the one that was tapped — that one
+  // is just pre-ticked. Showing it as its own row keeps the list symmetric: with only
+  // the OTHER deposit boxed, it read as one checkbox for two paychecks. A household can
+  // have two earners paid the same day, and paycheck_amounts holds ONE amount per
+  // payday, so the faithful record is that payday's combined total paired to every line
+  // it came from. Others start unticked — a same-day deposit could be a customer
+  // payment, and folding that into "what I was paid" would be wrong.
   const comp = reconcileMatch(s.stmt, s.acctId);
-  const sibs = (comp.onBankOnly||[])
+  const sameDay = (comp.onBankOnly||[])
     .map(o => ({ i: parseInt((o.fp||'').slice(2),10), t: o.t }))
-    .filter(o => o.i !== idx && !isNaN(o.i) && (parseFloat(o.t.amount)||0) > 0 && o.t.date === t.date);
-  const sibHtml = sibs.length ? `
-    <div style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3);margin:0 0 .45rem">Same day — part of this payday?</div>
-    ${sibs.map(o=>`<label style="display:flex;align-items:center;gap:.6rem;padding:.5rem .1rem;border-bottom:1px solid var(--border);cursor:pointer">
-      <input type="checkbox" class="pc-extra" data-idx="${o.i}" data-amt="${Math.abs(parseFloat(o.t.amount)||0)}" onchange="pcTotal(${amt})" style="width:18px;flex:0 0 18px;margin:0;padding:0">
+    .filter(o => !isNaN(o.i) && (parseFloat(o.t.amount)||0) > 0 && o.t.date === t.date);
+  const rows = sameDay.length > 1
+    ? sameDay.slice().sort((a,b) => (a.i===idx?-1:b.i===idx?1:0))   // the tapped one first
+    : [];
+  const rowHtml = rows.length ? `
+    <div style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3);margin:0 0 .45rem">Which deposits are this paycheck?</div>
+    ${rows.map(o=>{
+      const a = Math.abs(parseFloat(o.t.amount)||0);
+      return `<label style="display:flex;align-items:center;gap:.6rem;padding:.5rem .1rem;border-bottom:1px solid var(--border);cursor:pointer">
+      <input type="checkbox" class="pc-pick" data-idx="${o.i}" data-amt="${a}"${o.i===idx?' checked':''} onchange="pcTotal()" style="width:18px;flex:0 0 18px;margin:0;padding:0">
       <span style="flex:1;min-width:0;font-size:12.5px;line-height:1.35;word-break:break-word">${escHtml(cleanBankDesc(o.t.description))}</span>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;color:var(--green);white-space:nowrap">${fmt(Math.abs(parseFloat(o.t.amount)||0))}</span>
-    </label>`).join('')}
-    <div id="pc-total" style="font-size:12px;color:var(--text3);margin:.55rem 0 .9rem">Recording <strong style="color:var(--text)">${fmt(amt)}</strong> for this payday.</div>` : '';
+      <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;color:var(--green);white-space:nowrap">${fmt(a)}</span>
+    </label>`;}).join('')}
+    <div id="pc-total" style="font-size:12.5px;color:var(--text3);margin:.6rem 0 1rem"></div>` : '';
   // Nearest payday to the deposit first — a paycheck usually lands on/near its payday.
   const dayOff = d => Math.abs((d - parseDate(t.date||(mk+'-01')))/86400000);
   const sorted = days.slice().sort((a,b)=>dayOff(a)-dayOff(b));
-  body.innerHTML = sibHtml +
-    `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">Which payday ${sibs.length?'do these belong to':'is this deposit'}?</div>` +
+  body.innerHTML = rowHtml +
+    `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">Which payday?</div>` +
     sorted.map(d=>{
       const dk = ymd(d), got = getPaycheckAmount(dk);
-      const same = got!=null && Math.abs(got-amt) <= 0.01;
+      // Spell out the consequence: the right-hand figure is what this payday WILL hold,
+      // the sub-line is what it holds now. Two bare amounts with no labels was the
+      // confusing part of the first cut.
       return `<button class="btn" onclick="applyPaycheckFromTxn(${idx},'${dk}')" style="display:flex;width:100%;align-items:center;gap:.7rem;margin-bottom:.5rem;padding:.65rem .8rem;white-space:normal;text-align:left">
-        <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">${escHtml(payFmt(d))}</span>${got!=null?`<span style="display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px">${same?'already recorded — same amount':'recorded '+fmt(got)+' · tap to replace'}</span>`:''}</span>
-        <span class="pc-amt" style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--green)">${fmt(amt)}</span>
+        <span style="flex:1;min-width:0"><span style="display:block;font-size:13.5px">${escHtml(payFmt(d))}</span>${got!=null?`<span style="display:block;font-weight:400;font-size:11.5px;color:var(--text3);margin-top:1px">now ${fmt(got)} — this replaces it</span>`:''}</span>
+        <span class="pc-amt" style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--green);white-space:nowrap">${fmt(amt)}</span>
       </button>`;
     }).join('');
+  pcTotal();
   openModal('modal-txn-menu');
 }
-// Live total as same-day deposits are ticked, on the summary line AND on every payday
-// button, so the amount about to be recorded is never a surprise.
-function pcTotal(baseAmt) {
-  const extra = [...document.querySelectorAll('.pc-extra:checked')].reduce((s,el)=>s+(parseFloat(el.dataset.amt)||0), 0);
-  const total = (parseFloat(baseAmt)||0) + extra;
-  const n = document.querySelectorAll('.pc-extra:checked').length;
+// Live total of the ticked deposits, mirrored onto every payday button so the figure
+// about to be saved is visible before committing. No-op when there's nothing to pick.
+function pcTotal() {
+  const picks = [...document.querySelectorAll('.pc-pick')];
+  if (!picks.length) return;
+  const on = picks.filter(el => el.checked);
+  const total = on.reduce((s,el)=>s+(parseFloat(el.dataset.amt)||0), 0);
   const el = document.getElementById('pc-total');
-  if (el) el.innerHTML = `Recording <strong style="color:var(--text)">${fmt(total)}</strong> for this payday${n?` — ${n+1} deposits combined`:''}.`;
+  if (el) el.innerHTML = on.length
+    ? `This payday gets <strong style="color:var(--text)">${fmt(total)}</strong>${on.length>1?` — ${on.length} deposits added together`:''}.`
+    : `<span style="color:var(--red)">Pick at least one deposit.</span>`;
   document.querySelectorAll('.pc-amt').forEach(x => { x.textContent = fmt(total); });
 }
 // Save the amount against that payday, then pair the bank line to it. Mirrors
@@ -9755,12 +9769,15 @@ function pcTotal(baseAmt) {
 async function applyPaycheckFromTxn(idx, dateKey) {
   const s = _recState; if (!s) return;
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
-  // Any same-day deposits the user ticked are part of this payday: record their
-  // combined total (paycheck_amounts holds one amount per payday) and pair EVERY
-  // line to it — manual_matches is N↔1, so all of them clear together.
-  const extras = [...document.querySelectorAll('.pc-extra:checked')]
-    .map(el => parseInt(el.dataset.idx,10)).filter(i => !isNaN(i));
-  const tIdxs = [idx, ...extras];
+  // The ticked deposits ARE this payday's pay: record their combined total
+  // (paycheck_amounts holds one amount per payday) and pair EVERY line to it —
+  // manual_matches is N↔1, so all of them clear together. With no picker shown
+  // (a single same-day deposit) it's just the tapped line.
+  const picks = [...document.querySelectorAll('.pc-pick')];
+  const tIdxs = picks.length
+    ? picks.filter(el => el.checked).map(el => parseInt(el.dataset.idx,10)).filter(i => !isNaN(i))
+    : [idx];
+  if (!tIdxs.length) { showToast('Pick at least one deposit', 'error'); return; }
   const total = tIdxs.reduce((sum,i) => {
     const x = s.stmt.transactions[i];
     return sum + Math.abs(parseFloat(x && x.amount)||0);
