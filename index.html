@@ -3151,6 +3151,10 @@ async function loadAllData() {
   // pickers on the Loan / Expense / Invoice / Bill forms render on a fresh launch,
   // instead of only after the Statements page has been opened this session.
   ensurePlaidBanks();
+  // One-time: convert existing manual matches into explicit "Paid from" tags so
+  // account separation survives the removal of the matched_fps inference. Idempotent
+  // and fire-and-forget (writes only when it finds new tags to add).
+  migrateReconTags();
 
   // Detect a real "couldn't reach Supabase" failure so the app can tell the user
   // instead of silently showing an empty ledger. A missing table or a brand-new
@@ -8515,7 +8519,6 @@ async function renderPlaidBlock() {
   renderPlaidPendingNote();
   if (!_recState) renderAuditBlock(_selBank, '', '', null);   // per-bank audit grid, tap-to-pull
   refreshLiveAudit();   // background: stamp the selected bank's current-month dot
-  seedOtherBanksMatched();   // background: learn the OTHER accounts' matches so their records leave this account's lists/suggestions
 }
 // Switch which bank the month buttons reconcile. Clears the open month view and
 // re-renders the card + this bank's audit grid; the per-bank pull cache is kept.
@@ -8754,63 +8757,11 @@ async function refreshLiveAudit() {
     if (setAuditResult(_selBank, m, comp.passed)) {
       try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); }
     }
-    stampMatchedFps(_selBank, m, comp.matchedFps);   // keep this account's cross-account claims fresh
     if (!_recState) renderAuditBlock(_selBank, '', '', null);
   } catch (e) { console.error(e); }
   finally { _liveAuditBusy = false; }
 }
 
-// Background cross-account learning (multi-bank). The reconcile view + its "Dated
-// near this month" suggestions should only show records that belong to the account
-// you're reconciling. A record's account is learned from where it matches (persisted
-// as matched_fps), but that only exists once an account has been reconciled — so on
-// a fresh session the OTHER account's records still surface here. This quietly pulls
-// each NON-selected bank's last ~12 months once per session, runs the matcher, and
-// stamps matched_fps + audit dots, so those records are recognized as belonging to
-// their own account and drop out of THIS account's lists/suggestions automatically —
-// no "Check all 12 months" chore. Fire-and-forget; re-renders the open view only if
-// something changed.
-let _seededBanks = new Set();
-let _seedingBusy = false;
-async function seedOtherBanksMatched() {
-  if (_seedingBusy || !_plaidConnected || (_plaidBanks || []).length < 2) return;
-  const targets = _plaidBanks.filter(b => b.item_id && b.item_id !== _selBank && !_seededBanks.has(b.item_id));
-  if (!targets.length) return;
-  _seedingBusy = true;
-  // 13 months (12 full + the current one) so recent records are attributed too.
-  const months = [];
-  const d0 = new Date(); d0.setDate(1);
-  for (let k = 12; k >= 0; k--) { const x = new Date(d0); x.setMonth(x.getMonth() - k); months.push(x.toISOString().slice(0, 7)); }
-  const first = months[0], lastM = months[months.length - 1];
-  const [ly, lm] = lastM.split('-').map(Number);
-  const end = `${lastM}-${String(new Date(ly, lm, 0).getDate()).padStart(2, '0')}`;
-  let changed = false;
-  try {
-    for (const b of targets) {
-      _seededBanks.add(b.item_id);   // mark up front; on error we remove it to allow a retry
-      try {
-        const data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ item_id: b.item_id, start_date: first + '-01', end_date: end }) });
-        const byMonth = {};
-        (data.transactions || []).forEach(t => { const m = (t.date || '').slice(0, 7); (byMonth[m] = byMonth[m] || []).push(t); });
-        const bc = (_plaidCache[b.item_id] = _plaidCache[b.item_id] || {});
-        months.forEach(m => {
-          bc[m] = { transactions: byMonth[m] || [], institution: data.institution };   // cache so a later tap on this bank is instant
-          const comp = reconcileMatch(buildPlaidStmt(m, bc[m], b.item_id), null);
-          if (setMatchedFps(b.item_id, m, comp.matchedFps)) changed = true;
-          if (setAuditResult(b.item_id, m, comp.passed)) changed = true;
-        });
-      } catch (e) { console.error('seed bank', b.item_id, e); _seededBanks.delete(b.item_id); }
-    }
-    if (changed) {
-      try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon, audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); }
-      // Refresh the open month (its suggestions now exclude the other account's
-      // records) or the audit grid; skip if the user has since navigated away.
-      const s = _recState;
-      if (s && s.stmt) renderReconcile(s.stmt, s.acctId, s.path);
-      else if (currentPage === 'accounts') renderAuditBlock(_selBank, '', '', null);
-    }
-  } finally { _seedingBusy = false; }
-}
 // Disconnect one bank (by item_id) — or, with no id, every bank (legacy).
 async function plaidDisconnect(itemId) {
   if (!confirm('Disconnect this bank? You can reconnect any time.')) return;
@@ -8894,10 +8845,8 @@ function buildPlaidStmt(month, data, bankKey) {
     manual_matches: saved.manual_matches || [],
     unmatch_t: saved.unmatch_t || [],
     unmatch_r: saved.unmatch_r || [],
-    owned_fps: saved.owned_fps || [],
     txn_edits: saved.txn_edits || [],
-    skip_fps: saved.skip_fps || [],
-    keep_fps: saved.keep_fps || []
+    skip_fps: saved.skip_fps || []
   };
 }
 // Re-apply saved bank-line edits (splits, amount fixes) to a fresh pull, in the
@@ -8956,16 +8905,14 @@ async function plaidCheckYear() {
     const byMonth = {};
     (data.transactions || []).forEach(t => { const m = (t.date || '').slice(0, 7); (byMonth[m] = byMonth[m] || []).push(t); });
     const bc = bankCache();
-    let changed = false, reconChanged = false;
+    let changed = false;
     const results = months.map(m => {
       bc[m] = { transactions: byMonth[m] || [], institution: data.institution };   // month taps are instant now
       const comp = reconcileMatch(buildPlaidStmt(m, bc[m]), null);
       changed = setAuditResult(_selBank, m, comp.passed) || changed;
-      reconChanged = setMatchedFps(_selBank, m, comp.matchedFps) || reconChanged;   // stamp cross-account claims for all 12 months
       return { m, passed: comp.passed, label: comp.monthLabel || m, issues: comp.onBankOnly.length + comp.inRecordsOnly.length };
     });
     if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
-    if (reconChanged) { try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
     _recState = null;   // the summary replaces any open month view
     const bad = results.filter(r => !r.passed);
     const chip = r => `<button class="btn btn-sm" onclick="plaidPullMonth('${r.m}')" style="font-size:11.5px">${escHtml(r.label)} · ${r.issues} to review</button>`;
@@ -9003,40 +8950,16 @@ async function savePlaidRecon(stmt) {
   const month = (stmt.statement_month || '').slice(0, 7);
   if (!month) return;
   const bucket = reconBucket(stmt.bankKey || _selBank);
-  const prev = bucket[month] || {};
   bucket[month] = {
     manual_matches: stmt.manual_matches || [],
     unmatch_t: stmt.unmatch_t || [],
     unmatch_r: stmt.unmatch_r || [],
-    owned_fps: stmt.owned_fps || [],
     txn_edits: stmt.txn_edits || [],   // splits + amount fixes, re-applied on the next pull
     skip_fps: stmt.skip_fps || [],     // records set aside for this month ("not on this statement")
-    keep_fps: stmt.keep_fps || [],     // cash records the user restored into this month's pool
-    matched_fps: Array.isArray(prev.matched_fps) ? prev.matched_fps : [],   // preserve cross-account claims (stamped by setMatchedFps)
     statement_month: stmt.statement_month || (month + '-01')
   };
   try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); }
   catch (e) { console.error('plaid_recon save failed', e); showToast('Save failed: ' + (e.message || e), 'error'); }
-}
-
-// Record which fingerprints matched a bank line for a bank+month (auto + manual), so
-// OTHER accounts can tell those records already clear through this one. Writes into
-// the plaid_recon bucket; returns true only when the set actually changed (so the
-// caller can skip a redundant DB write). stampMatchedFps saves the change.
-function setMatchedFps(bankKey, month, fps) {
-  if (!month) return false;
-  const bucket = reconBucket(bankKey);
-  const prevArr = (bucket[month] && Array.isArray(bucket[month].matched_fps)) ? bucket[month].matched_fps : [];
-  const next = [...new Set(fps || [])].sort();
-  const prev = [...prevArr].sort();
-  if (prev.length === next.length && prev.every((v, i) => v === next[i])) return false;   // unchanged
-  bucket[month] = { ...(bucket[month] || {}), matched_fps: next };
-  return true;
-}
-async function stampMatchedFps(bankKey, month, fps) {
-  if (!currentUser || !setMatchedFps(bankKey, month, fps)) return;
-  try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); }
-  catch (e) { console.error('matched_fps save failed', e); }
 }
 
 // Search across EVERY record (not just other-month unmatched ones) and show
@@ -9098,6 +9021,14 @@ async function matchSelected() {
   });
   if (!tIdxs.length || !rFps.length) { showToast('Pick at least one bank line and one record','error'); return; }
   s.stmt.manual_matches = (s.stmt.manual_matches || []).concat([{ tIdxs, rFps }]);
+  // A manual match is the user telling us these records clear through THIS bank —
+  // a strong signal. Tag them (multi-bank only) so every OTHER bank's statement
+  // excludes them. This is what keeps accounts separate now that the auto-inferred
+  // matched_fps system is gone; auto-matches are never persisted this way.
+  if ((_plaidBanks || []).length > 1) {
+    const bank = s.stmt.bankKey || _selBank;
+    for (const fp of rFps) { try { await setReconBank(fp, bank); } catch (e) {} }
+  }
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
 }
@@ -9857,8 +9788,8 @@ async function resetMonthMatches() {
   const s = _recState; if (!s) return;
   if (!confirm('Clear your manual matches, set-asides, and line edits for this month and re-auto-match from scratch?')) return;
   const month = (s.stmt.statement_month || '').slice(0, 7);
-  s.stmt.manual_matches = []; s.stmt.unmatch_t = []; s.stmt.unmatch_r = []; s.stmt.owned_fps = [];
-  s.stmt.txn_edits = []; s.stmt.skip_fps = []; s.stmt.keep_fps = [];
+  s.stmt.manual_matches = []; s.stmt.unmatch_t = []; s.stmt.unmatch_r = [];
+  s.stmt.txn_edits = []; s.stmt.skip_fps = [];
   const bucket = reconBucket(s.stmt.bankKey || _selBank);
   if (month && bucket[month]) {
     delete bucket[month];
@@ -9937,25 +9868,44 @@ async function setReconBank(fp, itemId, exact){
   if (currentUser){ const { error } = await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: map });
     if (error && !/recon_bank/i.test(error.message||'')) showToast(error.message, 'error'); }
 }
+// One-time migration off the retired matched_fps cross-account inference. Every
+// existing manual match (a STRONG signal — the user paired those records to that
+// bank) becomes an explicit "Paid from" tag, so account separation is preserved.
+// Weak auto-matches (matched_fps) are deliberately NOT migrated — they were only
+// amount+date coincidences and baking them in is the very bug this removal fixes;
+// they simply re-derive as ephemeral auto-matches. Pure + idempotent: existing
+// explicit tags always win, and manual matches only ADD tags (never overwrite).
+function manualMatchTagMap(plaidRecon, existing){
+  const map = { ...(existing || {}) };
+  Object.entries(plaidRecon || {}).forEach(([bank, byMonth]) => {
+    if (!bank || bank === '_' || !byMonth || typeof byMonth !== 'object') return;   // '_' is a legacy/unknown key, not a real account
+    Object.values(byMonth).forEach(saved => {
+      if (!saved || !Array.isArray(saved.manual_matches)) return;
+      saved.manual_matches.forEach(mm => (mm.rFps || []).forEach(fp => {
+        if (!fp) return;
+        const key = reconBankKey(fp);
+        if (map[fp] == null && map[key] == null) map[key] = bank;   // don't override an explicit pick
+      }));
+    });
+  });
+  return map;
+}
+async function migrateReconTags(){
+  if (!currentUser || !profile) return;
+  const cur = reconBankMap();
+  const next = manualMatchTagMap(profile.plaid_recon, cur);
+  const ck = Object.keys(cur), nk = Object.keys(next);
+  if (nk.length === ck.length && nk.every(k => cur[k] === next[k])) return;   // nothing new
+  profile.recon_bank = next;
+  try { await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: next }); } catch (e) { console.error('recon tag migration', e); }
+}
 // Which bank account an expense is attributed to, for the Expenses-tab account
-// switcher. An explicit "Paid from" tag wins; otherwise infer from which bank the
-// expense actually reconciled against (its fp stamped into that bank's matched_fps).
-// Returns a real item_id, or '' when nothing has attributed it yet.
+// switcher — its explicit "Paid from" tag (recon_bank), or '' when untagged.
+// (Attribution is now a single source: the tag, written on a manual match or
+// picked directly. The old matched_fps auto-inference fallback is retired.)
 function expenseReconBank(exp) {
   if (!exp || !exp.id) return '';
-  const fp = 'e:' + exp.id;
-  const tagged = recBankFor(fp);
-  if (tagged) return tagged;
-  const pr = (profile && profile.plaid_recon && typeof profile.plaid_recon === 'object') ? profile.plaid_recon : {};
-  for (const bank of Object.keys(pr)) {
-    if (!bank || bank === '_') continue;   // '_' is legacy/unknown, not a real account
-    const months = pr[bank] || {};
-    for (const m of Object.keys(months)) {
-      const mf = months[m] && months[m].matched_fps;
-      if (Array.isArray(mf) && mf.includes(fp)) return bank;
-    }
-  }
-  return '';
+  return recBankFor('e:' + exp.id);
 }
 
 // can never be claimed by two months. Only manual claims persist across months;
@@ -10052,47 +10002,18 @@ function reconcileMatch(stmt, acctId) {
     matched.push({ tIdxs, rIdxs, manualIdx: mi });
   });
 
-  // A record already reconciled in ANOTHER account/month is spoken for — mark it used
-  // so it can't auto-match here and it leaves "In your books". This is what keeps
-  // BUSINESS records off the PERSONAL statement (and vice versa): a record that
-  // cleared through one account doesn't clutter another's unmatched list. Two sources,
-  // both walked across every bank's saved months (plaid_recon is {item_id:{month:{}}}),
-  // skipping only THIS view's own bank+month (its live matches, re-derived by Pass 0
-  // above + the auto passes, always win):
-  //   • manual_matches — explicit pairings the user made there
-  //   • matched_fps    — records that AUTO-matched there, persisted after each
-  //                      reconcile (setMatchedFps) so the inference survives reloads.
-  // gManual maps fp → {m, bank} so the finder can label where it's accounted for.
-  const thisMonth = (stmt.statement_month || '').slice(0,7);
+  // Keeping BUSINESS records off the PERSONAL statement (and vice versa) is handled
+  // ENTIRELY by the explicit "Paid from" tag (recon_bank), applied just below as
+  // assignedAway. A record clears through the account the USER said it clears through
+  // — via a manual match (matchSelected writes the tag), a "Paid from" pick, or the
+  // form's Bank field. Auto-matches are NEVER persisted as cross-account authority: an
+  // auto-match is only an amount+date coincidence, and treating it as authoritative is
+  // exactly what made whole months stop balancing (the retired v473 matched_fps /
+  // strong-vs-weak-claim system). Untagged records still auto-match ANY bank here (the
+  // default) and re-derive fresh on every pull. gManual is retired but returned empty so
+  // the finder's older code paths stay inert (records route through assignedAway/'other').
   const thisBank = stmt.bankKey || '_';
   const gManual = new Map();
-  const claimedStrong = new Set();   // explicit user pairings elsewhere — authoritative
-  const claimedWeak = new Set();     // auto-matches elsewhere — a guess, NOT authoritative
-  Object.entries(profile.plaid_recon || {}).forEach(([bankKey, byMonth]) => {
-    if (!byMonth || typeof byMonth !== 'object') return;
-    Object.entries(byMonth).forEach(([m, saved]) => {
-      if (bankKey === thisBank && m === thisMonth) return;
-      if (!saved) return;
-      const claim = (fp, strong) => {
-        if (!fp) return;
-        if (!gManual.has(fp)) gManual.set(fp, { m, bank: bankKey });
-        (strong ? claimedStrong : claimedWeak).add(fp);
-      };
-      if (Array.isArray(saved.manual_matches)) saved.manual_matches.forEach(mm => (mm.rFps||[]).forEach(fp => claim(fp, true)));
-      if (Array.isArray(saved.matched_fps)) saved.matched_fps.forEach(fp => claim(fp, false));
-    });
-  });
-  // ONLY explicit pairings block matching here. An AUTO-match on another account is
-  // just an amount+date coincidence, and treating it as authoritative is what made
-  // whole months stop balancing (v473): seedOtherBanksMatched() reconciles every other
-  // bank in the background with matching left unfiltered, so a business expense that
-  // happened to line up with a personal bank line got stamped into that bank's
-  // matched_fps — and was then withheld from the business statement, orphaning the
-  // real business bank line. Weak claims are applied AFTER the passes instead (below),
-  // so they still de-clutter records that find nothing here without stealing matches.
-  recs.forEach((r,i) => { if (!usedR[i] && claimedStrong.has(r.fp)) usedR[i] = true; });
-  const gOwned = new Set();   // tight-ownership retired in v226; kept for return-shape compat
-  const tightFps = [];
 
   // Per-bank "Paid from" assignment (multi-bank only): a record the user tagged to
   // a SPECIFIC bank belongs only to that bank's statements. Assigned to ANOTHER
@@ -10134,18 +10055,14 @@ function reconcileMatch(stmt, acctId) {
   for (const win of [7, 18]) {
     for (let ti=0; ti<txns.length; ti++) {
       if (usedT[ti] || blockedT.has(ti)) continue;
-      // Rank candidates by (not-claimed-elsewhere, then closest date): a record that
-      // auto-matched on another account is the LAST resort, so it can't take a line
-      // away from one that's free — but it's still available rather than withheld.
-      let best=-1, bestD=Infinity, bestC=2;
+      let best=-1, bestD=Infinity;
       for (let ri=0; ri<recs.length; ri++) {
         if (usedR[ri] || blockedR.has(recs[ri].fp) || !inWin(recs[ri].date) || !close(txns[ti].amount, recs[ri].amount)) continue;
-        const c = claimedWeak.has(recs[ri].fp) ? 1 : 0;
         if (txns[ti].date && recs[ri].date) {
           const d = dayDiff(txns[ti].date, recs[ri].date);
           if (d > win) continue;
-          if (c < bestC || (c === bestC && d < bestD)) { bestC = c; bestD = d; best = ri; }
-        } else if (best < 0) { best = ri; bestD = win; bestC = c; }
+          if (d < bestD) { bestD = d; best = ri; }
+        } else if (best < 0) { best = ri; bestD = win; }
       }
       if (best>=0) { usedT[ti]=true; usedR[best]=true; matched.push({ tIdxs:[ti], rIdxs:[best] }); }
     }
@@ -10203,13 +10120,6 @@ function reconcileMatch(stmt, acctId) {
     if (combo) { usedR[ri]=true; combo.forEach(ti=>usedT[ti]=true); matched.push({ tIdxs:combo, rIdxs:[ri] }); }
   }
 
-  // Provisional cross-account claims, applied only now that matching has run: a record
-  // that auto-matched on ANOTHER account and found nothing here really is that
-  // account's, so it drops out of this one's lists (the de-clutter those claims exist
-  // for). One that DID match a line here keeps its match — this account has a real bank
-  // line needing a counterpart, and withholding it was the whole bug.
-  recs.forEach((r,i) => { if (!usedR[i] && claimedWeak.has(r.fp)) usedR[i] = true; });
-
   const txnFp = i => 't:'+i;
   // Hide $0 bank lines (a "kept" split that turned out to be zero, etc.) from
   // the unmatched view so they don't block the audit's PASSED state.
@@ -10218,7 +10128,7 @@ function reconcileMatch(stmt, acctId) {
   // Unmatched records OUTSIDE this statement's period — searchable for cross-month
   // matches (prior-year payments cleared this month, etc.). recFpIdx already maps
   // their fp's so checking + Match works the same as in-period rows.
-  const otherUnmatched = recs.filter((r,i)=>!usedR[i] && !inPeriod(r.date) && !gOwned.has(r.fp));
+  const otherUnmatched = recs.filter((r,i)=>!usedR[i] && !inPeriod(r.date));
 
   // Balance check. balanceOk is true / false / null (unknown — statement had no balances).
   let balanceHtml = '', balanceOk = null;
@@ -10245,11 +10155,11 @@ function reconcileMatch(stmt, acctId) {
   // as _recState.matchedGroups and the rendered rows share indices (unmatchByIdx).
   const grpDate = g => (g.tIdxs.length && txns[g.tIdxs[0]] && txns[g.tIdxs[0]].date) || (g.rIdxs.length && recs[g.rIdxs[0]] && recs[g.rIdxs[0]].date) || '';
   matched.sort((a,b) => (grpDate(b)||'').localeCompare(grpDate(a)||''));
-  // Fingerprints of records that matched a bank line HERE — persisted per bank+month
-  // (setMatchedFps) so other accounts know these records clear through this one.
+  // Fingerprints of records that matched a bank line HERE (this pull only — never
+  // persisted). Informational: the finder/tests use it to see what cleared.
   const matchedFps = [];
   matched.forEach(g => (g.rIdxs||[]).forEach(ri => { const r = recs[ri]; if (r) matchedFps.push(r.fp); }));
-  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceOk, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned, assignedAway, matchedFps };
+  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceOk, balanceHtml, monthKey, monthLabel, passed, gManual, assignedAway, matchedFps };
 }
 
 // Reconcile VIEW: compute matches, stash view state, persist tight-match ownership,
@@ -10260,7 +10170,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   // any bank — but the audit grid + saved matches key off the statement's bank.
   const aKey = stmt.bankKey || acctId || '_';
   const comp = reconcileMatch(stmt, acctId);
-  const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceHtml, monthKey, monthLabel, passed, tightFps, gManual, gOwned, assignedAway } = comp;
+  const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceHtml, monthKey, monthLabel, passed, gManual, assignedAway } = comp;
   const multiBank = (_plaidBanks||[]).length > 1;   // "Paid from" tagging only makes sense with 2+ banks
   const setAside = skippedRecs.filter(r => r.inP);   // this month's set-asides (cash + skips)
   // A truly empty month (no bank lines, nothing recorded, nothing set aside)
@@ -10269,7 +10179,6 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     _recState = null;
     out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No bank activity and nothing in your books for ${escHtml(monthLabel||'this month')} — nothing to reconcile. If this is an older month that should have transactions, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`;
     recordAudit(aKey, monthKey, passed, monthLabel);
-    stampMatchedFps(aKey, monthKey, comp.matchedFps);
     return;
   }
   _recState = { stmt, acctId, path, monthKey, searchPool: [], matchedGroups: matched, recs };
@@ -10469,7 +10378,6 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     </div>`;
   searchOtherRecs();   // pre-fill the finder with unmatched records dated near this month
   recordAudit(aKey, monthKey, passed, monthLabel);
-  stampMatchedFps(aKey, monthKey, comp.matchedFps);   // persist so other accounts drop these from "in your books"
 }
 
 // Open a record's editor from its reconcile fingerprint — one tap to fix a
@@ -10485,19 +10393,16 @@ function editRecFromFp(fp) {
 }
 
 // "Not on this statement": set a record aside for this month — it stops blocking
-// the pass and won't auto-match here. Restore undoes it (and, for a cash record,
-// remembers the override in keep_fps so the auto set-aside doesn't re-hide it).
+// the pass and won't auto-match here. Restore undoes it.
 async function skipRec(fp) {
   const s = _recState; if (!s) return;
   s.stmt.skip_fps = [...new Set([...(s.stmt.skip_fps || []), fp])];
-  s.stmt.keep_fps = (s.stmt.keep_fps || []).filter(f => f !== fp);
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 async function unskipRec(fp) {
   const s = _recState; if (!s) return;
   s.stmt.skip_fps = (s.stmt.skip_fps || []).filter(f => f !== fp);
-  s.stmt.keep_fps = [...new Set([...(s.stmt.keep_fps || []), fp])];
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
 }

@@ -97,54 +97,36 @@ the months that need attention (tap a chip to open one). All per-month state
 persists in `profiles.plaid_recon` (there's no PDF sidecar): `manual_matches`,
 `unmatch_t/r`, **`txn_edits`** (splits + amount fixes, re-applied deterministically
 on every pull by `applyTxnEdits` inside `buildPlaidStmt` so match indices stay
-valid), **`skip_fps`** (records the user set aside as "not on this statement" for
-that month), and **`keep_fps`** (cash records restored into the month's pool),
-and **`matched_fps`** (fingerprints that AUTO- or manually matched a bank line for
-this bank+month, stamped by `setMatchedFps`/`stampMatchedFps` after every reconcile —
-`renderReconcile`, `plaidCheckYear`, `refreshLiveAudit`; `savePlaidRecon` preserves it
-on unrelated edits). `matched_fps` is what keeps ACCOUNTS separate without manual
-tagging: a record that reconciled on one account clears through THAT account, so
-`reconcileMatch`'s `gManual` walk consumes both `manual_matches` AND `matched_fps`
-from every OTHER bank's months, dropping them from this
-account's "in your books" list AND its "Dated near this month" finder suggestions
-(the finder shows them "On &lt;account&gt;", tap to switch). `gManual` maps fp →
-`{m, bank}` for that labeling.
+valid), and **`skip_fps`** (records the user set aside as "not on this statement" for
+that month).
 
-**STRONG vs WEAK claims — do not collapse these again (v473).** The two sources are
-NOT equally trustworthy and are applied at different times:
-- `manual_matches` elsewhere = **strong** (the user explicitly paired it there).
-  Marked used BEFORE the auto passes, so it can't match here at all.
-- `matched_fps` elsewhere = **weak** (an auto-match is just an amount ±$0.01 + date
-  coincidence). Marked used only AFTER the passes, and only if nothing here matched
-  it; during the 1:1 passes it ranks LAST (`bestC`), so a free record always wins the
-  line first.
+**Account separation is ONE explicit source: the "Paid from" tag (`recon_bank`).**
+A record clears through the account the USER said it clears through — set on a manual
+match (`matchSelected` writes the tag, multi-bank only), a "Paid from" pick, or a
+form's Bank field. `reconcileMatch` excludes a record from a statement ONLY when it's
+tagged to a DIFFERENT bank (`recBankFor(fp) !== stmt.bankKey`), collected in the
+returned `assignedAway` map so the finder shows "Paid from &lt;bank&gt;" with a Change
+action. Untagged records still auto-match ANY bank (the default), so single-bank users
+and untouched records are unaffected. **Auto-matches are NEVER persisted as
+cross-account authority** — they re-derive fresh on every pull. This is deliberate: an
+auto-match is only an amount ±$0.01 + date coincidence, and the retired `matched_fps`
+system (which persisted those guesses and withheld them from other accounts, plus a
+background `seedOtherBanksMatched` that reconciled every other bank to seed them) is
+exactly what made business months stop balancing. **Do not reintroduce a persisted
+auto-match / cross-account-inference map.** The tradeoff — a genuine cross-account
+amount collision needs one manual match (which then tags the record) — is the
+predictable behavior the owner asked for. `migrateReconTags()` (run once from
+`loadAllData`) converts existing `manual_matches` into tags so old data keeps its
+separation; weak `matched_fps` are intentionally dropped, not baked in. The matcher is
+covered by `test/reconcile.test.mjs` (`node test/reconcile.test.mjs`) — extend it when
+you touch `reconcileMatch`.
 
-Treating weak claims as strong is what made every business month stop balancing:
-`seedOtherBanksMatched()` reconciles the other banks in the background with matching
-deliberately unfiltered (`reconcileMatch(stmt, null)`), so a business expense that
-happened to line up with a personal bank line got stamped into personal's
-`matched_fps` — and was then withheld from the business statement, orphaning the real
-business bank line and failing the month. Deferring weak claims fixes it and
-self-heals stale data (the record re-matches here and gets re-stamped). Covered by a
-regression harness; the pre-fix code fails its scenario 2.
-
-The claims are seeded automatically:
-`seedOtherBanksMatched()` (fired from `renderPlaidBlock`, so on Statements-page open
-and on every bank switch) does one background ~13-month `/plaid/transactions` pull per
-NON-selected bank, once per session (`_seededBanks`), runs the matcher, and stamps
-their `matched_fps` + audit dots — no manual `plaidCheckYear` needed. It re-renders the
-open month only if something changed. `buildPlaidStmt(month, data, bankKey?)` takes an
-optional bankKey (defaults to `_selBank`) so seeding can build another bank's statement.
-Everything self-heals on every later reconcile.
 Cash records are NOT excluded from matching — this business deposits cash income,
 so a cash-paid invoice hits the bank as a deposit and reconciles like everything
 else (several cash payments deposited together match via the combo pass). A
 record that genuinely never hits the bank is set aside per month via the eye-off
-button (`skip_fps`; `keep_fps` is a vestige of the removed cash auto-set-aside).
-Cross-month AND cross-account double-claims are prevented inside `reconcileMatch`:
-records matched in another month/account (per `plaid_recon` — see `matched_fps`
-above) are marked used up front, dropping them from that month's lists and
-auto-match pool (`gManual` maps fp → `{m, bank}`). The **"Find any record"** search (`searchOtherRecs` over
+button (`skip_fps`).
+The **"Find any record"** search (`searchOtherRecs` over
 `_recState.searchPool`) covers EVERY record with its status — matched here,
 matched in another month (button opens that month), set aside (cash/user, with
 Restore), in this month's list, or unmatched in another month (actionable
@@ -254,11 +236,13 @@ itself stays unfiltered** — `reconcileMatch(stmt, null)` — because a record 
 paid from any bank; only the audit/persistence keys are per-bank. `migratePlaidKeys()`
 does a one-time move of legacy single-bank data (audit key `'_'`, bare-month
 `plaid_recon` keys) under the primary bank's `item_id` so history survives. Cross-bank
-double-claims are prevented: a record manually matched in any other bank+month is
-marked used (`gManual` walks every bank's months, skipping the current bank+month).
+double-claims are prevented by the explicit "Paid from" tag (`recon_bank`): a record
+tagged to another bank is excluded (see the account-separation note above).
 
-**"Paid from" per-bank record tagging (v459+, multi-bank only):** the ONE exception
-to unfiltered matching. A user with 2+ banks can tag a record to the specific bank it
+**"Paid from" per-bank record tagging (v459+, multi-bank only):** the SOLE
+cross-account filter on otherwise-unfiltered matching (it replaced the retired
+`matched_fps` inference — see the account-separation note above). A user with 2+ banks
+can tag a record to the specific bank it
 clears through, stored as a flat `profiles.recon_bank` map `{fp: item_id}`
 (`reconBankMap()`/`setReconBank()`). In `reconcileMatch`, a record tagged to a bank
 OTHER than `stmt.bankKey` is marked used up front (dropped from this bank's lists +
@@ -300,8 +284,8 @@ every tab has the list, and again from `renderReconBankPicker` itself (which re-
 when the list lands) so a modal opened mid-flight still gets its field. It never
 throws — no bank sync configured is a normal state. **If you add another "Paid from"
 picker, gate it on `knownPlaidBanks()` and let this path fill it in; never assume the
-Statements page ran first.** This is the reliable manual override when the automatic `matched_fps` inference
-can't attribute a record (it never matched anywhere yet).
+Statements page ran first.** Setting the tag up front here is equivalent to setting it
+from a manual match later — both write `recon_bank`, the single attribution source.
 
 ```sql
 alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;

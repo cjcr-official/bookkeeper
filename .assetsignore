@@ -4,5 +4,6 @@ wrangler.toml
 .git/
 .github/
 worker/
+test/
 *.md
 node_modules/
