@@ -9883,8 +9883,9 @@ function manualMatchTagMap(plaidRecon, existing){
       if (!saved || !Array.isArray(saved.manual_matches)) return;
       saved.manual_matches.forEach(mm => (mm.rFps || []).forEach(fp => {
         if (!fp) return;
-        const key = reconBankKey(fp);
-        if (map[fp] == null && map[key] == null) map[key] = bank;   // don't override an explicit pick
+        // EXACT fp, never the folded parent: one loan payment (or one bill month)
+        // matched on a bank must not retag every other occurrence of that loan/bill.
+        if (map[fp] == null && map[reconBankKey(fp)] == null) map[fp] = bank;   // don't override an explicit pick
       }));
     });
   });
@@ -9900,12 +9901,27 @@ async function migrateReconTags(){
   try { await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: next }); } catch (e) { console.error('recon tag migration', e); }
 }
 // Which bank account an expense is attributed to, for the Expenses-tab account
-// switcher — its explicit "Paid from" tag (recon_bank), or '' when untagged.
-// (Attribution is now a single source: the tag, written on a manual match or
-// picked directly. The old matched_fps auto-inference fallback is retired.)
+// switcher. Explicit "Paid from" tag first, then where it was reconciled per the
+// saved plaid_recon data. DISPLAY ONLY — this never influences matching, which is
+// why it may still read legacy `matched_fps`: that data is no longer written, but
+// existing users' months are full of it, and dropping the fallback made almost every
+// expense read as unassigned so the tab's bank filter showed nothing (v477 fix).
 function expenseReconBank(exp) {
   if (!exp || !exp.id) return '';
-  return recBankFor('e:' + exp.id);
+  const fp = 'e:' + exp.id;
+  const tagged = recBankFor(fp);
+  if (tagged) return tagged;
+  const pr = (profile && profile.plaid_recon && typeof profile.plaid_recon === 'object') ? profile.plaid_recon : {};
+  for (const bank of Object.keys(pr)) {
+    if (!bank || bank === '_') continue;   // '_' is legacy/unknown, not a real account
+    const months = pr[bank] || {};
+    for (const m of Object.keys(months)) {
+      const saved = months[m]; if (!saved) continue;
+      if (Array.isArray(saved.manual_matches) && saved.manual_matches.some(mm => (mm.rFps||[]).includes(fp))) return bank;
+      if (Array.isArray(saved.matched_fps) && saved.matched_fps.includes(fp)) return bank;   // legacy, read-only
+    }
+  }
+  return '';
 }
 
 // can never be claimed by two months. Only manual claims persist across months;
@@ -10002,18 +10018,33 @@ function reconcileMatch(stmt, acctId) {
     matched.push({ tIdxs, rIdxs, manualIdx: mi });
   });
 
-  // Keeping BUSINESS records off the PERSONAL statement (and vice versa) is handled
-  // ENTIRELY by the explicit "Paid from" tag (recon_bank), applied just below as
-  // assignedAway. A record clears through the account the USER said it clears through
-  // — via a manual match (matchSelected writes the tag), a "Paid from" pick, or the
-  // form's Bank field. Auto-matches are NEVER persisted as cross-account authority: an
-  // auto-match is only an amount+date coincidence, and treating it as authoritative is
-  // exactly what made whole months stop balancing (the retired v473 matched_fps /
-  // strong-vs-weak-claim system). Untagged records still auto-match ANY bank here (the
-  // default) and re-derive fresh on every pull. gManual is retired but returned empty so
-  // the finder's older code paths stay inert (records route through assignedAway/'other').
+  // A record the user EXPLICITLY matched somewhere else is spoken for: mark it used so
+  // it can't be stolen by a coincidental line here, and remember where (gManual maps
+  // fp → {m, bank}) so the finder can label it "Matched · <month>" / "On <bank>".
+  // Two distinct protections, BOTH sourced from manual_matches only:
+  //   • cross-MONTH  — a January expense must not auto-match a February line (that
+  //                    orphans February's real record and the month stops balancing).
+  //   • cross-ACCOUNT — an explicit pairing on another bank belongs to that bank.
+  // ONLY explicit pairings count. Auto-matches are NEVER persisted as authority (the
+  // retired matched_fps / strong-vs-weak system): an auto-match is just an amount ±$0.01
+  // + date coincidence, and treating it as authoritative is what made whole months stop
+  // balancing. Untagged, never-manually-matched records still auto-match ANY bank and
+  // re-derive fresh on every pull. Cross-account is ALSO enforced by the explicit
+  // "Paid from" tag below (assignedAway) — the two are complementary.
+  const thisMonth = (stmt.statement_month || '').slice(0,7);
   const thisBank = stmt.bankKey || '_';
   const gManual = new Map();
+  Object.entries(profile.plaid_recon || {}).forEach(([bankKey, byMonth]) => {
+    if (!byMonth || typeof byMonth !== 'object') return;
+    Object.entries(byMonth).forEach(([m, saved]) => {
+      if (bankKey === thisBank && m === thisMonth) return;   // this view's own live matches win (Pass 0)
+      if (!saved || !Array.isArray(saved.manual_matches)) return;
+      saved.manual_matches.forEach(mm => (mm.rFps||[]).forEach(fp => {
+        if (fp && !gManual.has(fp)) gManual.set(fp, { m, bank: bankKey });
+      }));
+    });
+  });
+  recs.forEach((r,i) => { if (!usedR[i] && gManual.has(r.fp)) usedR[i] = true; });
 
   // Per-bank "Paid from" assignment (multi-bank only): a record the user tagged to
   // a SPECIFIC bank belongs only to that bank's statements. Assigned to ANOTHER

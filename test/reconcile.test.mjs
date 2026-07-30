@@ -146,6 +146,37 @@ test('migration ignores matched_fps (weak) — only manual matches become tags',
   eq(map, { 'p:p9': 'bankB' }, 'only the manual-matched fp is tagged; the auto-match guess is dropped');
 });
 
+// 3c. Migration must tag the EXACT occurrence, not the folded loan/bill parent —
+//     one matched loan payment must not retag every other payment on that loan.
+test('migration tags the exact occurrence, not the whole loan', ({ manualMatchTagMap }) => {
+  const recon = { bankB: { '2026-03': { manual_matches: [{ rFps: ['l:loan1:pay1'] }] } } };
+  eq(manualMatchTagMap(recon, {}), { 'l:loan1:pay1': 'bankB' }, 'only that payment is tagged');
+});
+
+// 4. CROSS-MONTH PROTECTION (v477 regression). A record explicitly matched in an
+//    EARLIER month must not be stolen by a coincidental line in a later month —
+//    that orphans the later month's real record and the month stops balancing.
+test('a record manually matched in another month is not stolen here', ({ reconcileMatch }) => {
+  sandbox.cache.expenses = [{ id: 'e1', date: '2026-01-20', amount: 250, vendor: 'JanExpense' }];
+  sandbox.profile.plaid_recon = { bankA: { '2026-01': { manual_matches: [{ tIdxs: [0], rFps: ['e:e1'] }] } } };
+  const s = stmt('2026-02', [{ date: '2026-02-03', amount: -250, description: 'DIFFERENT CHARGE' }], { bankKey: 'bankA' });
+  const r = reconcileMatch(s, null);
+  eq(r.matched.length, 0, 'the January record does not match a February line');
+  eq(r.onBankOnly.length, 1, "February's line is correctly reported as needing a record");
+  eq(r.gManual.has('e:e1'), true, 'finder can label it as matched in January');
+});
+
+// 4b. ...but the SAME month's own manual matches still apply (Pass 0 wins).
+test("this month's own manual match still holds", ({ reconcileMatch }) => {
+  sandbox.cache.expenses = [{ id: 'e1', date: '2026-02-20', amount: 250, vendor: 'FebExpense' }];
+  sandbox.profile.plaid_recon = { bankA: { '2026-02': { manual_matches: [{ tIdxs: [0], rFps: ['e:e1'] }] } } };
+  const s = stmt('2026-02', [{ date: '2026-02-03', amount: -250, description: 'CHARGE' }], {
+    bankKey: 'bankA', manual_matches: [{ tIdxs: [0], rFps: ['e:e1'] }] });
+  const r = reconcileMatch(s, null);
+  eq(r.matched.length, 1, 'the pairing holds in its own month');
+  eq(r.passed, true, 'month balances');
+});
+
 // 4. Combo pass: one $120 deposit = two recorded payments ($100 + $20).
 test('combo pass: one line = several records', ({ reconcileMatch }) => {
   sandbox.cache.invoices = [
