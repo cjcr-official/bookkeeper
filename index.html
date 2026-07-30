@@ -2341,6 +2341,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
       </div>
       <div class="bud-hint" style="margin-top:-.4rem">Reimbursed = the part of the bill someone pays back (leave blank if none).</div>
       <div id="bill-net" style="font-size:12.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:right;min-height:1em"></div>
+      <div class="form-group" id="bill-recon-bank-group" style="display:none"><label for="bill-recon-bank">Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(which account it clears — for reconciliation)</span></label>
+        <select id="bill-recon-bank"></select>
+      </div>
       <div class="form-group"><label for="bill-notes">Notes <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><input id="bill-notes" type="text"></div>
     </div>
     <div class="modal-footer">
@@ -6820,6 +6823,7 @@ function openBillModal(id){
   document.getElementById('bill-reimbursed').value = (b && b.reimbursed) ? b.reimbursed : '';
   document.getElementById('bill-notes').value = b ? (b.notes||'') : '';
   document.getElementById('bill-reimb-label').textContent = (profile && (profile.reimburse_label||'').trim()) || 'Reimbursement';
+  renderReconBankPicker('bill-recon-bank', 'bill-recon-bank-group', b ? 'b:'+b.id : null);
   document.getElementById('bill-delete-btn').style.display = b ? '' : 'none';
   updateBillNet();
   openModal('modal-bill');
@@ -6851,9 +6855,13 @@ async function saveBill(){
   const reimbursed=parseFloat(document.getElementById('bill-reimbursed').value)||0;
   const notes=document.getElementById('bill-notes').value.trim();
   const bills=getBills().slice();
+  let savedId=id;
   if (id){ const i=bills.findIndex(x=>x.id===id); if(i>-1) bills[i]={...bills[i],name,due,date,recurring,amount,reimbursed,notes}; }
-  else { const nid=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('b'+Date.now()+Math.random().toString(36).slice(2)); bills.push({id:nid,name,due,date,recurring,amount,reimbursed,notes}); }
+  else { savedId=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():('b'+Date.now()+Math.random().toString(36).slice(2)); bills.push({id:savedId,name,due,date,recurring,amount,reimbursed,notes}); }
   await saveBills(bills);
+  // Persist the "Paid from" per-bank tag (multi-bank only; no-op otherwise). One tag
+  // on the bill (fp b:<id>) covers every monthly occurrence via reconBankKey().
+  if (savedId) await applyReconBankPicker('bill-recon-bank', 'b:'+savedId);
   showToast('Saved','success'); closeModal('modal-bill'); renderBudget();
 }
 async function deleteBill(){
