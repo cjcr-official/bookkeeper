@@ -2464,6 +2464,7 @@ input,select,textarea{border-radius:var(--radius-sm)}
                directly under the Category dropdown (not a second overlay) so you can
                add/remove a category without leaving a half-typed expense. -->
           <div id="cat-manager-inline" hidden style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:.65rem .7rem;margin-top:.5rem;background:var(--bg2)">
+            <div id="cat-manager-scope" style="display:none;font-size:11px;font-weight:600;color:var(--text3);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.03em"></div>
             <div style="display:flex;gap:.5rem;margin-bottom:.6rem">
               <input id="new-cat" type="text" placeholder="New category name" style="flex:1;min-width:0" onkeydown="if(event.key==='Enter'){event.preventDefault();addCategory()}">
               <button class="btn btn-primary btn-sm" type="button" onclick="addCategory()">Add</button>
@@ -2481,8 +2482,8 @@ input,select,textarea{border-radius:var(--radius-sm)}
           <select id="exp-account"></select>
         </div>
       </div>
-      <div class="form-group" id="exp-recon-bank-group" style="display:none"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(which account it clears — for reconciliation)</span></label>
-        <select id="exp-recon-bank"></select>
+      <div class="form-group" id="exp-recon-bank-group" style="display:none"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(which account it clears — sets its categories too)</span></label>
+        <select id="exp-recon-bank" onchange="onExpBankChange()"></select>
       </div>
       <div class="form-group"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
       <div class="form-group"><label>Description</label><textarea id="exp-desc" rows="2"></textarea></div>
@@ -7136,8 +7137,20 @@ function renderExpenses() {
   }
 }
 
-function getCategories() {
+// Per-account expense categories (multi-bank). profile.account_categories is a map
+// {item_id: [categories]}; when an account has its own list it OVERRIDES the global
+// expense_categories in the expense form, else the account falls back to the global
+// default. Copy-on-write: the first edit made while a bank account is selected forks
+// that account's list from the current global default. App works before the column
+// migration runs (accountCatMap() -> {}).
+function accountCatMap(){ return (profile && profile.account_categories && typeof profile.account_categories==='object') ? profile.account_categories : {}; }
+// The bank account currently chosen in the expense form ('' = Any / none picked).
+function currentExpBank(){ return (document.getElementById('exp-recon-bank')||{}).value || ''; }
+
+function getCategories(itemId) {
   const DEFAULT_CATS = ['Advertising','Bank Fees','Contract Labor','Equipment','Insurance','Meals & Entertainment','Office Supplies','Professional Services','Rent','Software & Subscriptions','Travel','Utilities','Other'];
+  // A bank account with its own category list overrides the global default.
+  if (itemId) { const m = accountCatMap()[itemId]; if (Array.isArray(m) && m.length) return m.slice(); }
   // Source of truth is the synced profile copy (survives iOS clearing the PWA's
   // local storage + syncs across devices). localStorage is just a local cache.
   if (profile && Array.isArray(profile.expense_categories) && profile.expense_categories.length) return profile.expense_categories.slice();
@@ -7145,8 +7158,19 @@ function getCategories() {
   return DEFAULT_CATS.slice();
 }
 // Persist to the profile (durable + synced) and cache locally. Fire-and-forget;
-// works in-session even before the DB column migration is run (see CLAUDE.md).
-async function saveCategories(arr) {
+// works in-session even before the DB column migration is run (see CLAUDE.md). Pass
+// an itemId to save that account's own list (into account_categories); omit it for
+// the global default.
+async function saveCategories(arr, itemId) {
+  if (itemId) {
+    const map = { ...accountCatMap(), [itemId]: arr.slice() };
+    if (profile) profile.account_categories = map;
+    try {
+      const { error } = await sb.from('profiles').upsert({ id: currentUser.id, account_categories: map });
+      if (error) console.error('account category save failed', error);
+    } catch(e) { console.error('account category save crashed', e); }
+    return;
+  }
   if (profile) profile.expense_categories = arr.slice();
   lsSet('bk-expense-cats', JSON.stringify(arr));
   try {
@@ -7158,9 +7182,16 @@ async function saveCategories(arr) {
 function renderCategoryOptions(selected) {
   const sel = document.getElementById('exp-category');
   if (!sel) return;
-  const cats = getCategories();
+  const cats = getCategories(currentExpBank());
   const cur = selected || sel.value;
   sel.innerHTML = cats.map(c=>`<option${c===cur?' selected':''}>${escHtml(c)}</option>`).join('');
+}
+// Bank account changed in the expense form: reshow the categories for that account
+// (resetting to its list) and refresh the inline manager if it's open.
+function onExpBankChange() {
+  renderCategoryOptions();
+  const mgr = document.getElementById('cat-manager-inline');
+  if (mgr && !mgr.hasAttribute('hidden')) renderCatList();
 }
 
 function renderExpInvoiceOptions(selectedId) {
@@ -7179,22 +7210,29 @@ function toggleCatManager() {
   else el.setAttribute('hidden','');
 }
 function renderCatList() {
-  const cats = getCategories();
+  const bank = currentExpBank();
+  const cats = getCategories(bank);
   const el = document.getElementById('cat-list');
+  // When a bank account is picked, name whose categories you're editing (the edit
+  // forks that account's own list on first change; other accounts are untouched).
+  const hdr = document.getElementById('cat-manager-scope');
+  if (hdr) { hdr.textContent = bank ? ('Categories for ' + bankDisplayName(bank)) : ''; hdr.style.display = bank ? '' : 'none'; }
   el.innerHTML = cats.map((c,i)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem .15rem;border-bottom:1px solid var(--border)"><span>${escHtml(c)}</span><button class="btn btn-sm btn-danger" onclick="removeCategory(${i})"><i class="ti ti-trash"></i></button></div>`).join('') || '<div style="color:var(--text3);padding:.6rem 0">No categories</div>';
 }
 function addCategory() {
   const inp = document.getElementById('new-cat');
   const name = (inp.value||'').trim();
   if (!name) return;
-  const cats = getCategories();
+  const bank = currentExpBank();
+  const cats = getCategories(bank);
   if (cats.some(c=>c.toLowerCase()===name.toLowerCase())) { showToast('Category already exists','error'); return; }
-  cats.push(name); saveCategories(cats); inp.value='';
+  cats.push(name); saveCategories(cats, bank); inp.value='';
   renderCatList(); renderCategoryOptions();
 }
 function removeCategory(i) {
-  const cats = getCategories();
-  cats.splice(i,1); saveCategories(cats);
+  const bank = currentExpBank();
+  const cats = getCategories(bank);
+  cats.splice(i,1); saveCategories(cats, bank);
   renderCatList(); renderCategoryOptions();
 }
 
@@ -7235,15 +7273,16 @@ function openExpenseModal(exp) {
   document.getElementById('exp-id').value = e.id||'';
   document.getElementById('exp-date').value = e.date||today();
   document.getElementById('exp-vendor').value = e.vendor||'';
+  // Set the bank picker FIRST so the category list reflects the right account.
+  renderReconBankPicker('exp-recon-bank', 'exp-recon-bank-group', e.id ? 'e:'+e.id : null);
   renderCategoryOptions(e.category||'');
   renderExpInvoiceOptions(e.invoice_id||'');
-  document.getElementById('exp-category').value = e.category||(getCategories()[0]||'Other');
+  document.getElementById('exp-category').value = e.category||(getCategories(currentExpBank())[0]||'Other');
   document.getElementById('exp-amount').value = e.amount||'';
   document.getElementById('exp-method').value = e.method||'Debit Card';
   document.getElementById('exp-desc').value = e.description||'';
   document.getElementById('exp-reimbursed').checked = !!e.reimbursed;
   renderExpAccountOptions(e.account_id||'');
-  renderReconBankPicker('exp-recon-bank', 'exp-recon-bank-group', e.id ? 'e:'+e.id : null);
   renderReceiptState(exp);
   document.getElementById('cat-manager-inline').setAttribute('hidden','');  // start collapsed each open
   openModal('modal-expense');
