@@ -233,7 +233,16 @@ unaffected — the feature is inert until something is tagged. The UI is gated o
 (`openBankAssignMenu` → `assignRecBank`, reusing the `modal-txn-menu` shell) offering
 each bank + "Any bank". The map key folds recurring records to their parent
 (`reconBankKey()`: `l:<loanId>` / `b:<billId>` drop the payment/month suffix), so one
-tag on a loan or bill covers all its occurrences; one-off records key by full fp. The
+tag on a loan or bill covers all its occurrences; one-off records key by full fp.
+**Exact (per-occurrence) overrides (v470+):** `recBankFor(fp)` checks the FULL fp
+first and only then the folded parent, and `setReconBank(fp, itemId, exact)` writes
+the full fp when `exact` is true. That's what lets ONE loan payment clear a different
+account than the loan's usual one — without exact-first, tagging a single payment
+would silently retag every payment on that loan. `renderReconBankPicker`/
+`applyReconBankPicker` take `{exact, anyLabel}` for this (the Loan tab uses it; a
+blank pick means "inherit the parent", which is why the blank option is labelled
+"Same as the loan"). Non-loan records are unaffected — their exact and folded keys
+are identical. The
 app works before the column migration (`reconBankMap()` → `{}`).
 
 The SAME tag is also settable up front from the forms (v464): the **Expense** and
