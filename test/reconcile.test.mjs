@@ -44,7 +44,7 @@ function extract(name) {
 }
 
 const NEEDED = ['fmt', 'parseDate', 'ymd', 'budDateAt', 'billRecurs', 'billDueDay',
-  'reconBankMap', 'reconBankKey', 'recBankFor', 'reconcileMatch'];
+  'reconBankMap', 'reconBankKey', 'recBankFor', 'manualMatchTagMap', 'reconcileMatch'];
 
 // --- Sandbox globals the extracted functions close over. ---------------------
 // Tests set `cache` / `profile` per scenario via the returned setters.
@@ -52,7 +52,7 @@ const sandbox = { cache: {}, profile: {} };
 const bodies = NEEDED.map(extract).join('\n\n');
 const factory = new Function(
   'cache', 'profile', 'billPaidMap', 'getBills',
-  bodies + '\n\nreturn { reconcileMatch, parseDate };'
+  bodies + '\n\nreturn { reconcileMatch, parseDate, manualMatchTagMap };'
 );
 function build() {
   return factory(
@@ -110,27 +110,40 @@ test('one expense auto-matches one bank line', ({ reconcileMatch }) => {
   eq(r.matchedFps, ['e:e1'], 'matchedFps records the expense fp');
 });
 
-// 2. THE v473 REGRESSION. A record that only AUTO-matched on another bank must
-//    NOT be withheld here — it must still match this bank's real line. (Weak
-//    claim deferred until after the passes.) Pre-fix code fails this.
-test('weak cross-bank claim does not orphan this month (v473)', ({ reconcileMatch }) => {
+// 2. NEW MODEL: a bare matched_fps guess on another bank has NO effect here — the
+//    weak-inference system is gone, so nothing is withheld and the real line matches.
+//    (This is the v473 orphan bug made structurally impossible.)
+test('a stale matched_fps guess elsewhere is inert', ({ reconcileMatch }) => {
   sandbox.cache.expenses = [{ id: 'e1', date: '2026-03-10', amount: 100, vendor: 'Shared' }];
-  // Another bank's saved month auto-matched e1 (weak claim only).
-  sandbox.profile.plaid_recon = { bankB: { '2026-03': { matched_fps: ['e:e1'] } } };
+  sandbox.profile.plaid_recon = { bankB: { '2026-03': { matched_fps: ['e:e1'] } } };   // legacy key, now ignored
   const s = stmt('2026-03', [{ date: '2026-03-10', amount: -100, description: 'SHARED' }], { bankKey: 'bankA' });
   const r = reconcileMatch(s, null);
-  eq(r.passed, true, 'bankA still balances despite weak claim elsewhere');
+  eq(r.passed, true, 'bankA balances — matched_fps no longer influences matching');
   eq(r.onBankOnly.length, 0, 'the real bank line is not orphaned');
 });
 
-// 3. A record explicitly (STRONG) matched on another bank is withheld here.
-test('strong cross-bank claim withholds the record here', ({ reconcileMatch }) => {
+// 3. MIGRATION → EXCLUSION. Cross-account separation now flows through the tag: a
+//    manual match on another bank becomes a "Paid from" tag (migrateReconTags), and
+//    that tag withholds the record here. Tests the full new path end to end.
+test('a manual match elsewhere migrates to a tag that withholds here', ({ reconcileMatch, manualMatchTagMap }) => {
   sandbox.cache.expenses = [{ id: 'e1', date: '2026-03-10', amount: 100, vendor: 'Shared' }];
-  sandbox.profile.plaid_recon = { bankB: { '2026-03': { manual_matches: [{ rFps: ['e:e1'], tIdxs: [0] }] } } };
+  const recon = { bankB: { '2026-03': { manual_matches: [{ rFps: ['e:e1'], tIdxs: [0] }] } } };
+  sandbox.profile.plaid_recon = recon;
+  // Run the migration the app runs on load.
+  sandbox.profile.recon_bank = manualMatchTagMap(recon, {});
+  eq(sandbox.profile.recon_bank, { 'e:e1': 'bankB' }, 'manual match became an explicit tag');
   const s = stmt('2026-03', [{ date: '2026-03-10', amount: -100, description: 'SHARED' }], { bankKey: 'bankA' });
   const r = reconcileMatch(s, null);
   eq(r.inRecordsOnly.length, 0, 'record does not appear in bankA books');
-  eq(r.onBankOnly.length, 1, 'bankA bank line is left unmatched (record spoken for)');
+  eq([...r.assignedAway.keys()], ['e:e1'], 'record reported as paid-from bankB');
+  eq(r.onBankOnly.length, 1, 'bankA bank line is left unmatched (record belongs to bankB)');
+});
+
+// 3b. The migration drops WEAK matched_fps guesses — they must NOT become tags.
+test('migration ignores matched_fps (weak) — only manual matches become tags', ({ manualMatchTagMap }) => {
+  const recon = { bankB: { '2026-03': { matched_fps: ['e:e1'], manual_matches: [{ rFps: ['p:p9'] }] } } };
+  const map = manualMatchTagMap(recon, {});
+  eq(map, { 'p:p9': 'bankB' }, 'only the manual-matched fp is tagged; the auto-match guess is dropped');
 });
 
 // 4. Combo pass: one $120 deposit = two recorded payments ($100 + $20).
