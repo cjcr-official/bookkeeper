@@ -173,7 +173,15 @@ budget bills; flips `bill_paid` and pairs it),
 expense being paid back, exact-amount candidates first → `applyReimburseFromTxn`
 writes a NEGATIVE expense in that expense's own category and pairs it, so the cost
 nets to zero and nothing lands in revenue — same vehicle as the prior-year refund),
-plus split/rejoin/fix-amount. (The Loan/Bill charge actions only appear when the user
+plus split/rejoin/fix-amount. **Anything logged from reconciliation is attributed to
+the account being reconciled (v475)** — `activeReconBank()` (open statement's
+`bankKey`, else `_selBank`) feeds both halves: `_recDefaultBank` pre-selects the
+Expense form's "Bank account" field (`addExpenseFromTxn` sets it, then re-renders the
+picker and calls `onExpBankChange()` so the account's own categories load;
+`openExpenseModal` clears it so a normal open never inherits it), and `tagFromRecon(fp,
+exact)` writes the same tag for the form-less actions. It never overrides a tag the
+user already set, and passes `exact` for loan payments / bill months so one occurrence
+can't retag its whole parent. (The Loan/Bill charge actions only appear when the user
 has loans / budget bills.) **Two ways to book a customer reimbursement, never both
 for the same cost:** the invoice route (bill it, link the expense via `invoice_id` +
 `reimbursed`, so `invoiceRevenue` nets it out) OR the deposit route above (a negative
