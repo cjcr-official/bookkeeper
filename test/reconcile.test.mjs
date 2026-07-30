@@ -220,6 +220,27 @@ for (const recurring of [false, true]) {
   });
 }
 
+// 5c. A paycheck recorded on the Budget tab must match its payday deposit — without
+//     this the deposit stays unmatched and the month can't balance.
+test('a recorded paycheck matches its payday deposit', ({ reconcileMatch }) => {
+  sandbox.profile.paycheck_amounts = { '2026-07-17': 1842.30 };
+  const s = stmt('2026-07', [{ date: '2026-07-17', amount: 1842.30, description: 'DIRECT DEP PAYROLL' }]);
+  const r = reconcileMatch(s, null);
+  eq(r.matched.length, 1, 'the deposit matches the paycheck');
+  eq(r.matched[0].rIdxs.map(i => r.recs[i].fp), ['pc:2026-07-17'], 'paired via the paycheck fp');
+  eq(r.passed, true, 'month balances');
+});
+
+// 5d. Paychecks are opt-in: no recorded amount means no candidate (an unrecorded
+//     payday must not invent a record), and the deposit is correctly flagged.
+test('an unrecorded payday creates no candidate', ({ reconcileMatch }) => {
+  sandbox.profile.paycheck_amounts = {};
+  const s = stmt('2026-07', [{ date: '2026-07-17', amount: 1842.30, description: 'DIRECT DEP PAYROLL' }]);
+  const r = reconcileMatch(s, null);
+  eq(r.matched.length, 0, 'nothing matches');
+  eq(r.onBankOnly.length, 1, 'the deposit is reported as needing a record');
+});
+
 // 6. skip_fps sets a record aside; it neither matches nor blocks the pass.
 test('skip_fps sets a record aside without failing the month', ({ reconcileMatch }) => {
   sandbox.cache.expenses = [{ id: 'e1', date: '2026-03-10', amount: 7, vendor: 'Cash only' }];

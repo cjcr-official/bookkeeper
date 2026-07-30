@@ -85,8 +85,17 @@ client pulls a month's transactions from the bank, matches them against recorded
 expenses + invoice payments + owner activity + gift cards + loan payments
 (recorded `loans.payments`, money out; fp `l:<loanId>:<payId>`) + paid budget
 bills (each `bill_paid[YYYY-MM]` occurrence at its due day for the FULL bill
-amount, money out; fp `b:<billId>:<YYYY-MM>`) (amount ±$0.01, date
-window), and shows matched / in-records-only / on-statement-only buckets. It writes
+amount, money out; fp `b:<billId>:<YYYY-MM>`) + recorded paychecks (v479 —
+each `paycheck_amounts[YYYY-MM-DD]` entry, money IN, at its payday; fp
+`pc:<YYYY-MM-DD>`) (amount ±$0.01, date
+window), and shows matched / in-records-only / on-statement-only buckets. Budget-tab
+records (bills, paychecks) are opt-in candidates in exactly the same way — only
+occurrences the user actually marked paid / entered an amount for — and they never
+touch P&L: a bill isn't a business expense and a paycheck isn't revenue, they only
+have to reconcile against the bank. NOTE this cuts both ways: a recorded paycheck
+that does NOT clear the account being reconciled will surface as unmatched "in your
+books" (set it aside with the eye-off, or "Paid from"-tag it to the bank it really
+lands in). It writes
 a per-month audit result: `profiles.audited_months` (jsonb, keyed
 `{accountId: {"YYYY-MM": {passed, at}}}`) — a month "passes" when nothing is
 unmatched. The page shows a 12-month grid of ✅/⚠️/· marks with ‹ › year arrows;
@@ -160,6 +169,14 @@ row shape as `saveBill` and hands off to `applyBillPayFromTxn`, so it's identica
 picking an existing bill from there on. The action is gated on the budget MODULE
 being enabled, not on `getBills().length` — otherwise a user with no bills yet can
 never create their first one from here),
+**Paycheck** (v479, deposits only: `paycheckFromTxn` → pick which of the statement
+month's paydays this deposit is → `applyPaycheckFromTxn` writes
+`paycheck_amounts[payday]` and pairs it). The picker offers **projected paydays**
+(`paydaysForMonth`), never a free date, because the Budget page and its report look
+amounts up by exactly that key — an amount stored under any other date would be
+invisible there. With no `pay_schedule` set it doesn't dead-end: it offers
+`openPayScheduleModal()` inline (that function is self-contained and `renderBudget()`
+no-ops off-page, so both are safe to call from reconciliation),
 **Reimbursement of an expense** (v474, deposits only: `reimburseFromTxn` → pick the
 expense being paid back, exact-amount candidates first → `applyReimburseFromTxn`
 writes a NEGATIVE expense in that expense's own category and pairs it, so the cost
