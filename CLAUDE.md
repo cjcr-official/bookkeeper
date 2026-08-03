@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **484** (see `version.json` — that file is the source of truth).
+Current version: **485** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -419,7 +419,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Four test suites run the SHIPPED code (they extract functions out of `index.html` by
+Five test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -427,6 +427,7 @@ node test/reconcile.test.mjs   # the bank-statement matcher
 node test/modules.test.mjs     # Sections (show/hide) + the cross-section form rules
 node test/money.test.mjs       # balanceDue / effectiveStatus / invoiceRevenue
 node test/ask.test.mjs         # askText() — every dismiss route must settle its promise
+node test/touch.test.mjs       # viewport zoom + the 16px minimum on touch inputs
 ```
 
 `modules.test.mjs` also statically checks the markup: every `data-module` /
@@ -999,12 +1000,25 @@ behaviors are easy to break without noticing. What exists and must keep working:
   a real Install button in `#install-hint`. `evaluateInstallHint()` picks the
   copy per platform (one-tap install / Samsung Internet's "Add page to" / Chrome's
   ⋮ / iOS Share sheet). iOS has no programmatic install — don't try.
-- **The viewport must NOT block pinch-zoom.** `maximum-scale=1.0, user-scalable=no`
-  was removed in v483: it fails WCAG 1.4.4 (Lighthouse flags it), and iOS has ignored
-  both since iOS 10 — so Android was the ONLY platform honouring it, i.e. the one
-  place it did real harm. Nothing regressed by dropping it: auto-zoom-on-focus is an
-  iOS behaviour and only fires under 16px, and the base `input,select,textarea` rule
-  is already `font-size:16px`. Don't add it back to "fix" a layout.
+- **The viewport must NOT block pinch-zoom — AND no touch input may be under 16px.**
+  These two pull against each other and you need both; getting only the first is what
+  caused the v484 stranded-zoom bug.
+  `maximum-scale=1.0, user-scalable=no` was removed in v483 because it fails WCAG
+  1.4.4 (Lighthouse flags it) and Android was the only platform honouring it for
+  pinch — i.e. the one place it did real harm. **But the claim that "nothing
+  regressed" was wrong**, and it shipped: iOS *does* still honour `maximum-scale` for
+  auto-zoom-on-focus, so that tag had been quietly masking a scattering of inline
+  `style="font-size:13px"` overrides on the tight rows. With the tag gone, focusing an
+  invoice line item zoomed the whole page in — and iOS never zooms back out, so the
+  owner was left stranded at ~2x with the layout cut off. The base
+  `input,select,textarea` rule being 16px was NOT enough, because inline styles beat it.
+  The fix is the font size, never the viewport: a
+  `@media (pointer: coarse){input,select,textarea{font-size:16px!important}}` guard
+  (just after the base rule). `!important` is required — inline styles win over
+  everything else — and `pointer: coarse` keeps compact type on mouse-driven desktop
+  while still covering iPad in landscape, which renders the >768px desktop layout on a
+  touch screen. **Never answer a zoom complaint by re-adding maximum-scale.**
+  `test/touch.test.mjs` pins both halves.
 - **App-shortcut targets can point at a switched-off section.** Manifest `shortcuts`
   are baked into the WebAPK at install time and can't be varied per user, so
   `applyShortcutLink()` checks `isPageHidden(go)` and toasts which section is off
