@@ -1494,6 +1494,15 @@ tr.bulk-sel{background:var(--accent-bg)}
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
+        <!-- Every section can be switched off, and switching ALL of them off left Home
+             completely blank with no hint of why. Display is toggled from
+             applyModuleVisibility(), so no data-module tag here. -->
+        <div class="card" id="dash-all-off" style="display:none;text-align:center;padding:2rem 1.25rem">
+          <i class="ti ti-layout-grid" style="font-size:34px;color:var(--accent)"></i>
+          <h3 style="margin:.6rem 0 .3rem;font-size:16px">Every section is switched off</h3>
+          <p style="font-size:13px;color:var(--text3);margin-bottom:1rem;line-height:1.5">Bookkeeper is modular — turn on just the parts you want (invoices, expenses, mileage, the calendar, and the rest) and leave the others off.</p>
+          <button class="btn btn-primary" onclick="showPage('settings',null);showSettingsSection('sections')"><i class="ti ti-settings"></i> Choose your sections</button>
+        </div>
         <div class="overview" data-module-all="invoicing expenses mileage">
           <div class="ov-hero" data-module="invoicing">
             <div>
@@ -1525,12 +1534,16 @@ tr.bulk-sel{background:var(--accent-bg)}
             </div>
           </div>
         </div>
-        <div class="dash-group" id="dash-grp-cal">Calendar</div>
-        <div class="card collapsible collapsed" id="dash-card-up">
-          <div class="card-header" onclick="toggleDashCard(this)"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" aria-label="New event" onclick="event.stopPropagation();openJobModal()"><i class="ti ti-plus"></i> <span>Event</span></button><i class="ti ti-chevron-down dash-chev"></i></div>
+        <!-- Upcoming + Calendar are shared surfaces: events come from Jobs, but the
+             other chips come from Invoices, recurring items, budget bills and loans.
+             So the cards linger as long as ANY of those sections is on (data-module-all),
+             while the "new event" buttons follow Jobs alone. -->
+        <div class="dash-group" id="dash-grp-cal" data-module-all="jobs invoicing expenses budget loan">Calendar</div>
+        <div class="card collapsible collapsed" id="dash-card-up" data-module-all="jobs invoicing expenses budget loan">
+          <div class="card-header" onclick="toggleDashCard(this)"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" data-module="jobs" aria-label="New event" onclick="event.stopPropagation();openJobModal()"><i class="ti ti-plus"></i> <span>Event</span></button><i class="ti ti-chevron-down dash-chev"></i></div>
           <div id="upcoming-list"></div>
         </div>
-        <div class="card" id="dash-card-cal">
+        <div class="card" id="dash-card-cal" data-module-all="jobs invoicing expenses budget loan">
           <div class="card-header" onclick="toggleCalendar()" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Calendar</h3>
             <i class="ti ti-chevron-down dash-chev" id="calendar-chevron" style="transform:rotate(-90deg)"></i>
@@ -1541,7 +1554,7 @@ tr.bulk-sel{background:var(--accent-bg)}
               <div style="display:flex;align-items:center;gap:.5rem;flex:1;justify-content:center">
                 <div id="cal-month-label" style="font-weight:700;font-size:15px;letter-spacing:-.2px"></div>
                 <button class="btn btn-sm" onclick="event.stopPropagation();calNavToday()" title="Jump to today"><i class="ti ti-target"></i> Today</button>
-                <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openJobModal()" title="New Event" aria-label="New event"><i class="ti ti-plus"></i></button>
+                <button class="btn btn-sm btn-primary" data-module="jobs" onclick="event.stopPropagation();openJobModal()" title="New Event" aria-label="New event"><i class="ti ti-plus"></i></button>
               </div>
               <button class="btn btn-sm" onclick="event.stopPropagation();calNavMonth(1)" title="Next month"><i class="ti ti-chevron-right"></i></button>
             </div>
@@ -1697,8 +1710,8 @@ tr.bulk-sel{background:var(--accent-bg)}
           <button class="settings-nav-item active" data-sec="appearance" onclick="showSettingsSection('appearance')"><i class="ti ti-palette"></i>Appearance</button>
           <button class="settings-nav-item" data-sec="sections" onclick="showSettingsSection('sections')"><i class="ti ti-layout-grid"></i>Sections</button>
           <button class="settings-nav-item" data-sec="notifications" onclick="showSettingsSection('notifications')"><i class="ti ti-bell"></i>Notifications</button>
-          <button class="settings-nav-item" data-sec="invoice" onclick="showSettingsSection('invoice')"><i class="ti ti-file-invoice"></i>Invoice Defaults</button>
-          <button class="settings-nav-item" data-sec="categories" onclick="showSettingsSection('categories')"><i class="ti ti-tags"></i>Expense Categories</button>
+          <button class="settings-nav-item" data-sec="invoice" data-module="invoicing" onclick="showSettingsSection('invoice')"><i class="ti ti-file-invoice"></i>Invoice Defaults</button>
+          <button class="settings-nav-item" data-sec="categories" data-module="expenses" onclick="showSettingsSection('categories')"><i class="ti ti-tags"></i>Expense Categories</button>
           <button class="settings-nav-item" data-sec="security" onclick="showSettingsSection('security')"><i class="ti ti-shield-lock"></i>Security</button>
           <button class="settings-nav-item" data-sec="account" onclick="showSettingsSection('account')"><i class="ti ti-user"></i>Account</button>
           <button class="settings-nav-item" data-sec="legal" onclick="showSettingsSection('legal')"><i class="ti ti-file-text"></i>Legal</button>
@@ -1766,7 +1779,10 @@ tr.bulk-sel{background:var(--accent-bg)}
             <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-event reminders at the time you set on each event. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari. Android and Samsung Internet work straight away, installed or not.</div>
           </div>
         </div>
-        <div class="card settings-section" data-sec="invoice">
+        <!-- These two panels configure one section each, so they follow it. Both the
+             nav button and the panel are tagged: on desktop the panel is display-gated
+             by .active, and clearing the inline style hands it straight back to that. -->
+        <div class="card settings-section" data-sec="invoice" data-module="invoicing">
           <div class="card-header"><h3>Invoice Defaults</h3></div>
           <div class="modal-body">
             <div class="form-row">
@@ -1782,7 +1798,7 @@ tr.bulk-sel{background:var(--accent-bg)}
             <button class="btn btn-primary btn-sm" onclick="saveInvoiceDefaults()"><i class="ti ti-check"></i> Save invoice defaults</button>
           </div>
         </div>
-        <div class="card settings-section" data-sec="categories">
+        <div class="card settings-section" data-sec="categories" data-module="expenses">
           <div class="card-header"><h3>Expense Categories</h3></div>
           <div class="modal-body">
             <div id="set-cat-list"></div>
@@ -2036,7 +2052,10 @@ tr.bulk-sel{background:var(--accent-bg)}
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Tax (<span id="inv-tax-pct">0</span>%):</span><span id="inv-tax-amt">$0.00</span></div>
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.4rem 0;font-weight:600;font-size:15px;border-top:1px solid var(--border);margin-top:.25rem"><span>Total:</span><span id="inv-total">$0.00</span></div>
       </div>
-      <div style="margin-top:1.25rem;border-top:1px solid var(--border);padding-top:1rem">
+      <!-- Customer expenses are written into the EXPENSES ledger, so the block follows
+           that section. Hidden only — openInvoiceModal still fills it and saveInvoice
+           still writes it, so an existing invoice never loses its linked expenses. -->
+      <div style="margin-top:1.25rem;border-top:1px solid var(--border);padding-top:1rem" data-module="expenses">
         <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.15rem">Customer Expenses</label>
         <div style="font-size:11px;color:var(--text3);margin-bottom:.6rem">Parts/items the customer reimburses. Added to the invoice and logged as reimbursed expenses (excluded from profit).</div>
         <div id="inv-exp-wrap"></div>
@@ -3337,6 +3356,11 @@ const MODULES = [
   { id:'expenses',   label:'Expenses',             icon:'ti-receipt',      desc:'Spending, receipts, and recurring expenses.',        pages:['expenses'] },
   { id:'mileage',    label:'Mileage',              icon:'ti-car',          desc:'The trip log and mileage tracking.',                 pages:['mileage'] },
   { id:'time',       label:'Time Clock',           icon:'ti-clock',        desc:'Punch in/out and bill tracked hours.',               pages:['time'] },
+  // Jobs owns NO nav tab — it lives on Home (the Upcoming card, the calendar, the
+  // event reminders), which is why `pages` is empty. A module with no page is a
+  // supported shape: hiddenPagesSet() just adds nothing, and every gate is a
+  // data-module attribute or an isModuleHidden('jobs') check.
+  { id:'jobs',       label:'Jobs & Calendar',      icon:'ti-calendar-event', desc:'Scheduled events, the month calendar, and event reminders.', pages:[] },
   { id:'budget',     label:'Budget',               icon:'ti-pig-money',    desc:'Monthly spending budgets by category.',              pages:['budget'] },
   { id:'statements', label:'Statements',           icon:'ti-file-dollar',  desc:'Bank statements and reconciliation.',                pages:['accounts'] },
   { id:'loan',       label:'Loan Calculator',      icon:'ti-calculator',   desc:'Estimate loan payments and interest.',               pages:['loan'] },
@@ -3384,6 +3408,15 @@ function applyModuleVisibility() {
     el.style.display = el.dataset.moduleAll.split(/\s+/).every(id => hid.includes(id)) ? 'none' : '';
   });
   layoutBottomNav();   // recompute which tabs are on the bar vs behind More
+  // With everything off, Home has nothing left to draw — say so rather than
+  // showing an empty screen the user can't explain.
+  const allOff = document.getElementById('dash-all-off');
+  if (allOff) allOff.style.display = MODULES.every(m => hid.includes(m.id)) ? '' : 'none';
+  // A Settings panel whose section just went off is still the .active one on
+  // desktop, which would leave the panel column empty. Fall back to Appearance,
+  // which can never be hidden.
+  const activeSec = document.querySelector('#page-settings .settings-section.active');
+  if (activeSec && activeSec.style.display === 'none') showSettingsSection('appearance');
   // If the Reports section is open and its active tab's module just went off,
   // switch to the first still-visible report so no hidden report stays on screen.
   const rbody = document.getElementById('reports-body');
@@ -3407,6 +3440,9 @@ function toggleModule(id) {
   // Refresh Home views that list per-module items (invoice/recurring rows).
   if (typeof renderUpcoming === 'function') renderUpcoming();
   if (typeof renderCalendar === 'function') renderCalendar();
+  // The bell counts per-section items too, so the badge has to drop the ones that
+  // just went away (and pick up the ones that came back).
+  if (typeof refreshNotifBadge === 'function') refreshNotifBadge();
   if (typeof profile === 'object') profile.hidden_modules = hid.slice();
   // Persist to the profile too (synced/durable). A missing column is non-fatal —
   // the localStorage mirror keeps it working on this device until the migration runs.
@@ -4106,7 +4142,7 @@ function renderUpcoming() {
       overdue,
     });
   });
-  (cache.jobs||[]).forEach(j => {
+  if (!isModuleHidden('jobs')) (cache.jobs||[]).forEach(j => {
     if (j.done || !j.date || j.date > horizon) return;
     const overdue = j.date < todayStr;
     const cust = j.customer_id ? (cache.customers.find(c=>c.id===j.customer_id)||{}).name : '';
@@ -4171,7 +4207,11 @@ function _daysAhead(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.t
 function buildNotifications() {
   const t = today(), soon = _daysAhead(NOTIF_SOON_DAYS);
   const out = [];
-  (cache.invoices||[]).forEach(i => {
+  // A notification for a switched-off section is a dead end: the badge counts it,
+  // and tapping the row lands on a page that no longer exists. Each source follows
+  // the section that owns it.
+  const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses'), hidJobs = isModuleHidden('jobs');
+  if (!hidInv) (cache.invoices||[]).forEach(i => {
     if (i.status==='draft' || !i.due || effectiveStatus(i)==='paid') return;
     const bal = balanceDue(i);
     if (bal <= 0) return;
@@ -4188,7 +4228,7 @@ function buildNotifications() {
         target:{action:'invoice', ref:i.id} });
     }
   });
-  (cache.jobs||[]).forEach(j => {
+  if (!hidJobs) (cache.jobs||[]).forEach(j => {
     if (j.done || !j.date) return;
     const cust = j.customer_id ? ((cache.customers.find(c=>c.id===j.customer_id)||{}).name||'') : '';
     const at = j.time ? ' at '+fmtTime(j.time) : '';
@@ -4206,6 +4246,7 @@ function buildNotifications() {
   });
   (cache.recurring||[]).forEach(r => {
     if (!r.active || !r.next_date || r.next_date > soon) return;
+    if (r.kind==='invoice' ? hidInv : hidExp) return;
     const d = r.data||{};
     const who = r.kind==='invoice'
       ? ((cache.customers.find(c=>c.id===d.customer_id)||{}).name||'')
@@ -7175,7 +7216,7 @@ function calNavToday()     { const d=new Date(); calCursor=new Date(d.getFullYea
 
 function calItemsByDate() {
   const out = {};
-  (cache.jobs||[]).forEach(j => {
+  if (!isModuleHidden('jobs')) (cache.jobs||[]).forEach(j => {
     if (!j.date) return;
     (out[j.date] = out[j.date] || []).push({ kind:'job', id:j.id, label:j.title||'Job', time:j.time||'', done:!!j.done, onclick:`editJob('${j.id}')` });
   });
@@ -7270,8 +7311,9 @@ function renderCalendar() {
 }
 
 function calPickDay(ds) {
-  if (calSelectedDate === ds) {
-    // second tap on same day → open New Job for that date
+  if (calSelectedDate === ds && !isModuleHidden('jobs')) {
+    // second tap on same day → open New Job for that date (Jobs off → the calendar
+    // is still a read-only view of invoices/bills/loans, so just re-select)
     openJobModal({ date: ds });
     return;
   }
@@ -7282,7 +7324,8 @@ function calPickDay(ds) {
 function renderCalDayList() {
   const el = document.getElementById('cal-day-jobs');
   if (!el) return;
-  if (!calSelectedDate) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);text-align:center;padding:.5rem">Tap a day to see/add events · tap it again to add a new event</div>'; return; }
+  const canAddJob = !isModuleHidden('jobs');
+  if (!calSelectedDate) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);text-align:center;padding:.5rem">'+(canAddJob?'Tap a day to see/add events · tap it again to add a new event':'Tap a day to see what falls on it')+'</div>'; return; }
   const byDate = calItemsByDate();
   const items = byDate[calSelectedDate] || [];
   const heading = new Date(calSelectedDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
@@ -7300,7 +7343,7 @@ function renderCalDayList() {
         </div>
       </div>`).join('');
   }
-  el.innerHTML = `<div class="card" style="padding:1rem"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem"><h3 style="font-size:14px">${esc(heading)}</h3><button class="btn btn-sm btn-primary" onclick="openJobModal({date:'${calSelectedDate}'})"><i class="ti ti-plus"></i> Add</button></div>${body}</div>`;
+  el.innerHTML = `<div class="card" style="padding:1rem"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem"><h3 style="font-size:14px">${esc(heading)}</h3>${canAddJob?`<button class="btn btn-sm btn-primary" onclick="openJobModal({date:'${calSelectedDate}'})"><i class="ti ti-plus"></i> Add</button>`:''}</div>${body}</div>`;
 }
 
 // ====== BULK SELECT / EDIT (expenses + invoices) ======
@@ -8008,8 +8051,14 @@ async function genOneRecurring(rec, dstr) {
 // On launch: generate every active template that's due (catching up missed periods).
 async function processRecurring() {
   let count = 0;
+  // A switched-off section must not keep filling up behind the user's back: an
+  // auto-posted expense or a generated draft invoice would be invisible until the
+  // section came back on. The schedule is left alone (next_date is NOT advanced),
+  // so turning the section back on catches everything up exactly as it always did.
+  const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses');
   for (const rec of (cache.recurring||[])) {
     if (!rec.active) continue;
+    if (rec.kind==='invoice' ? hidInv : hidExp) continue;
     let guard = 0;
     while (rec.next_date && rec.next_date <= today() && guard < 24) {
       await genOneRecurring(rec, rec.next_date);
@@ -11007,6 +11056,11 @@ function loadSettingsForm() {
 // Settings is a left section-nav + one focused panel on desktop (on mobile the nav
 // is hidden and every section stacks). Toggle which section shows + which nav is lit.
 function showSettingsSection(name) {
+  // A panel that belongs to a switched-off section (Invoice Defaults, Expense
+  // Categories) is hidden by applyModuleVisibility — activating it would leave the
+  // desktop panel column blank, so land on Appearance instead.
+  const want = document.querySelector('#page-settings .settings-section[data-sec="'+name+'"]');
+  if (want && want.style.display === 'none') name = 'appearance';
   document.querySelectorAll('#page-settings .settings-section').forEach(s => s.classList.toggle('active', s.dataset.sec === name));
   document.querySelectorAll('#page-settings .settings-nav-item').forEach(b => b.classList.toggle('active', b.dataset.sec === name));
   // Reset scroll so the new section starts at its top (a tall previous section may
