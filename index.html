@@ -2,7 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<!-- No maximum-scale / user-scalable=no: blocking pinch-zoom fails WCAG 1.4.4 and
+     Lighthouse flags it. It also bought nothing — iOS has ignored both since iOS 10
+     (Apple overrides them for accessibility), so the only browser that honoured it
+     was Chrome/Samsung Internet on Android, i.e. the one place it did real harm.
+     Android doesn't auto-zoom on input focus (that's iOS, and only under 16px —
+     the base input rule is already 16px), so nothing regresses by dropping it. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="Bookkeeper — free single-file accounting for a one-person business: invoices, expenses, mileage, time, budget, bank reconciliation and reports.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -18,7 +25,10 @@
 <meta name="supported-color-schemes" content="dark light">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon.png">
-<link rel="apple-touch-icon" href="icon.png">
+<!-- 180×180 is the size iOS actually wants for the Home Screen icon; pointing this
+     at the 512 icon made every install download 20KB to render 6KB worth of pixels.
+     (setAppIcon() rewrites this href at runtime when the user sets their own logo.) -->
+<link rel="apple-touch-icon" href="icon-180.png">
 <title>Bookkeeper — Free Accounting</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet" integrity="sha384-PwEnNZvp50/uDLtKrd1s2D4Xe/y+fCVtEigigjik/PgHlDXUF1uJ32m7guk/XWYV" crossorigin="anonymous">
@@ -340,7 +350,6 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .app{display:flex;height:100vh;height:100dvh;overflow:hidden;display:none}
 .sidebar{width:var(--sidebar-w);background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
 .sidebar-logo{padding:1.25rem 1rem 1rem;border-bottom:1px solid var(--border);margin-bottom:.5rem;display:flex;align-items:center;gap:10px}
-.sidebar-logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--cyan));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
 .sidebar-logo h1{font-size:16px;letter-spacing:-0.3px;line-height:1.1}
 .sidebar-logo span{font-size:10px;color:var(--text3);font-family:'JetBrains Mono',monospace;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;margin-top:1px}
 .nav-item{display:flex;align-items:center;gap:10px;padding:.62rem 1rem;cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;border-radius:10px;margin:2px 8px;transition:background .15s,color .15s}
@@ -549,14 +558,12 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .loan-cal-d{font-family:'JetBrains Mono',monospace;color:var(--text2);font-size:11px}
 .loan-cal-dot{width:6px;height:6px;border-radius:99px;background:var(--accent);flex-shrink:0}
 .loan-cal-dot.done{background:var(--green)}
-.loan-sched-wrap{overflow-x:auto}
 .loan-sched{width:100%;border-collapse:collapse;font-family:'JetBrains Mono',monospace;font-size:12px;font-variant-numeric:tabular-nums}
 .loan-sched th{text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);padding:.5rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap}
 .loan-sched th:first-child{text-align:left}
 .loan-sched td{text-align:right;padding:.5rem .6rem;border-bottom:1px solid var(--border);white-space:nowrap}
 .loan-sched td:first-child{text-align:left;color:var(--text3)}
 .loan-sched tr:last-child td{border-bottom:none}
-.loan-sched .loan-yr td{background:var(--accent-bg);font-weight:700;color:var(--text)}
 /* Loan payment rows — a readable two-line list, NOT a 5-column table that
    stacks into unlabeled dollar figures on a phone. */
 .loan-plist{display:flex;flex-direction:column}
@@ -591,7 +598,6 @@ h1,h2,h3{font-weight:700;letter-spacing:-.3px}
 .ov-item-label{font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;font-family:'JetBrains Mono',monospace;display:flex;align-items:center;gap:5px;white-space:nowrap}
 .ov-item-value{font-size:19px;font-weight:800;letter-spacing:-.6px;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:3px}
 .ov-badge{font-size:9px;background:var(--brand-bg);color:var(--brand-text);padding:1px 6px;border-radius:var(--radius-pill);font-weight:700;letter-spacing:0}
-.ov-foot{position:relative;z-index:1;margin-top:1.05rem;font-size:11.5px;color:var(--text3);font-family:'JetBrains Mono',monospace;line-height:1.5}
 @media(max-width:768px){
   .overview{padding:1.1rem 1.15rem;margin-bottom:1rem}
   .ov-hero-value{font-size:34px}
@@ -616,7 +622,6 @@ tr:hover td{background:var(--surface2)}
 .badge{display:inline-flex;align-items:center;padding:.2rem .6rem;border-radius:5px;font-size:10.5px;font-weight:700;font-family:'JetBrains Mono',monospace;letter-spacing:.5px}
 .badge-green{background:var(--green-bg);color:var(--green)}
 .badge-red{background:var(--red-bg);color:var(--red)}
-.badge-amber{background:var(--amber-bg);color:var(--amber)}
 .badge-blue{background:var(--accent-bg);color:var(--accent-text)}
 .badge-gray{background:var(--surface2);color:var(--text2)}
 
@@ -769,7 +774,7 @@ body.modal-open .main{overflow:hidden}
     box-shadow:none!important;background:#fff!important;color:#000!important;
   }
   /* neutralize app chrome */
-  .sidebar,.topbar,.bottom-nav,#install-hint,#update-overlay{display:none!important}
+  .sidebar,.topbar,#install-hint,#update-overlay{display:none!important}
   .modal-overlay{position:static!important;background:none!important;padding:0!important;display:block!important}
   .modal{max-height:none!important;box-shadow:none!important;border:none!important;border-radius:0!important;background:#fff!important}
   .modal-header,.modal-footer{display:none!important}
@@ -799,7 +804,7 @@ body.modal-open .main{overflow:hidden}
   }
   .sidebar::before{content:'';position:absolute;top:0;left:0;right:0;height:1.5px;
     background:linear-gradient(90deg,transparent 8%,var(--accent),var(--accent2),transparent 92%);opacity:.6}
-  .sidebar-logo,.nav-section{display:none}
+  .sidebar-logo{display:none}
   .sidebar-nav-scroll{
     display:flex;flex-direction:row;width:100%;
     overflow:hidden;padding:0;margin:0;
@@ -955,7 +960,6 @@ body.modal-open .main{overflow:hidden}
   .tabs{overflow-x:auto;scrollbar-width:none;width:100%}
   .tabs::-webkit-scrollbar{display:none}
   .toast{left:1rem;right:1rem;bottom:calc(62px + env(safe-area-inset-bottom,0px) + 12px);text-align:center}
-  .bar-label{font-size:9px}
 
   /* ── SHARED COMPACT LIST CARDS ── */
   /* list containers shouldn't be a card on mobile — each row is its own card */
@@ -1061,7 +1065,6 @@ input,select,textarea{border-radius:var(--radius-sm)}
 }
 /* ============================================================== */
 /* Reconcile modal: segmented tabs to keep Bank sync and PDF upload separate */
-.rec-tabs{display:flex;gap:.3rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-pill);padding:.28rem;margin-bottom:1.1rem}
 .rec-tab{flex:1;border:none;background:transparent;color:var(--text3);font-weight:700;font-size:13px;padding:.52rem .75rem;border-radius:var(--radius-pill);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:.4rem;font-family:inherit;transition:background .15s,color .15s}
 .rec-tab.active{background:var(--accent);color:#fff;box-shadow:0 2px 8px var(--accent-glow)}
 .rec-tab:active{transform:scale(.97)}
@@ -1999,8 +2002,9 @@ tr.bulk-sel{background:var(--accent-bg)}
       <div class="form-group" id="inv-recon-bank-group" style="display:none;margin-top:.35rem"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(which account the payment clears — for reconciliation)</span></label>
         <select id="inv-recon-bank"></select>
       </div>
-      <div class="form-group" style="margin-bottom:.35rem"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(round trip = customer one-way × 2)</span></label></div>
-      <div class="form-row">
+      <!-- Mileage on an invoice belongs to the Mileage section — hidden with it. -->
+      <div class="form-group" style="margin-bottom:.35rem" data-module="mileage"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(round trip = customer one-way × 2)</span></label></div>
+      <div class="form-row" data-module="mileage">
         <div class="form-group"><label>Trips Made</label><input id="inv-trips" type="number" inputmode="numeric" min="0" step="1" value="0" oninput="calcInvMiles()"></div>
         <div class="form-group"><label>Per Trip</label><input id="inv-miles" type="number" readonly style="background:var(--bg2)" placeholder="—"></div>
         <div class="form-group"><label>Total Miles</label><input id="inv-total-miles" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
@@ -2097,7 +2101,8 @@ tr.bulk-sel{background:var(--accent-bg)}
         <div class="form-group"><label>Phone</label><input id="cust-phone" type="tel"></div>
       </div>
       <div class="form-group"><label>Address</label><textarea id="cust-address" rows="2"></textarea></div>
-      <div class="form-group"><label>One-Way Miles (from your base)</label>
+      <!-- Per-customer mileage is only meaningful with the Mileage section on. -->
+      <div class="form-group" data-module="mileage"><label>One-Way Miles (from your base)</label>
         <div style="display:flex;gap:.5rem;align-items:center">
           <input id="cust-miles" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 12.25" style="flex:1">
           <button class="btn btn-sm" type="button" onclick="openInMaps()" title="Open this address in Google Maps"><i class="ti ti-map"></i> Maps</button>
@@ -2122,18 +2127,24 @@ tr.bulk-sel{background:var(--accent-bg)}
         <div class="form-group"><label>Date</label><input id="trip-date" type="date"></div>
         <div class="form-group"><label>Round Trips</label><input id="trip-count" type="number" min="1" step="1" value="1" oninput="calcTripMiles()"></div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label>Client</label><select id="trip-client" onchange="onTripClientChange()"><option value="">— none —</option></select></div>
-        <div class="form-group"><label>Or Linked Expense</label><select id="trip-expense"><option value="">— none —</option></select></div>
+      <!-- Linking is OPTIONAL and each side follows its own module: a trip is a
+           standalone record (date + miles + purpose is a valid mileage log), it can
+           just also be attached to a customer or an expense when that helps. Both
+           groups carry data-module so a switched-off section never shows a field
+           you can't use — and data-module-all drops the whole row + hint only when
+           BOTH sections are off. -->
+      <div class="form-row" data-module-all="invoicing expenses">
+        <div class="form-group" data-module="invoicing"><label>Client <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="trip-client" onchange="onTripClientChange()"><option value="">— none —</option></select></div>
+        <div class="form-group" data-module="expenses"><label>Linked Expense <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="trip-expense"><option value="">— none —</option></select></div>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:-.35rem;margin-bottom:.5rem">Pick a client <b>or</b> an expense to anchor this trip.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:-.35rem;margin-bottom:.5rem" data-module-all="invoicing expenses">Optional — link a client or an expense to this trip, or leave both empty and just describe it below.</div>
       <div class="form-row">
         <div class="form-group"><label>Miles (per round trip)</label><input id="trip-miles" type="number" min="0" step="0.01" inputmode="decimal" oninput="calcTripMiles()"></div>
         <div class="form-group"><label>Total Miles</label><input id="trip-total" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Purpose</label><input id="trip-purpose" type="text" placeholder="e.g. On-site repair"></div>
-        <div class="form-group"><label>Invoice #</label><input id="trip-invoice" type="text" placeholder="optional"></div>
+        <div class="form-group"><label>Purpose</label><input id="trip-purpose" type="text" placeholder="e.g. On-site repair, bank run"></div>
+        <div class="form-group" data-module="invoicing"><label>Invoice #</label><input id="trip-invoice" type="text" placeholder="optional"></div>
       </div>
       <div id="trip-maps-link" style="font-size:12px"></div>
     </div>
@@ -2512,7 +2523,8 @@ tr.bulk-sel{background:var(--accent-bg)}
       <div class="form-group" id="exp-recon-bank-group" style="display:none"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(where it clears — sets its categories)</span></label>
         <select id="exp-recon-bank" onchange="onExpBankChange()"></select>
       </div>
-      <div class="form-group"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
+      <!-- Billing an expense back to a customer only means anything with Invoices on. -->
+      <div class="form-group" data-module="invoicing"><label>Link to Invoice <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="exp-invoice"></select></div>
       <div class="form-group"><label>Description</label><textarea id="exp-desc" rows="2"></textarea></div>
       <div class="form-group"><label>Receipt <span style="color:var(--text3);font-weight:400;font-size:11px">(photo or image)</span></label>
         <input type="file" id="exp-receipt-file" accept="image/*" onchange="onReceiptPick(event)" style="padding:.4rem">
@@ -2531,28 +2543,6 @@ tr.bulk-sel{background:var(--accent-bg)}
 </div>
 
 
-
-<!-- ACCOUNT MODAL -->
-<div class="modal-overlay" id="modal-account">
-  <div class="modal" style="width:420px">
-    <div class="modal-header"><h2>New Account</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-account')"><i class="ti ti-x"></i></button></div>
-    <div class="modal-body">
-      <input type="hidden" id="acc-id">
-      <div class="form-group"><label>Account Name</label><input id="acc-name" type="text"></div>
-      <div class="form-row">
-        <div class="form-group"><label>Type</label>
-          <select id="acc-type"><option>Bank</option><option>Accounts Receivable</option><option>Accounts Payable</option><option>Credit Card</option><option>Equity</option><option>Expense</option><option>Income</option><option>Other Asset</option><option>Other Liability</option></select>
-        </div>
-        <div class="form-group"><label>Balance</label><input id="acc-balance" type="number" step="0.01"></div>
-      </div>
-      <div class="form-group"><label>Description</label><input id="acc-desc" type="text"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn" onclick="closeModal('modal-account')">Cancel</button>
-      <button class="btn btn-primary" onclick="withBusy(this,saveAccount)"><i class="ti ti-check"></i> Save</button>
-    </div>
-  </div>
-</div>
 
 <!-- INVOICE VIEW -->
 <div class="modal-overlay" id="modal-view-invoice">
@@ -2707,7 +2697,6 @@ function fmtTime(t) {
   return h + ':' + M + ' ' + ap;
 }
 function today() { return new Date().toISOString().slice(0,10); }
-function in30() { const d=new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); }
 // New-invoice due date = issue date + the user's payment-terms window (default 30 days).
 function invDefaultDue() {
   const n = parseInt(profile && profile.invoice_due_days, 10);
@@ -2887,7 +2876,15 @@ function applyShortcutLink() {
   // Strip the params first so a reload (or the update overlay) doesn't re-fire
   // the shortcut and pop the sheet a second time.
   try { history.replaceState(null, '', location.pathname); } catch (_) {}
-  if (isPageHidden(go)) return;                 // section switched off in Settings
+  // Section switched off in Settings. The launcher shortcuts are baked into the
+  // manifest at install time and can't be removed per-user, so say why nothing
+  // happened instead of dropping the tap on the floor and landing on Home.
+  if (isPageHidden(go)) {
+    const mod = MODULES.find(m => m.pages.includes(go));
+    setTimeout(() => showToast(
+      `${mod ? mod.label : 'That section'} is switched off — turn it back on in Settings → Sections.`), 400);
+    return;
+  }
   showPage(go);
   const open = SHORTCUT_NEW[go];
   // Let showPage's render settle before the sheet slides up.
@@ -3195,15 +3192,30 @@ const MODULES = [
   { id:'statements', label:'Statements',           icon:'ti-file-dollar',  desc:'Bank statements and reconciliation.',                pages:['accounts'] },
   { id:'loan',       label:'Loan Calculator',      icon:'ti-calculator',   desc:'Estimate loan payments and interest.',               pages:['loan'] },
 ];
+// The hidden set is read constantly — nav layout, every gated dashboard card and
+// form field, each render pass — and re-reading localStorage + re-parsing JSON +
+// re-validating on every one of those calls was pure waste. It only ever changes
+// through setHiddenModulesLS, so both derived shapes are memoized and dropped
+// there. Treat the returned array as READ-ONLY: it is the live memo, not a copy.
+let _hidMods = null, _hidPages = null;
 function getHiddenModules() {
-  try { const v = JSON.parse(lsGet('bk-hidden-modules')||'[]'); return Array.isArray(v) ? v.filter(id=>MODULES.some(m=>m.id===id)) : []; }
-  catch(e) { return []; }
+  if (_hidMods) return _hidMods;
+  let v = [];
+  try {
+    const p = JSON.parse(lsGet('bk-hidden-modules')||'[]');
+    if (Array.isArray(p)) v = p.filter(id=>MODULES.some(m=>m.id===id));
+  } catch(e) {}
+  return (_hidMods = v);
 }
-function setHiddenModulesLS(ids) { lsSet('bk-hidden-modules', JSON.stringify(ids)); }
+function setHiddenModulesLS(ids) {
+  _hidMods = null; _hidPages = null;   // invalidate before the write, never after
+  lsSet('bk-hidden-modules', JSON.stringify(ids));
+}
 function hiddenPagesSet() {
+  if (_hidPages) return _hidPages;
   const hid = getHiddenModules(), s = new Set();
   MODULES.forEach(m => { if (hid.includes(m.id)) m.pages.forEach(p => s.add(p)); });
-  return s;
+  return (_hidPages = s);
 }
 function isPageHidden(page) { return hiddenPagesSet().has(page); }
 function isModuleHidden(id) { return getHiddenModules().includes(id); }
@@ -3236,8 +3248,10 @@ function applyModuleVisibility() {
   if (isPageHidden(currentPage)) showPage('dashboard', null);
 }
 function toggleModule(id) {
-  const hid = getHiddenModules(), i = hid.indexOf(id);
-  if (i >= 0) hid.splice(i, 1); else hid.push(id);
+  // Build a NEW array rather than splicing — getHiddenModules() hands back the live
+  // memo, and mutating it in place would edit cached state behind the setter's back.
+  const cur = getHiddenModules();
+  const hid = cur.includes(id) ? cur.filter(x => x !== id) : cur.concat([id]);
   setHiddenModulesLS(hid);
   applyModuleVisibility();
   renderModuleToggles();
@@ -5256,7 +5270,7 @@ function finishTrip() {
   openTripModal();
   document.getElementById('trip-miles').value = mi.toFixed(2);
   calcTripMiles();
-  showToast(`Tracked ${mi.toFixed(2)} miles — pick a client and save` +
+  showToast(`Tracked ${mi.toFixed(2)} miles — add a purpose and save` +
     (gapMi ? ` (${gapMi.toFixed(1)} mi estimated)` : ''), 'success');
 }
 function discardTrip() {
@@ -5373,14 +5387,18 @@ function renderMileage() {
   const esc = escHtml;
   const expFor = (t)=> t.expense_id ? (cache.expenses||[]).find(e=>e.id===t.expense_id) : null;
   const expLabel = (e)=> e ? `${e.vendor||e.category||'Expense'} · $${parseFloat(e.amount||0).toFixed(2)}` : '';
+  // An unlinked trip is a first-class record, so it gets a real title: its purpose,
+  // falling back to a plain "Trip". Only "—" when there is genuinely nothing to say.
+  const tripTitle = (t,e)=> t.client_name || (e?expLabel(e):'') || t.purpose || 'Trip';
   if (window.innerWidth <= 768) {
     el.innerHTML = list.map(t=>{
       const e=expFor(t);
+      const title = tripTitle(t,e);
       return `
       <div class="m-card" onclick="editTrip('${t.id}')">
         <div class="m-card-main">
-          <div class="m-card-title">${esc(t.client_name|| (e?expLabel(e):'—'))}</div>
-          ${t.purpose?`<div class="m-card-sub" style="color:var(--text2);font-size:12px">${esc(t.purpose)}</div>`:''}
+          <div class="m-card-title">${esc(title)}</div>
+          ${t.purpose&&t.purpose!==title?`<div class="m-card-sub" style="color:var(--text2);font-size:12px">${esc(t.purpose)}</div>`:''}
           ${t.invoice_number?`<div class="m-card-sub" style="color:var(--accent);font-size:12px">Invoice #${esc(t.invoice_number)}</div>`:''}
           ${e&&t.client_name?`<div class="m-card-sub" style="color:var(--accent);font-size:12px">Expense: ${esc(expLabel(e))}</div>`:''}
           <div class="m-card-meta">${fmtDate(t.date)}${t.trips>1?' · '+t.trips+' trips':''}</div>
@@ -5476,8 +5494,12 @@ async function saveTrip() {
   const expId = document.getElementById('trip-expense').value || null;
   const miles = parseFloat(document.getElementById('trip-miles').value)||0;
   const count = parseInt(document.getElementById('trip-count').value)||1;
-  if (!cid && !expId) { showToast('Select a client or linked expense','error'); return; }
-  if (!miles) { showToast('Enter miles','error'); return; }
+  // A trip stands on its own — date + miles + purpose is a complete mileage-log
+  // entry, and it's the only thing the IRS asks for. Linking a client or an expense
+  // is an optional convenience, so it is NOT required here: demanding one made the
+  // whole section unusable when Invoices and Expenses were both switched off, and
+  // made ordinary unlinked driving (bank run, supply pickup) impossible to record.
+  if (!miles) { showToast('Enter the miles for this trip','error'); return; }
   const row = {
     user_id:currentUser.id,
     date:document.getElementById('trip-date').value,
@@ -6521,7 +6543,6 @@ function budgetNavThisMonth(){ const d=new Date(); budgetCursor=new Date(d.getFu
 
 function getBills(){ return Array.isArray(profile.budget_bills) ? profile.budget_bills : []; }
 function paySchedule(){ return (profile && profile.pay_schedule) || null; }
-function reimburseLabel(){ return (profile && (profile.reimburse_label||'').trim()) || 'Reimbursed'; }
 function ordinal(n){ n=parseInt(n)||0; const s=['th','st','nd','rd'], v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
 // A bill recurs monthly (recurring flag true) or is a one-time bill on a specific
 // date (recurring false, date='YYYY-MM-DD'). Legacy bills (no flag, day in `due`)
@@ -7196,7 +7217,7 @@ function bulkFieldRow(label, inner){
   return `<div class="form-group"><label>${label}</label>${inner}</div>`;
 }
 function bulkExpFieldsHTML(){
-  const multiBank = !!knownPlaidBanks().filter(b=>b.item_id).length;
+  const multiBank = !!reconBankChoices().length;   // Statements off → no Paid-from row
   const cats = getCategories();   // global list for the bulk picker
   return bulkFieldRow('Category',
       `<select id="bulk-exp-category"><option value="">— Leave unchanged —</option>${cats.map(c=>`<option>${escHtml(c)}</option>`).join('')}</select>`)
@@ -7210,7 +7231,7 @@ function bulkExpFieldsHTML(){
       `<input id="bulk-exp-date" type="date">`);
 }
 function bulkInvFieldsHTML(){
-  const multiBank = !!knownPlaidBanks().filter(b=>b.item_id).length;
+  const multiBank = !!reconBankChoices().length;   // Statements off → no Paid-from row
   return bulkFieldRow('Status',
       `<select id="bulk-inv-status"><option value="">— Leave unchanged —</option><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid (mark fully paid)</option></select>`)
     + bulkFieldRow('Payment method',
@@ -7604,10 +7625,21 @@ let _recDefaultBank = '';
 // opts.exact  → read/write the tag for THIS occurrence only (a single loan payment)
 //               rather than its folded parent; blank then means "inherit the parent".
 // opts.anyLabel → text for the blank option (e.g. "Same as the loan").
+// Banks a "Paid from" picker may offer. The tag exists purely to steer bank
+// reconciliation, so it follows the Statements section: with Statements off there
+// is nothing to reconcile against and the field is dead weight on every form.
+// One rule, used by both the per-record pickers and the bulk-edit builders.
+function reconBankChoices() {
+  return isModuleHidden('statements') ? [] : knownPlaidBanks().filter(b => b.item_id);
+}
 function renderReconBankPicker(selectId, groupId, fp, opts) {
   const sel = document.getElementById(selectId), grp = document.getElementById(groupId);
   if (!sel || !grp) return;
-  const banks = knownPlaidBanks().filter(b => b.item_id);
+  // Statements off → hide and clear, so downstream readers (currentExpBank →
+  // per-account categories) fall back to the global list. Covers all five pickers:
+  // expense, invoice, loan, loan payment, bill.
+  if (isModuleHidden('statements')) { grp.style.display = 'none'; sel.innerHTML = ''; return; }
+  const banks = reconBankChoices();
   // Nothing known yet (fresh launch / iOS cleared local storage): hide for now, then
   // fetch the list and draw again when it lands, so the field isn't silently missing.
   if (!banks.length) {
@@ -7880,76 +7912,11 @@ async function deleteRecurring(id) {
   showToast('Recurring deleted'); renderRecurringList(recurManagerKind);
 }
 
-// ====== ACCOUNTS ======
-function renderAccounts() {
-  const el = document.getElementById('accounts-table');
-  if (!el) return;   // chart-of-accounts table isn't mounted on the Plaid-only Statements page
-  if (!cache.accounts.length) { el.innerHTML=`<div class="empty"><i class="ti ti-credit-card"></i><p>No accounts yet</p></div>`; return; }
-  const types=['Bank','Accounts Receivable','Accounts Payable','Credit Card','Income','Expense','Equity','Other Asset','Other Liability'];
-  const esc = escHtml;
-  if (window.innerWidth <= 768) {
-    let h='';
-    types.forEach(t=>{
-      const accs=cache.accounts.filter(a=>a.type===t); if(!accs.length) return;
-      h+=`<div class="m-group-label">${t}</div>`;
-      h+=accs.map(a=>`
-        <div class="m-card" onclick="editAccount('${a.id}')">
-          <div class="m-card-main">
-            <div class="m-card-title">${esc(a.name)}</div>
-            ${a.description?`<div class="m-card-meta">${esc(a.description)}</div>`:''}
-          </div>
-          <div class="m-card-right">
-            <div class="m-card-amount">${fmt(a.balance)}</div>
-            <div class="m-card-actions">
-              <button class="btn btn-sm" onclick="event.stopPropagation();editAccount('${a.id}')"><i class="ti ti-edit"></i></button>
-              <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteAccount('${a.id}')"><i class="ti ti-trash"></i></button>
-            </div>
-          </div>
-        </div>`).join('');
-    });
-    el.innerHTML = h;
-  } else {
-    let html='';
-    types.forEach(t=>{
-      const accs=cache.accounts.filter(a=>a.type===t); if(!accs.length) return;
-      html+=`<tr><td colspan="5" style="background:var(--bg2);font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;font-family:'JetBrains Mono',monospace;padding:.5rem 1rem">${t}</td></tr>`;
-      html+=accs.map(a=>`<tr><td style="padding-left:1.5rem;font-weight:500">${esc(a.name)}</td><td>${esc(a.type)}</td><td style="color:var(--text2)">${esc(a.description)||'—'}</td><td style="font-family:'JetBrains Mono',monospace">${fmt(a.balance)}</td><td><button class="btn btn-sm" style="margin-right:4px" onclick="editAccount('${a.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteAccount('${a.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('');
-    });
-    el.innerHTML=`<table><thead><tr><th>Account</th><th>Type</th><th>Description</th><th>Balance</th><th></th></tr></thead><tbody>${html}</tbody></table>`;
-  }
-}
-
-function openAccountModal(a) {
-  a = a || {};
-  document.getElementById('acc-id').value = a.id||'';
-  document.getElementById('acc-name').value = a.name||'';
-  document.getElementById('acc-type').value = a.type||'Bank';
-  document.getElementById('acc-balance').value = a.balance!=null?a.balance:'0';
-  document.getElementById('acc-desc').value = a.description||'';
-  openModal('modal-account');
-}
-function editAccount(id) { openAccountModal(cache.accounts.find(a=>a.id===id)); }
-
-async function saveAccount() {
-  const id=document.getElementById('acc-id').value;
-  const row={user_id:currentUser.id,name:document.getElementById('acc-name').value,type:document.getElementById('acc-type').value,balance:parseFloat(document.getElementById('acc-balance').value)||0,description:document.getElementById('acc-desc').value};
-  if (!row.name) { showToast('Account name is required','error'); return; }
-  let err, newAcc=null;
-  if (id) { const r=await sb.from('accounts').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.accounts.findIndex(a=>a.id===id);cache.accounts[idx]={...cache.accounts[idx],...row};} }
-  else { const r=await sb.from('accounts').insert(row).select().single(); err=r.error; if(!err){cache.accounts.push(r.data); newAcc=r.data;} }
-  if (err) { showToast(err.message,'error'); return; }
-  closeModal('modal-account');
-  // Added inline from the expense modal → drop the new account into that picker.
-  showToast('Account saved','success'); renderAccounts();
-}
-
-async function deleteAccount(id) {
-  if (!confirm('Delete this account?')) return;
-  const {error}=await sb.from('accounts').delete().eq('id',id);
-  if (error) { showToast(error.message,'error'); return; }
-  cache.accounts=cache.accounts.filter(a=>a.id!==id);
-  showToast('Account deleted'); renderAccounts();
-}
+// The chart of accounts (accounts table CRUD + its list page) was retired in v472:
+// the connected Plaid bank is the only account concept the app exposes now. The
+// `accounts` rows are still LOADED into cache — the Owner Activity modal names a
+// transaction's account from them — but nothing creates or edits one any more, so
+// the render/open/save/delete functions and their modal have been removed.
 
 // ====== REPORTS ======
 // Fold/unfold a dashboard widget down to its header. State is remembered per
@@ -9032,13 +8999,6 @@ async function matchSelected() {
   await saveStmtSidecar(s.stmt, s.path);
   renderReconcile(s.stmt, s.acctId, s.path);
 }
-async function unmatchManual(idx) {
-  const s = _recState; if (!s) return;
-  s.stmt.manual_matches = (s.stmt.manual_matches || []).filter((_,i)=>i!==idx);
-  await saveStmtSidecar(s.stmt, s.path);
-  renderReconcile(s.stmt, s.acctId, s.path);
-}
-
 // Unlink any matched group by its position in the rendered Matched list.
 // Manual pair → just remove from manual_matches (items go back to the auto pool).
 // Auto pair → park both sides in stmt.unmatch_t/unmatch_r so passes 1-4 won't
@@ -9450,32 +9410,50 @@ function openTxnMenu(idx) {
   // Group the actions so the user faces short, labeled sets (likeliest first)
   // instead of one flat wall: what the money IS, then mechanical line fixes.
   const grp = (title, first) => `<div style="font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;font-family:'JetBrains Mono',monospace;color:var(--text3);margin:${first?'0':'.9rem'} 0 .5rem">${title}</div>`;
+  // Every action writes into some section's books, so it only shows when that
+  // section is switched on — otherwise the menu offers to file a record into a tab
+  // the user can't see. Owner draw/contribution and the gift-card split have no
+  // module of their own (equity + store credit are always available), so they stay.
+  const canExp = !isModuleHidden('expenses');      // expenses table
+  const canInv = !isModuleHidden('invoicing');     // invoices table
+  const canBudget = !isModuleHidden('budget');     // budget_bills / paycheck_amounts
+  const canLoan = !isModuleHidden('loan') && (cache.loans||[]).length;
   let html = `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem;word-break:break-word">${escHtml(cleanBankDesc(t.description))}</div>`;
   if (amt < 0) {
     html += grp('Record this charge as', true);
-    html += act(`addExpenseFromTxn(${idx})`, 'receipt', 'Add as expense', 'A business purchase you haven\'t recorded — opens the expense form pre-filled, then matches it.');
-    if ((cache.loans||[]).length)
+    if (canExp)
+      html += act(`addExpenseFromTxn(${idx})`, 'receipt', 'Add as expense', 'A business purchase you haven\'t recorded — opens the expense form pre-filled, then matches it.');
+    if (canLoan)
       html += act(`loanPayFromTxn(${idx})`, 'building-bank', 'Loan payment', 'A payment toward a loan you track on the Loan tab — records it and matches it.');
     // Shown whenever the Budget module is on — NOT gated on already having bills,
     // since the picker can now create one from this charge (a first bill has to be
     // reachable from here, otherwise a new budget user hits a dead end).
-    if (!isModuleHidden('budget'))
+    if (canBudget)
       html += act(`billPayFromTxn(${idx})`, 'pig-money', 'Bill payment', 'Mark a budgeted bill for this month paid and match it here — or add a new bill from this charge.');
     html += act(`recordOwnerFromTxn(${idx})`, 'wallet', 'Owner draw', 'You paid yourself / moved money to personal. Equity, not an expense.');
     html += act(`recordPartialReturn(${idx})`, 'gift', 'Partly returned to a gift card', 'Part of this charge came back as store credit instead of a bank refund.');
   } else {
     html += grp('Record this deposit as', true);
-    html += act(`payInvoiceFromTxn(${idx})`, 'file-dollar', 'Payment on an invoice', 'A customer paid you — pick which invoice this deposit pays.');
-    html += act(`recordIncomeFromTxn(${idx})`, 'coin', 'Income without an invoice', 'You were paid for work you never invoiced — creates a paid invoice dated this day.');
+    if (canInv) {
+      html += act(`payInvoiceFromTxn(${idx})`, 'file-dollar', 'Payment on an invoice', 'A customer paid you — pick which invoice this deposit pays.');
+      html += act(`recordIncomeFromTxn(${idx})`, 'coin', 'Income without an invoice', 'You were paid for work you never invoiced — creates a paid invoice dated this day.');
+    }
     html += act(`recordOwnerFromTxn(${idx})`, 'wallet', 'Owner contribution', 'You covered the business from personal funds. Equity, not income.');
-    html += act(`reimburseFromTxn(${idx})`, 'arrow-back-up', 'Reimbursement of an expense', 'Someone paid you back for something you already expensed — cancels out that expense instead of counting as income.');
+    if (canExp)
+      html += act(`reimburseFromTxn(${idx})`, 'arrow-back-up', 'Reimbursement of an expense', 'Someone paid you back for something you already expensed — cancels out that expense instead of counting as income.');
     // Budget-tab paycheck. Like the Bill action, gated on the MODULE not on existing
     // data, so the first paycheck is reachable from here.
-    if (!isModuleHidden('budget'))
+    if (canBudget)
       html += act(`paycheckFromTxn(${idx})`, 'cash', 'Paycheck', 'A payday deposit — records what you were actually paid on the Budget tab and matches it here.');
-    html += grp('From a previous year');
-    html += act(`recordPriorPayment(${idx})`, 'calendar-plus', 'Prior-year invoice payment', 'Money for work billed last year — books the income in last year, not this one.');
-    html += act(`recordPriorRefund(${idx})`, 'receipt-refund', 'Refund of a prior-year expense', 'A vendor refunded something you expensed last year — reduces last year\'s expenses.');
+    // The prior-year pair writes an invoice and an expense respectively, so the
+    // group header only appears when at least one of them is actually offered.
+    if (canInv || canExp) {
+      html += grp('From a previous year');
+      if (canInv)
+        html += act(`recordPriorPayment(${idx})`, 'calendar-plus', 'Prior-year invoice payment', 'Money for work billed last year — books the income in last year, not this one.');
+      if (canExp)
+        html += act(`recordPriorRefund(${idx})`, 'receipt-refund', 'Refund of a prior-year expense', 'A vendor refunded something you expensed last year — reduces last year\'s expenses.');
+    }
   }
   html += grp('Fix the line');
   html += act(`splitTxn(${idx})`, 'arrows-split', 'Split into parts', 'One bank line that covers several records — split it so each part can match.');
@@ -10911,23 +10889,6 @@ function renderLogoState() {
   }
 }
 // Decode (incl. iPhone HEIC via createImageBitmap), downscale to 320px, return a PNG data URL.
-async function fileToLogoDataURL(f) {
-  const max = 320;
-  let src;
-  try { src = await createImageBitmap(f); }
-  catch(_) {
-    src = await new Promise((res,rej)=>{
-      const r = new FileReader();
-      r.onload = () => { const img = new Image(); img.onload = ()=>res(img); img.onerror = rej; img.src = r.result; };
-      r.onerror = rej; r.readAsDataURL(f);
-    });
-  }
-  let w = src.width, h = src.height;
-  if (w > max || h > max) { const s = Math.min(max/w, max/h); w = Math.round(w*s); h = Math.round(h*s); }
-  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-  cv.getContext('2d').drawImage(src, 0, 0, w, h);
-  return cv.toDataURL('image/png');
-}
 async function onLogoPick(e) {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
