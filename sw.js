@@ -1,18 +1,45 @@
-// Bookkeeper service worker — only handles Web Push for the daily reminder.
-// Nothing is cached; the page loads fresh from the network as normal.
+// Bookkeeper service worker — Web Push for reminders, plus a last-known-good copy
+// of the app document so a dropped connection doesn't land on the browser's error
+// page. The network ALWAYS wins when it answers, so this can never serve a stale
+// build (see the fetch handler).
+
+// Holds only the app document. doUpdate() deletes every cache except 'bk-flags',
+// so applying an update clears this automatically — bump the suffix only if the
+// stored shape ever changes.
+const SHELL_CACHE = 'bk-shell-v1';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
 // A fetch handler is REQUIRED for Android/Samsung Internet to treat the app as
 // installable — without it "Add to Home Screen" makes a plain bookmark (address
-// bar stays visible, generic icon) instead of a full-screen WebAPK. Nothing is
-// cached: this is a straight network pass-through, and only for top-level
-// navigations so it never interferes with the CDN / Supabase requests.
+// bar stays visible, generic icon) instead of a full-screen WebAPK. It only ever
+// sees top-level navigations, so it never interferes with CDN / Supabase requests.
+//
+// NETWORK-FIRST, cache only as a fallback. This ordering is the whole point: an
+// online launch always fetches fresh index.html, so version.json's update prompt
+// keeps working exactly as before and nobody gets pinned to a cached build. The
+// cached copy is reached only when the network genuinely fails.
+//
+// NOTE this gets you the app shell offline, not the data — rows live in Supabase
+// and still need a connection. The win is a working screen (and a real error
+// message) instead of Chrome's dinosaur when service drops mid-errand.
 self.addEventListener('fetch', event => {
-  if (event.request.mode === 'navigate') {
-    event.respondWith(fetch(event.request));
-  }
+  if (event.request.mode !== 'navigate') return;
+  event.respondWith(
+    fetch(event.request)
+      .then(res => {
+        // Only ever store a genuine 200 — caching a 5xx would make an outage sticky.
+        if (res && res.ok && res.status === 200) {
+          const copy = res.clone();
+          caches.open(SHELL_CACHE).then(c => c.put('shell', copy)).catch(() => {});
+        }
+        return res;
+      })
+      .catch(() => caches.open(SHELL_CACHE)
+        .then(c => c.match('shell'))
+        .then(hit => hit || Response.error()))
+  );
 });
 
 self.addEventListener('push', event => {

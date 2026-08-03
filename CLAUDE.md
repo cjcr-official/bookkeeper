@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **424** (see `version.json` — that file is the source of truth).
+Current version: **483** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -51,7 +51,14 @@ merge waiting for an answer, and don't ask again in a later session.
   Auto-deploys on push to `main` via Cloudflare Workers Builds.
 - **Service worker:** `sw.js` (root) registered by the client; handles `push`
   events (shows a generic notification) and `notificationclick` (focuses / opens
-  the app).
+  the app). Its `fetch` handler is **network-first with a cache fallback** (v483,
+  cache `bk-shell-v1`, navigations only): an online launch always fetches fresh
+  `index.html` — so the `version.json` update prompt is unaffected and nobody can get
+  pinned to a cached build — and the stored copy is reached only when the network
+  genuinely fails, which turns a dropped signal into a working screen instead of the
+  browser's error page. Only a real 200 is stored, so an outage can't go sticky, and
+  `doUpdate()` already deletes every cache but `bk-flags`. **This is the app shell
+  offline, NOT the data** — rows live in Supabase and still need a connection.
 - **Client:** standalone PWA on iPhone (Add to Home Screen → full screen).
 
 Loaded from CDN at runtime (NOT bundled): `@supabase/supabase-js v2`, `jspdf 2.5.1`,
@@ -156,7 +163,13 @@ it — `monthAccountedFps(m)` recomputes the adjacent months' reconciles from th
 session cache (fallback: their stamped audit) and such records render as
 "accounted for on the <Mon> statement" instead of unmatched. Each
 unmatched bank line has a labeled ⋯ menu (`openTxnMenu`) that records the line
-into the books and explicit-pairs it via `manual_matches`: Add as expense
+into the books and explicit-pairs it via `manual_matches`. **Every action follows the
+section it files into (v483)** — expense/reimbursement/prior-year-refund need
+`expenses`, invoice-payment/income/prior-year-payment need `invoicing`, bill and
+paycheck need `budget`, loan payment needs `loan` (and at least one saved loan);
+owner draw/contribution and the gift-card split have no module of their own and
+always show. The "From a previous year" group header only renders when at least one
+of its two actions does. The actions: Add as expense
 (pre-fills the expense modal; `_recPairTxn` makes `saveExpense` pair it), Payment
 on an invoice (picker over `balanceDue > 0`, exact-balance match first), income
 without an invoice (creates a paid invoice dated the deposit day), owner
@@ -328,9 +341,18 @@ populates `_plaidBanks` + the cache, called fire-and-forget from `loadAllData()`
 every tab has the list, and again from `renderReconBankPicker` itself (which re-draws
 when the list lands) so a modal opened mid-flight still gets its field. It never
 throws — no bank sync configured is a normal state. **If you add another "Paid from"
-picker, gate it on `knownPlaidBanks()` and let this path fill it in; never assume the
+picker, gate it on `reconBankChoices()` and let this path fill it in; never assume the
 Statements page ran first.** Setting the tag up front here is equivalent to setting it
 from a manual match later — both write `recon_bank`, the single attribution source.
+
+**They also follow the Statements section (v483).** `reconBankChoices()` is
+`knownPlaidBanks()` minus a `isModuleHidden('statements')` gate, and it's the single
+rule behind all of them — the five per-record pickers (expense, invoice, loan, loan
+payment, bill) via `renderReconBankPicker`, plus the bulk-edit "Paid from" row. The
+tag exists only to steer reconciliation, so with Statements off it's dead weight on
+every form. `renderReconBankPicker` also CLEARS the select in that case, so
+`currentExpBank()` reads empty and the Expense form falls back to the global category
+list instead of a per-account one.
 
 ```sql
 alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;
@@ -397,6 +419,19 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
+Two test suites run the SHIPPED code (they extract functions out of `index.html` by
+brace-matching and eval them with stubbed globals — no copy-paste, no build step):
+
+```bash
+node test/reconcile.test.mjs   # the bank-statement matcher
+node test/modules.test.mjs     # Sections (show/hide) + the cross-section form rules
+```
+
+`modules.test.mjs` also statically checks the markup: every `data-module` /
+`data-module-all` / `isModuleHidden('…')` id must exist in `MODULES`, and every module
+page must have a `#page-<id>` element and a `NAV_ORDER` entry. A typo in any of those
+silently does nothing at runtime, which is exactly what code review misses.
+
 ---
 
 ## Architecture & the core pattern
@@ -404,13 +439,17 @@ right one.
 - Global **`cache`** object holds all data: `cache.customers`, `.invoices`,
   `.expenses`, `.accounts`, `.trips`, `.recurring`, `.jobs`. (`vendors` was
   removed — do not reintroduce it. **`accounts` (the old chart of accounts) is
-  vestigial as of v472:** its list page is long gone (`renderAccounts()` early-returns
-  because nothing mounts `#accounts-table`), and the Expense form's "Account" select
-  was removed — two competing "account" fields confused the owner, who wants the
-  connected **Plaid bank** to be the only one. `expenses.account_id` is no longer
-  written (existing values are left alone); the only live consumer is the Owner
-  Activity modal. Don't add a chart-of-accounts picker back to a form — use the
-  "Paid from" / bank picker.) `loadAllData()` fills it on login via a
+  vestigial as of v472 and its code was REMOVED in v483:** the list page had been
+  gone for a while (`renderAccounts()` early-returned because nothing mounts
+  `#accounts-table`, and the page renderer is `renderAccountsPage`), so the whole
+  unreachable subgraph — `renderAccounts` / `openAccountModal` / `editAccount` /
+  `saveAccount` / `deleteAccount` plus `#modal-account` — is deleted. The Expense
+  form's "Account" select went earlier: two competing "account" fields confused the
+  owner, who wants the connected **Plaid bank** to be the only one. Rows are still
+  LOADED into `cache.accounts` because the Owner Activity modal names a transaction's
+  account from them; nothing creates or edits one any more. `expenses.account_id` is
+  no longer written (existing values are left alone). Don't add a chart-of-accounts
+  picker back to a form — use the "Paid from" / bank picker.) `loadAllData()` fills it on login via a
   `safe()` wrapper that catches errors → empty arrays (so the app keeps working
   before a new SQL migration is run). **`profile`** holds the user's settings row.
 - Every entity follows: **`render<Thing>()`** draws the list → **`open<Thing>Modal()`**
@@ -421,6 +460,45 @@ right one.
 - `rerenderCurrentView()` is called on resize/orientationchange so mobile/desktop
   layouts swap correctly.
 
+### Sections — every tab can be switched off, so every section must stand alone
+
+`MODULES` (one entry per switchable section: `invoicing`, `expenses`, `mileage`,
+`time`, `budget`, `statements`, `loan`) maps a module id → the nav page(s) it owns.
+The hidden set lives on `profiles.hidden_modules` with a `bk-hidden-modules`
+localStorage mirror so the nav hides instantly on boot and keeps working before the
+migration runs. `getHiddenModules()` / `hiddenPagesSet()` are **memoized** (`_hidMods`
+/ `_hidPages`) and invalidated only in `setHiddenModulesLS()` — they're read on every
+render pass, so re-parsing JSON each time was pure waste. The returned array is the
+LIVE memo: treat it as read-only and build a new array to change it (that's why
+`toggleModule` filters/concats instead of splicing).
+
+**The rule: a section is independent, with the *option* to connect.** A section must
+never *require* another section's data, and must never show a field that belongs to a
+switched-off section. Two mechanisms, both already wired:
+
+- **Markup** — tag the field with `data-module="<id>"` (hides if ANY listed id is off)
+  or `data-module-all="<id> <id>"` (hides only when EVERY listed id is off, for a row
+  or hint that should survive as long as one child is still usable).
+  `applyModuleVisibility()` sweeps the whole document — including modal HTML — on
+  boot, on login, and on every toggle, so a static field needs no JS at all. Don't tag
+  an element whose `display` is already managed by JS; gate it in that code instead.
+- **Generated UI** — call `isModuleHidden('<id>')` (e.g. the reconcile ⋯ menu only
+  offers actions whose destination section is on; `renderReconBankPicker` hides every
+  "Paid from" picker when `statements` is off, via `reconBankChoices()`).
+
+Worked example, v483: **the trip modal used to hard-require a customer or an expense
+link** (`saveTrip` bailed with "Select a client or linked expense"), which made the
+Mileage section unusable whenever Invoices and Expenses were both off — and made
+ordinary unlinked driving impossible to record at all. Now miles are the only
+requirement, both link fields carry their own `data-module`, and the row + hint carry
+`data-module-all`. Same fix applied to mileage on the invoice form, one-way miles on
+the customer form, and the invoice link on the expense form. **A hidden field keeps
+its value** (`open<Thing>Modal()` still populates it and `save<Thing>()` still writes
+it) so switching a section off never destroys existing links.
+
+`test/modules.test.mjs` pins all of this, including a static check that every module
+id used in markup or `isModuleHidden()` actually exists.
+
 ### The usual task — add a field to an entity
 1. Add the `<input>`/`<select>` to that entity's modal HTML.
 2. Set its `.value` in `open<Thing>Modal()` (with a sane default for the "new" branch).
@@ -428,7 +506,8 @@ right one.
 4. If it's a new DB column, give the user the `alter table ... add column if not
    exists ...` to run in the Supabase SQL Editor (they run migrations manually).
    The app must keep working **before** the SQL runs (see `safe()`).
-5. Bump `version.json`. Ship both files.
+5. If the field belongs to another section, gate it (see Sections above).
+6. Bump `version.json`. Ship both files.
 
 ---
 
@@ -448,6 +527,14 @@ with "could not find the X column in the schema cache"):
 alter table profiles add column if not exists base_address text;
 alter table profiles add column if not exists logo text;
 alter table profiles add column if not exists push_subscription jsonb;
+-- hidden_modules: which Sections (tabs) the user switched OFF, as a jsonb array of
+-- MODULES ids e.g. '["loan","budget"]'. This column was in use since the Sections
+-- feature shipped but went undocumented until v483 — worth actually running, because
+-- without it the choice lives only in localStorage, and iOS clears an installed PWA's
+-- local storage, so the hidden tabs silently come back. The app works before this
+-- runs (the localStorage mirror carries it on-device, and a missing-column error on
+-- upsert is swallowed on purpose).
+alter table profiles add column if not exists hidden_modules jsonb default '[]'::jsonb;
 -- expense_categories: user-editable spending categories (jsonb array of strings).
 -- Source of truth; localStorage bk-expense-cats is now just a local cache.
 alter table profiles add column if not exists expense_categories jsonb;
@@ -775,6 +862,12 @@ minute until the cache refreshes.
   + OSRM, all gave numbers that drifted from the Maps app, and Google does not
   expose the consumer Maps routing engine to developers. Don't reintroduce the
   auto-calc.
+  **A trip is a STANDALONE record (v483)** — `saveTrip` requires only the miles.
+  The Client and Linked Expense fields are optional conveniences that each hide with
+  their own section, so the trip log works with Invoices and Expenses both off, and
+  plain unlinked driving (bank run, parts pickup) is recordable. An unlinked trip
+  titles itself from its purpose (`tripTitle`), falling back to "Trip". Don't put the
+  "must link something" requirement back.
 - **Settings → Business Logo:** stored as a downscaled PNG data URL on
   `profiles.logo` (NOT Storage — data URLs render in the html2canvas PDF
   without tainting and sync across devices). Saves immediately on pick. Shows
@@ -868,7 +961,20 @@ behaviors are easy to break without noticing. What exists and must keep working:
   a real Install button in `#install-hint`. `evaluateInstallHint()` picks the
   copy per platform (one-tap install / Samsung Internet's "Add page to" / Chrome's
   ⋮ / iOS Share sheet). iOS has no programmatic install — don't try.
-- **Icons:** `icon-maskable.png` is the `purpose:maskable` entry. One UI masks
+- **The viewport must NOT block pinch-zoom.** `maximum-scale=1.0, user-scalable=no`
+  was removed in v483: it fails WCAG 1.4.4 (Lighthouse flags it), and iOS has ignored
+  both since iOS 10 — so Android was the ONLY platform honouring it, i.e. the one
+  place it did real harm. Nothing regressed by dropping it: auto-zoom-on-focus is an
+  iOS behaviour and only fires under 16px, and the base `input,select,textarea` rule
+  is already `font-size:16px`. Don't add it back to "fix" a layout.
+- **App-shortcut targets can point at a switched-off section.** Manifest `shortcuts`
+  are baked into the WebAPK at install time and can't be varied per user, so
+  `applyShortcutLink()` checks `isPageHidden(go)` and toasts which section is off
+  rather than silently landing on Home.
+- **Icons:** `icon-180.png` is what `<link rel="apple-touch-icon">` points at — that
+  is the size iOS actually renders, and aiming the tag at the 512 `icon.png` made
+  every install pull 20KB to draw 6KB of pixels. `icon-maskable.png` is the
+  `purpose:maskable` entry. One UI masks
   maskable icons to the inner ~80% circle, which sliced the corners off the
   full-bleed `icon.png`. It's generated by scaling the artwork to 72% on a
   flat-background 512 canvas — regenerate the same way if the logo changes.
@@ -900,12 +1006,13 @@ behaviors are easy to break without noticing. What exists and must keep working:
   `visibilitychange`. So the check ALSO runs on `pageshow` (every show, not just
   `e.persisted`) and on `window` focus. If you add another update trigger, add it
   to all three — a check that only fires on load is effectively iOS-only.
-- **`doUpdate()` must not unregister the service worker.** `sw.js` caches
-  nothing, so unregistering bought zero freshness, while on Android it tore down
-  the push subscription (reminders dead until the next boot re-subscribed) and
-  dropped the worker that makes the app an installed WebAPK. It calls
-  `registration.update()` instead, and preserves the `bk-flags` cache (that holds
-  the "a push arrived" marker, not content).
+- **`doUpdate()` must not unregister the service worker.** Unregistering bought
+  zero freshness (the worker is network-first, so it never withholds a new build),
+  while on Android it tore down the push subscription (reminders dead until the next
+  boot re-subscribed) and dropped the worker that makes the app an installed WebAPK.
+  It calls `registration.update()` instead, and deletes every cache EXCEPT `bk-flags`
+  — which drops the `bk-shell-v1` offline copy (correct: the update should re-fetch)
+  while preserving the "a push arrived" marker, which is state, not content.
 - **Settings → About** shows running vs. latest version with a manual check —
   keep it working, it's the only way to tell a stuck install from a stale one
   without a debugger attached to the phone.
