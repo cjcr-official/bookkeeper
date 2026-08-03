@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **486** (see `version.json` — that file is the source of truth).
+Current version: **487** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -558,11 +558,31 @@ its own:
   unstamped on purpose — the existing window-expiry branch clears the row 30 min
   later, and until then re-enabling the section still lets it land.
 - **Home's shared surfaces** — the Upcoming card and the month calendar draw from
-  five sections at once (events, invoice due dates, recurring runs, budget bills,
-  loan payments), so they carry `data-module-all="jobs invoicing expenses budget
-  loan"` and only vanish when all five are off. The "new event" buttons inside them
-  carry `data-module="jobs"` on their own. With Jobs off the calendar stays as a
-  read-only view (a second tap on a day no longer opens the event sheet).
+  several sections at once (events, invoice due dates, recurring runs, budget bills,
+  loan payments), so they carry `data-module-all` and only vanish when every source
+  is off. **Each card lists exactly what it actually draws from**: the calendar gets
+  `jobs invoicing expenses budget loan`, Upcoming gets the same MINUS `budget`
+  (`renderUpcoming` has no budget-bill rows, so tagging it with `budget` would leave
+  a permanently-empty card on Home for someone running Budget on its own). The "new
+  event" buttons inside them carry `data-module="jobs"` on their own. With Jobs off
+  the calendar stays as a read-only view (a second tap on a day no longer opens the
+  event sheet).
+- **A topbar action can write into another section** — the Mileage tab's **Rebuild**
+  overwrites mileage on every INVOICE and recreates their trips, so it's built
+  conditionally in `showPage`'s `actions` map and drops out with `invoicing`. Log Trip
+  stays; Mileage stands alone. Check the `actions` map when you add a bulk action.
+- **Switched off should also cost nothing.** Two per-render network calls were
+  firing for hidden UI: `ensurePlaidBanks()` (fire-and-forget from `loadAllData`,
+  feeding "Paid from" pickers that `reconBankChoices()` already hides) now returns
+  early when `statements` is off — **before** the `_plaidBanksPromise` memo, so
+  switching Statements back on mid-session can still fetch for real — and
+  `renderTaxCard()` skips `ensureLiveTax()` (a POST to `/tax-estimate` → PolicyEngine)
+  when `invoicing` is off, since the Tax card is the only way into that modal.
+- **Settings → Notifications follows everything that can push** — recurring items
+  (`invoicing`/`expenses`) and events (`jobs`), so the nav button and panel carry
+  `data-module-all="invoicing expenses jobs"`. Inside it, the morning-reminder-time
+  row is recurring-only (`data-module-all="invoicing expenses"`) and the help text
+  splits into a recurring half and an events half.
 - **Settings panels that configure one section follow it** — Invoice Defaults
   (`invoicing`) and Expense Categories (`expenses`), both the nav button and the
   panel. On desktop the panel column is `.active`-driven, so `applyModuleVisibility`
