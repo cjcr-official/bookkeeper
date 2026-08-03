@@ -2565,7 +2565,11 @@ tr.bulk-sel{background:var(--accent-bg)}
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- The toast is the app's ONLY confirmation channel ("Saved", "Trip saved", every
+     error), so it has to be a live region or none of that reaches a screen reader.
+     aria-atomic makes the whole message read as one phrase rather than a diff;
+     showToast raises it to assertive for errors. -->
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <!-- Bulk select action bar: appears while a list (expenses/invoices) is in select
      mode. The count + Edit/Delete act on the checked rows; Cancel leaves the mode. -->
@@ -2589,6 +2593,27 @@ tr.bulk-sel{background:var(--accent-bg)}
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-bulk-edit')">Cancel</button>
       <button class="btn btn-primary" onclick="withBusy(this,bulkEditApply)"><i class="ti ti-check"></i> Apply to selected</button>
+    </div>
+  </div>
+</div>
+
+<!-- ASK MODAL: the in-app replacement for window.prompt(). Native prompt() is
+     unstyled, unreadable on a phone, shows a passcode in the clear, and is blocked
+     outright by some browsers in an installed PWA — while being the entry point for
+     real records (a customer name that becomes an invoice). askText() drives this
+     and returns a Promise, so call sites keep prompt()'s shape: a string, or null
+     when cancelled. -->
+<div class="modal-overlay" id="modal-ask">
+  <div class="modal" style="width:420px">
+    <div class="modal-header"><h2 id="ask-title">Enter a value</h2><button class="btn btn-sm" aria-label="Cancel" onclick="askCancel()"><i class="ti ti-x"></i></button></div>
+    <div class="modal-body">
+      <div id="ask-msg" style="font-size:12.5px;color:var(--text2);line-height:1.55;margin-bottom:.85rem;white-space:pre-line;word-break:break-word"></div>
+      <div class="form-group"><label id="ask-label" for="ask-input">Value</label><input id="ask-input" type="text" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();askOk()}"></div>
+      <div id="ask-hint" style="font-size:11px;color:var(--text3);margin-top:-.35rem"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="askCancel()">Cancel</button>
+      <button class="btn btn-primary" id="ask-ok" onclick="askOk()"><i class="ti ti-check"></i> OK</button>
     </div>
   </div>
 </div>
@@ -2654,10 +2679,27 @@ let editingInvLines = [];
 let editingInvExpenses = [];
 
 // ====== HELPERS ======
-function invoiceRevenue(inv) {
-  // revenue excludes reimbursed customer expenses billed on this invoice (pass-through)
-  const reimb = (cache.expenses||[]).filter(e=>e.invoice_id===inv.id&&e.reimbursed).reduce((s,e)=>s+parseFloat(e.amount||0),0);
+// Reimbursed customer expenses billed on an invoice are a pass-through, not income,
+// so revenue is the invoice total minus them.
+//
+// `idx` is an optional prebuilt Map(invoice_id → reimbursed total) from
+// reimbursedByInvoice(). Without it this scans every expense, which is fine for a
+// one-off call but quadratic inside a loop — the dashboard chart calls it for every
+// paid invoice across 6 months, so at ~1500 invoices / 6000 expenses that was ~70ms
+// of pure re-scanning per render on a desktop, several times that on a phone.
+// Callers that loop build the index once and pass it; nothing memoizes, so there is
+// no cache to go stale after an expense is edited.
+function invoiceRevenue(inv, idx) {
+  const reimb = idx ? (idx.get(inv.id) || 0)
+    : (cache.expenses||[]).filter(e=>e.invoice_id===inv.id&&e.reimbursed).reduce((s,e)=>s+parseFloat(e.amount||0),0);
   return parseFloat(inv.total||0) - reimb;
+}
+// One pass over the expenses to total the reimbursed ones per invoice.
+function reimbursedByInvoice() {
+  const m = new Map();
+  for (const e of (cache.expenses||[]))
+    if (e.invoice_id && e.reimbursed) m.set(e.invoice_id, (m.get(e.invoice_id)||0) + parseFloat(e.amount||0));
+  return m;
 }
 
 // Outstanding balance on an invoice (0 once fully paid). Legacy 'paid' invoices
@@ -2719,6 +2761,9 @@ function statusBadge(s) {
 let _toastTimer = null;
 function showToast(msg, type='') {
   const t = document.getElementById('toast');
+  // Set the politeness BEFORE the text, so the new message is announced at the right
+  // urgency: an error interrupts, a confirmation waits its turn.
+  t.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
   t.textContent = msg; t.className = 'toast show ' + type;
   if (_toastTimer) clearTimeout(_toastTimer);
   _toastTimer = setTimeout(()=>{ t.className='toast'; _toastTimer=null; }, 3000);
@@ -3114,19 +3159,44 @@ async function loadAllData() {
     q.then(r=>r).catch(e=>({data:null,error:e})),
     new Promise(res=>setTimeout(()=>res({data:null,error:{message:'timeout',_timeout:true}}), 20000)),
   ]);
+  // Supabase/PostgREST caps a response at 1000 rows by default and returns the
+  // truncated set with NO error. A plain .select() therefore starts silently losing
+  // rows the moment a table crosses that line — and since expenses/invoices are
+  // ordered newest-first, what vanishes is exactly the history the P&L, the expense
+  // summary and reconciliation read. It would look like the books quietly rewriting
+  // themselves, with nothing in the UI to explain it.
+  //
+  // So page explicitly: fetch PAGE_ROWS at a time until a short page comes back.
+  // `build` must be a FACTORY (each page needs a fresh query builder), and every
+  // paged query ends with a unique tiebreaker (`id`) — without one, rows sharing a
+  // date can reshuffle between pages, which duplicates some and drops others.
+  const PAGE_ROWS = 1000, MAX_ROWS = 100000;   // MAX_ROWS: belt-and-braces, never spin forever
+  const paged = (build) => safe((async () => {
+    let out = [], from = 0;
+    for (;;) {
+      const { data, error } = await build().range(from, from + PAGE_ROWS - 1);
+      if (error) return { data: out.length ? out : null, error };
+      const batch = data || [];
+      out = out.concat(batch);
+      if (batch.length < PAGE_ROWS || out.length >= MAX_ROWS) break;
+      from += PAGE_ROWS;
+    }
+    return { data: out, error: null };
+  })());
+  const mine = (t) => sb.from(t).select('*').eq('user_id', currentUser.id);
   const [prof, customers, invoices, expenses, accounts, trips, recurring, jobs, ownerTx, storeCredits, timeEntries, loans] = await Promise.all([
     safe(sb.from('profiles').select('*').eq('id', currentUser.id).single()),
-    safe(sb.from('customers').select('*').eq('user_id', currentUser.id).order('name')),
-    safe(sb.from('invoices').select('*').eq('user_id', currentUser.id).order('created_at', {ascending:false})),
-    safe(sb.from('expenses').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
-    safe(sb.from('accounts').select('*').eq('user_id', currentUser.id).order('name')),
-    safe(sb.from('trips').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
-    safe(sb.from('recurring').select('*').eq('user_id', currentUser.id).order('next_date')),
-    safe(sb.from('jobs').select('*').eq('user_id', currentUser.id).order('date')),
-    safe(sb.from('owner_transactions').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
-    safe(sb.from('store_credits').select('*').eq('user_id', currentUser.id).order('date', {ascending:false})),
-    safe(sb.from('time_entries').select('*').eq('user_id', currentUser.id).order('clock_in', {ascending:false})),
-    safe(sb.from('loans').select('*').eq('user_id', currentUser.id).order('created_at')),
+    paged(() => mine('customers').order('name').order('id')),
+    paged(() => mine('invoices').order('created_at', {ascending:false}).order('id')),
+    paged(() => mine('expenses').order('date', {ascending:false}).order('id')),
+    paged(() => mine('accounts').order('name').order('id')),
+    paged(() => mine('trips').order('date', {ascending:false}).order('id')),
+    paged(() => mine('recurring').order('next_date').order('id')),
+    paged(() => mine('jobs').order('date').order('id')),
+    paged(() => mine('owner_transactions').order('date', {ascending:false}).order('id')),
+    paged(() => mine('store_credits').order('date', {ascending:false}).order('id')),
+    paged(() => mine('time_entries').order('clock_in', {ascending:false}).order('id')),
+    paged(() => mine('loans').order('created_at').order('id')),
   ]);
   profile = prof.data || {};
   // Sync the hidden-sections mirror from the (durable) profile, then hide nav tabs.
@@ -3163,6 +3233,65 @@ async function loadAllData() {
   _dataLoadFailed = netErr(prof.error) || results.every(r => r && r.error);
   if (_dataLoadFailed) showDataLoadError();
   else await migrateInvoiceNumbers();   // normalize any YYYYNN → YYNN before rendering
+}
+
+// ── Concurrency-safe writes to the COLLECTION-shaped jsonb columns on `profiles` ──
+//
+// bill_paid, paycheck_amounts, budget_bills, recon_bank, expense_categories,
+// account_categories and bank_labels are collections that your devices add to
+// independently. The old pattern cloned the copy of `profile` fetched at LOGIN,
+// changed one entry, and wrote the WHOLE column back — so a phone left open since
+// morning would silently overwrite everything the laptop had done since. Nothing
+// errored: it's a perfectly valid write built on a stale base, which is exactly why
+// it was invisible. (Scalar settings like notify_hour or logo are a different case —
+// last-write-wins is the correct semantics there, so they still write directly.)
+//
+// updateProfileJson re-reads the column immediately before writing and applies the
+// change as a DELTA to that fresh value. `apply(current)` must be pure and must touch
+// only the entries it owns; then a concurrent edit to any OTHER key survives. This is
+// not atomic — PostgREST gives us no transaction — but it collapses the conflict
+// window from "as long as this tab has been open" to a single round trip.
+//
+// A missing column or an offline device falls back to the local copy, so the app
+// still works before a migration has been run (same contract as safe()).
+async function updateProfileJson(col, apply, empty) {
+  let base = profile ? profile[col] : null;
+  if (currentUser) {
+    try {
+      const { data, error } = await sb.from('profiles').select(col).eq('id', currentUser.id).single();
+      if (!error && data && data[col] != null) base = data[col];
+    } catch (e) { /* offline / not migrated → keep the local copy as the base */ }
+  }
+  const start = base == null ? (empty === undefined ? {} : empty)
+                             : JSON.parse(JSON.stringify(base));
+  let next;
+  try { next = apply(start); }
+  catch (e) { console.error('profile json update failed:', col, e); return { error: e }; }
+  if (profile) profile[col] = next;
+  if (!currentUser) return { next, error: null };
+  const { error } = await sb.from('profiles').upsert({ id: currentUser.id, [col]: next });
+  return { next, error };
+}
+
+// Replay a local list edit onto a fresher copy of the same list — a 3-way merge for
+// the two ordered arrays (budget_bills, expense_categories) the user edits wholesale.
+// Entries this device removed are dropped from `fresh`, entries it added/changed are
+// applied, and anything only `fresh` knows about is kept and appended. `key` maps an
+// entry to its identity (a bill's id, a category's own text).
+function mergeListEdit(base, next, fresh, key) {
+  base = Array.isArray(base) ? base : []; next = Array.isArray(next) ? next : [];
+  fresh = Array.isArray(fresh) ? fresh : [];
+  const kb = new Set(base.map(key)), kn = new Set(next.map(key));
+  const removed = [...kb].filter(k => !kn.has(k));           // deleted here → honour it
+  const byKeyNext = new Map(next.map(e => [key(e), e]));
+  const out = next.slice();                                   // this device's order wins
+  const seen = new Set(kn);
+  for (const e of fresh) {                                    // keep what only the server has
+    const k = key(e);
+    if (seen.has(k) || removed.includes(k)) continue;
+    out.push(byKeyNext.get(k) || e); seen.add(k);
+  }
+  return out;
 }
 // Non-blocking banner: the app still opens with whatever loaded, but the user
 // gets a clear reason + a one-tap retry instead of a mystery blank screen.
@@ -3491,7 +3620,8 @@ async function forceUpdateAppIcon() {
 function renderDashboard() {
   updateTopbarLogo();
   const now = new Date(); const yr = now.getFullYear();
-  const revenue = cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
+  const reimbIdx = reimbursedByInvoice();
+  const revenue = cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i,reimbIdx),0);
   const expenses = cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
   const profit = revenue - expenses;
   const outstanding = cache.invoices.filter(i=>i.status!=='draft').reduce((s,i)=>s+balanceDue(i),0);
@@ -3548,9 +3678,10 @@ function drawCashFlow(){
   const now = new Date();
   const months = [];
   for (let i=5;i>=0;i--){ const d=new Date(now.getFullYear(),now.getMonth()-i,1); months.push({y:d.getFullYear(),m:d.getMonth(),label:d.toLocaleDateString('en-US',{month:'short'})}); }
+  const reimbIdx = reimbursedByInvoice();   // built once, not per invoice per month
   const data = months.map(mo=>({
     label: mo.label,
-    inc: cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getMonth()===mo.m&&parseDate(i.date).getFullYear()===mo.y).reduce((s,i)=>s+invoiceRevenue(i),0),
+    inc: cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getMonth()===mo.m&&parseDate(i.date).getFullYear()===mo.y).reduce((s,i)=>s+invoiceRevenue(i,reimbIdx),0),
     exp: cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getMonth()===mo.m&&parseDate(e.date).getFullYear()===mo.y).reduce((s,e)=>s+parseFloat(e.amount||0),0)
   }));
   const maxVal = Math.max(1, ...data.map(d=>Math.max(d.inc,d.exp)));
@@ -6562,9 +6693,14 @@ function billInMonth(b,y,m){
 }
 
 async function saveBills(arr){
-  profile.budget_bills = arr;
-  if (currentUser){ const {error}=await sb.from('profiles').upsert({id:currentUser.id, budget_bills:arr});
-    if (error && !/budget_bills/i.test(error.message||'')) showToast(error.message,'error'); }
+  // 3-way merge: `arr` is this device's whole new list, `base` is what it started
+  // from — replay that edit onto whatever the server has now, so a bill added on
+  // another device isn't erased by an unrelated edit here.
+  const base = getBills();
+  profile.budget_bills = arr;                       // optimistic, so the list paints now
+  const { error } = await updateProfileJson('budget_bills',
+    fresh => mergeListEdit(base, arr, fresh, b => b && b.id), []);
+  if (error && !/budget_bills/i.test(error.message||'')) showToast(error.message,'error');
 }
 async function savePayScheduleObj(sched, label){
   profile.pay_schedule = sched;
@@ -6579,11 +6715,17 @@ function ymd(d){ const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()
 function paycheckAmounts(){ return (profile && profile.paycheck_amounts) || {}; }
 function getPaycheckAmount(dateKey){ const v=paycheckAmounts()[dateKey]; return v==null?null:parseFloat(v); }
 async function savePaycheckAmount(dateKey, amount){
-  const map={...paycheckAmounts()};
-  if (amount==null || isNaN(amount)) delete map[dateKey]; else map[dateKey]=amount;
-  profile.paycheck_amounts=map;
-  if (currentUser){ const {error}=await sb.from('profiles').upsert({id:currentUser.id, paycheck_amounts:map});
-    if (error && !/paycheck_amounts/i.test(error.message||'')) showToast(error.message,'error'); }
+  const clear = (amount==null || isNaN(amount));
+  const optimistic = {...paycheckAmounts()};
+  if (clear) delete optimistic[dateKey]; else optimistic[dateKey]=amount;
+  profile.paycheck_amounts = optimistic;
+  // Only this payday's key is touched, so an amount entered on another device for a
+  // different payday survives.
+  const { error } = await updateProfileJson('paycheck_amounts', map => {
+    if (clear) delete map[dateKey]; else map[dateKey]=amount;
+    return map;
+  });
+  if (error && !/paycheck_amounts/i.test(error.message||'')) showToast(error.message,'error');
 }
 
 // ── Per-month "bill paid" flags, keyed {YYYY-MM: {billId: true}} ──
@@ -6591,14 +6733,24 @@ function budMonthKey(y,m){ return `${y}-${String(m+1).padStart(2,'0')}`; }
 function billPaidMap(){ return (profile && profile.bill_paid) || {}; }
 function isBillPaid(billId,y,m){ const mm=billPaidMap()[budMonthKey(y,m)]; return !!(mm && mm[billId]); }
 async function toggleBillPaid(billId,y,m){
-  const map=JSON.parse(JSON.stringify(billPaidMap())), k=budMonthKey(y,m);
-  map[k]=map[k]||{};
-  if (map[k][billId]) delete map[k][billId]; else map[k][billId]=true;
-  if (!Object.keys(map[k]).length) delete map[k];
-  profile.bill_paid=map;
-  renderBudget();
-  if (currentUser){ const {error}=await sb.from('profiles').upsert({id:currentUser.id, bill_paid:map});
-    if (error && !/bill_paid/i.test(error.message||'')) showToast(error.message,'error'); }
+  const k=budMonthKey(y,m);
+  const turningOn = !isBillPaid(billId,y,m);     // read the intent BEFORE touching state
+  const optimistic=JSON.parse(JSON.stringify(billPaidMap()));
+  optimistic[k]=optimistic[k]||{};
+  if (turningOn) optimistic[k][billId]=true; else delete optimistic[k][billId];
+  if (!Object.keys(optimistic[k]).length) delete optimistic[k];
+  profile.bill_paid=optimistic;
+  renderBudget();                                 // instant feedback on the row
+  // Write only THIS bill's flag for THIS month onto the server's current map, so a
+  // bill ticked on another device isn't wiped by this tap.
+  const { error } = await updateProfileJson('bill_paid', map => {
+    map[k]=map[k]||{};
+    if (turningOn) map[k][billId]=true; else delete map[k][billId];
+    if (!Object.keys(map[k]).length) delete map[k];
+    return map;
+  });
+  renderBudget();                                 // show anything another device added
+  if (error && !/bill_paid/i.test(error.message||'')) showToast(error.message,'error');
 }
 
 // A date at noon (avoids TZ/DST edge cases), day-of-month clamped to the month.
@@ -7198,11 +7350,16 @@ function bulkSelectAllToggle(){
 
 // Persist a "Paid from" bank tag onto many records at once (one profile write).
 async function setReconBankBulk(fps, itemId){
-  const map = { ...reconBankMap() };
-  fps.forEach(fp=>{ const key=reconBankKey(fp); if(!itemId) delete map[key]; else map[key]=itemId; });
-  profile.recon_bank = map;
-  if (currentUser){ const { error } = await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: map });
-    if (error && !/recon_bank/i.test(error.message||'')) showToast(error.message, 'error'); }
+  const keys = fps.map(reconBankKey);
+  profile.recon_bank = applyReconTags({ ...reconBankMap() }, keys, itemId);
+  // Only the selected records' keys are written, so tags set on another device stay.
+  const { error } = await updateProfileJson('recon_bank', map => applyReconTags(map, keys, itemId));
+  if (error && !/recon_bank/i.test(error.message||'')) showToast(error.message, 'error');
+}
+// Shared delta: set (or clear, when itemId is falsy) the "Paid from" tag on each key.
+function applyReconTags(map, keys, itemId){
+  keys.forEach(k => { if (!itemId) delete map[k]; else map[k] = itemId; });
+  return map;
 }
 
 const EXP_METHODS = ['Credit Card','Debit Card','Cash','Check','ACH/Wire'];
@@ -7469,21 +7626,24 @@ function getCategories(itemId) {
 // an itemId to save that account's own list (into account_categories); omit it for
 // the global default.
 async function saveCategories(arr, itemId) {
+  // A failed category save used to go to console.error only, so it looked exactly
+  // like a successful one — the category came back on the next launch with no
+  // explanation. Both branches now tell the user.
   if (itemId) {
-    const map = { ...accountCatMap(), [itemId]: arr.slice() };
-    if (profile) profile.account_categories = map;
-    try {
-      const { error } = await sb.from('profiles').upsert({ id: currentUser.id, account_categories: map });
-      if (error) console.error('account category save failed', error);
-    } catch(e) { console.error('account category save crashed', e); }
+    if (profile) profile.account_categories = { ...accountCatMap(), [itemId]: arr.slice() };
+    // Only THIS account's key is written, so another account's list can't be lost.
+    const { error } = await updateProfileJson('account_categories', map => {
+      map[itemId] = arr.slice(); return map;
+    });
+    if (error) { console.error('account category save failed', error); showToast('Could not save categories: ' + (error.message||'unknown error'), 'error'); }
     return;
   }
+  const base = getCategories();                    // what this device started from
   if (profile) profile.expense_categories = arr.slice();
   lsSet('bk-expense-cats', JSON.stringify(arr));
-  try {
-    const { error } = await sb.from('profiles').upsert({ id: currentUser.id, expense_categories: arr });
-    if (error) console.error('category save failed', error);
-  } catch(e) { console.error('category save crashed', e); }
+  const { error } = await updateProfileJson('expense_categories',
+    fresh => mergeListEdit(base, arr, fresh, c => String(c).toLowerCase()), []);
+  if (error) { console.error('category save failed', error); showToast('Could not save categories: ' + (error.message||'unknown error'), 'error'); }
 }
 
 function renderCategoryOptions(selected) {
@@ -7563,6 +7723,32 @@ function renderReceiptState(exp) {
   }
 }
 function onReceiptPick(e) { const f = e.target.files && e.target.files[0]; if (!f) return; pendingReceiptFile = f; pendingReceiptRemove = false; renderReceiptState(editingExpense); }
+// Downscale a picked receipt photo before it goes up. Reuses decodeImageForCrop, so
+// iPhone HEIC works here too. Returns a JPEG Blob, or the ORIGINAL file untouched if
+// anything at all goes wrong (unsupported type, canvas blocked, a PDF someone picked)
+// — a slightly slow upload is always better than a lost receipt.
+const RECEIPT_MAX_PX = 1600, RECEIPT_QUALITY = 0.8;
+async function shrinkReceipt(file) {
+  try {
+    if (!file || !/^image\//.test(file.type||'')) return file;
+    const src = await decodeImageForCrop(file);
+    const w0 = src.width, h0 = src.height;
+    if (!w0 || !h0) return file;
+    const scale = Math.min(1, RECEIPT_MAX_PX / Math.max(w0, h0));
+    // Already small enough AND already a compact format → leave it alone.
+    if (scale === 1 && /jpeg|jpg|webp/.test(file.type)) return file;
+    const w = Math.max(1, Math.round(w0*scale)), h = Math.max(1, Math.round(h0*scale));
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);   // flatten alpha — JPEG has none
+    ctx.drawImage(src, 0, 0, w, h);
+    const blob = await new Promise(res => cv.toBlob(res, 'image/jpeg', RECEIPT_QUALITY));
+    if (src.close) try { src.close(); } catch(_) {}
+    // Only take the re-encode if it actually saved something.
+    if (!blob || blob.size >= file.size) return file;
+    return blob;
+  } catch (e) { console.error('receipt shrink failed, uploading original', e); return file; }
+}
 function clearReceiptPick() { pendingReceiptFile = null; renderReceiptState(editingExpense); }
 function markReceiptRemove() { pendingReceiptRemove = true; pendingReceiptFile = null; renderReceiptState(editingExpense); }
 async function viewReceipt(path) {
@@ -7705,8 +7891,13 @@ async function saveExpense() {
   // Receipt: upload a newly picked file, or clear an existing one. Leaving both
   // untouched preserves the current receipt_path on update.
   if (pendingReceiptFile) {
-    const f = pendingReceiptFile;
-    const ext = ((f.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')) || 'jpg';
+    // Shrink before upload. A phone camera hands us a 3–8MB photo; a receipt only
+    // has to be readable, so ~1600px JPEG gets it to a few hundred KB. That is the
+    // difference between a quick save and a stalled one on rural cell service, and
+    // it's ~15× less of the Supabase storage allowance per receipt.
+    const f = await shrinkReceipt(pendingReceiptFile);
+    const ext = f.type === 'image/jpeg' ? 'jpg'
+      : (((pendingReceiptFile.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')) || 'jpg');
     const path = currentUser.id + '/' + crypto.randomUUID() + '.' + ext;
     const up = await sb.storage.from('receipts').upload(path, f, { upsert:false, contentType:f.type||'image/jpeg' });
     if (up.error) { showToast('Receipt upload failed: '+up.error.message,'error'); return; }
@@ -7985,20 +8176,28 @@ function renderReport(r) {
   const bizMeta = (bizAddr?bizAddr+'<br>':'') + (p.phone?'Phone: '+esc(fmtPhone(p.phone)):'') + (p.email?(p.phone?' · ':'')+esc((p.email||'').trim().toLowerCase()):'');
 
   if (r==='pl') {
-    const revenue=cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i),0);
+    const reimbIdx=reimbursedByInvoice();
+    const revenue=cache.invoices.filter(i=>effectiveStatus(i)==='paid'&&parseDate(i.date).getFullYear()===yr).reduce((s,i)=>s+invoiceRevenue(i,reimbIdx),0);
     const totalExp=cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).reduce((s,e)=>s+parseFloat(e.amount||0),0);
     const cats={};cache.expenses.filter(e=>!e.reimbursed&&parseDate(e.date).getFullYear()===yr).forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
     const net=revenue-totalExp;
+    // The P&L tab shows whenever EITHER section is on, so each half follows its own
+    // one — printing "Revenue (paid invoices) $0.00" to someone who switched Invoices
+    // off is the same clutter a hidden form field would be. With one side off the
+    // remaining half is the whole report, so the NET PROFIT line would just restate
+    // it: label it for what it actually is instead.
+    const showInc = !isModuleHidden('invoicing'), showExp = !isModuleHidden('expenses');
+    const totalLine = showInc && showExp ? ['NET PROFIT', net] : showInc ? ['TOTAL INCOME', revenue] : ['TOTAL EXPENSES', totalExp];
     lastReportHTML = reportDoc(bizName, bizMeta, 'Profit &amp; Loss Statement', String(yr), `
-      <div class="rsec">INCOME</div>
-      <div class="rrow"><span>Revenue (paid invoices)</span><span class="mono">${fmt(revenue)}</span></div>
-      <div class="rsec">EXPENSES</div>
+      ${showInc?`<div class="rsec">INCOME</div>
+      <div class="rrow"><span>Revenue (paid invoices)</span><span class="mono">${fmt(revenue)}</span></div>`:''}
+      ${showExp?`<div class="rsec">EXPENSES</div>
       ${Object.entries(cats).map(([k,v])=>`<div class="rrow sub"><span>${esc(k)}</span><span class="mono">${fmt(v)}</span></div>`).join('')||'<div class="rrow sub"><span>No expenses</span><span class="mono">$0.00</span></div>'}
-      <div class="rrow bold"><span>Total Expenses</span><span class="mono">${fmt(totalExp)}</span></div>
-      <div class="rtotal"><span>NET PROFIT</span><span class="mono">${fmt(net)}</span></div>
+      <div class="rrow bold"><span>Total Expenses</span><span class="mono">${fmt(totalExp)}</span></div>`:''}
+      <div class="rtotal"><span>${totalLine[0]}</span><span class="mono">${fmt(totalLine[1])}</span></div>
     `);
-    lastReportTitle = 'Profit and Loss '+yr;
-    el.innerHTML = reportScreen('Profit & Loss — '+yr);
+    lastReportTitle = (showInc && showExp ? 'Profit and Loss ' : showInc ? 'Income ' : 'Expenses ')+yr;
+    el.innerHTML = reportScreen((showInc && showExp ? 'Profit & Loss' : showInc ? 'Income' : 'Expenses')+' — '+yr);
   } else if (r==='exp') {
     const cats={};cache.expenses.filter(e=>!e.reimbursed).forEach(e=>{cats[e.category]=(cats[e.category]||0)+parseFloat(e.amount||0);});
     const sorted=Object.entries(cats).sort((a,b)=>b[1]-a[1]);
@@ -8330,14 +8529,19 @@ function bankDisplayName(bank) {
 async function renameBank(itemId) {
   const cur = (bankLabels()[itemId] || '').trim();
   const inst = bankInstitution(itemId);
-  const v = window.prompt('Name this account so you can tell it apart — e.g. "Business checking" or "Personal ••4521".' + (inst ? '\n\nBank: ' + inst : ''), cur);
+  const v = await askText({
+    title: 'Name this account',
+    message: 'So you can tell it apart from your others.' + (inst ? '\n\nBank: ' + inst : ''),
+    label: 'Nickname', value: cur, placeholder: 'e.g. Business checking, Personal ••4521',
+    hint: 'Leave blank to go back to the bank’s own name.', okLabel: 'Save name' });
   if (v === null) return;   // cancelled
-  const map = { ...bankLabels() };
   const t = v.trim();
-  if (!t) delete map[itemId]; else map[itemId] = t;
-  profile.bank_labels = map;
-  if (currentUser) {
-    const { error } = await sb.from('profiles').upsert({ id: currentUser.id, bank_labels: map });
+  const setLabel = map => { if (!t) delete map[itemId]; else map[itemId] = t; return map; };
+  profile.bank_labels = setLabel({ ...bankLabels() });
+  {
+    // Only this bank's nickname is written — renaming one account on the phone can't
+    // wipe a nickname set on another account elsewhere.
+    const { error } = await updateProfileJson('bank_labels', setLabel);
     if (error && !/bank_labels/i.test(error.message || '')) { showToast(error.message, 'error'); return; }
   }
   showToast(t ? 'Renamed' : 'Name cleared', 'success');
@@ -9033,7 +9237,10 @@ async function recordPriorRefund(idx) {
   const s = _recState; if (!s) return;
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
   if (!(t.amount > 0)) { showToast('Use this on a deposit (positive amount).', 'error'); return; }
-  const vendor = prompt(`Record ${fmt(t.amount)} on ${fmtDate(t.date)} ("${(t.description||'').slice(0,60)}") as a refund of a prior-year expense.\n\nVendor / source?`, '');
+  const vendor = await askText({
+    title: 'Prior-year refund',
+    message: `${fmt(t.amount)} on ${fmtDate(t.date)}\n${cleanBankDesc(t.description)}\n\nBooks a negative expense in LAST year, so this year's totals aren't reduced by it.`,
+    label: 'Vendor / source', placeholder: 'Who refunded you?', okLabel: 'Record refund' });
   if (vendor == null || !vendor.trim()) return;
   const yr = parseInt((t.date||today()).slice(0,4)) || (new Date().getFullYear());
   const expDate = (yr - 1) + '-12-31';
@@ -9102,7 +9309,10 @@ async function applyReimburseFromTxn(idx, expId) {
   const src = expId ? (cache.expenses || []).find(e => e.id === expId) : null;
   let vendor = src ? (src.vendor || '') : '';
   if (!src) {
-    const v = prompt(`Record ${fmt(amt)} on ${fmtDate(t.date)} as a reimbursement (not income).\n\nWho paid you back?`, '');
+    const v = await askText({
+      title: 'Reimbursement',
+      message: `${fmt(amt)} on ${fmtDate(t.date)}\n\nCancels out an expense instead of counting as income.`,
+      label: 'Who paid you back?', placeholder: 'Name', okLabel: 'Record' });
     if (v == null || !v.trim()) return;
     vendor = v.trim();
   }
@@ -9136,11 +9346,19 @@ async function recordPartialReturn(idx) {
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
   const orig = Math.abs(parseFloat(t.amount)||0);
   if (!orig) return;
-  const creditStr = prompt(`Original charge: ${fmt(t.amount)}.\nHow much was returned to a gift card / store credit? (positive number)`, '');
+  const creditStr = await askText({
+    title: 'Partly returned to a gift card',
+    message: `Original charge: ${fmt(t.amount)}.`,
+    label: 'Amount returned as store credit', type: 'number', inputMode: 'decimal',
+    placeholder: '0.00', hint: 'A positive number, no more than the original charge.', okLabel: 'Next' });
   if (creditStr == null || !creditStr.trim()) return;
   const credit = parseFloat(creditStr.trim());
   if (!isFinite(credit) || credit <= 0 || credit > orig + 0.01) { showToast('Invalid credit amount', 'error'); return; }
-  const merchant = prompt('Merchant for the gift card?', (t.description||'').split(/\s+/).slice(0,2).join(' '));
+  const merchant = await askText({
+    title: 'Gift card merchant',
+    message: `${fmt(credit)} of store credit.`,
+    label: 'Merchant', value: cleanBankDesc(t.description).split(/\s+/).slice(0,2).join(' '),
+    okLabel: 'Record split' });
   if (merchant == null || !merchant.trim()) return;
   const sign = Math.sign(t.amount) || -1;
   const keptPart = sign * (orig - credit);
@@ -9188,7 +9406,10 @@ async function recordPriorPayment(idx) {
   const s = _recState; if (!s) return;
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
   if (!(t.amount > 0)) { showToast('Use this on a deposit (positive amount).', 'error'); return; }
-  const cust = prompt(`Record ${fmt(t.amount)} on ${fmtDate(t.date)} ("${(t.description||'').slice(0,60)}") as a payment for a prior-year invoice.\n\nCustomer name?`, '');
+  const cust = await askText({
+    title: 'Prior-year invoice payment',
+    message: `${fmt(t.amount)} on ${fmtDate(t.date)}\n${cleanBankDesc(t.description)}\n\nBooks the income in LAST year, where the work was billed.`,
+    label: 'Customer name', placeholder: 'Who paid you?', okLabel: 'Record payment' });
   if (cust == null || !cust.trim()) return;
   const yr = parseInt((t.date||today()).slice(0,4)) || (new Date().getFullYear());
   const invDate = (yr - 1) + '-12-31';
@@ -9226,7 +9447,10 @@ async function recordIncomeFromTxn(idx) {
   const s = _recState; if (!s) return;
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
   if (!(t.amount > 0)) { showToast('Use this on a deposit (positive amount).', 'error'); return; }
-  const cust = prompt(`Record ${fmt(t.amount)} on ${fmtDate(t.date)} ("${(t.description||'').slice(0,60)}") as income — a paid invoice will be created for that day.\n\nCustomer name?`, '');
+  const cust = await askText({
+    title: 'Income without an invoice',
+    message: `${fmt(t.amount)} on ${fmtDate(t.date)}\n${cleanBankDesc(t.description)}\n\nCreates a paid invoice dated that day.`,
+    label: 'Customer name', placeholder: 'Who paid you?', okLabel: 'Record income' });
   if (cust == null || !cust.trim()) return;
   const amount = t.amount;
   const invDate = t.date || today();
@@ -9291,7 +9515,11 @@ async function recordOwnerFromTxn(idx) {
 async function splitTxn(idx) {
   const s = _recState; if (!s) return;
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
-  const v = prompt(`Split ${fmt(t.amount)} ("${(t.description||'').slice(0,40)}") into comma-separated amounts.\nNegative for a debit. Example: -150, -50`, '');
+  const v = await askText({
+    title: 'Split into parts',
+    message: `${fmt(t.amount)} — ${cleanBankDesc(t.description)}`,
+    label: 'Amounts, comma separated', placeholder: '-150, -50',
+    hint: 'Negative for a debit. They must add up to the original amount.', okLabel: 'Split' });
   if (v == null || !v.trim()) return;
   const parts = v.split(',').map(p=>parseFloat(p.trim())).filter(n=>isFinite(n));
   if (parts.length < 2) { showToast('Enter at least 2 amounts', 'error'); return; }
@@ -9374,7 +9602,11 @@ async function rejoinSplit(arg) {
 async function editTxnAmt(idx) {
   const s = _recState; if (!s) return;
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
-  const v = prompt(`Edit amount for "${(t.description||'').slice(0,60)}". Negative for a debit.`, t.amount);
+  const v = await askText({
+    title: 'Fix the amount',
+    message: cleanBankDesc(t.description),
+    label: 'Amount', value: t.amount, type: 'number', inputMode: 'decimal',
+    hint: 'Negative for a debit.', okLabel: 'Save amount' });
   if (v == null) return;
   const n = parseFloat(v);
   if (!isFinite(n)) { showToast('Not a number','error'); return; }
@@ -10030,11 +10262,9 @@ function recBankFor(fp){
 // Pass exact=true to tag just THIS occurrence (one loan payment) instead of its parent.
 async function setReconBank(fp, itemId, exact){
   const key = exact ? fp : reconBankKey(fp);
-  const map = {...reconBankMap()};
-  if (!itemId) delete map[key]; else map[key] = itemId;
-  profile.recon_bank = map;
-  if (currentUser){ const { error } = await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: map });
-    if (error && !/recon_bank/i.test(error.message||'')) showToast(error.message, 'error'); }
+  profile.recon_bank = applyReconTags({...reconBankMap()}, [key], itemId);
+  const { error } = await updateProfileJson('recon_bank', map => applyReconTags(map, [key], itemId));
+  if (error && !/recon_bank/i.test(error.message||'')) showToast(error.message, 'error');
 }
 // One-time migration off the retired matched_fps cross-account inference. Every
 // existing manual match (a STRONG signal — the user paired those records to that
@@ -11287,7 +11517,7 @@ function navSync() {
 // A few sheets need more than classList.remove('open') on the way out — closing
 // them by id alone would strand their in-flight state (a half-cropped logo, an
 // unfinished 2FA enrollment). Back must run the same closer their X button does.
-const MODAL_CLOSERS = { 'modal-logo-crop': 'cancelLogoCrop', 'modal-tax': 'closeTaxModal', 'modal-mfa-enroll': 'cancelMfaEnroll' };
+const MODAL_CLOSERS = { 'modal-logo-crop': 'cancelLogoCrop', 'modal-tax': 'closeTaxModal', 'modal-mfa-enroll': 'cancelMfaEnroll', 'modal-ask': 'askCancel' };
 window.addEventListener('popstate', () => {
   if (_navSelfPop) { _navSelfPop = false; return; }
   const t = navBackTarget();
@@ -11341,7 +11571,51 @@ function closeModal(id) {
   // Return focus to whatever opened the modal (keyboard / screen-reader users).
   if (_modalReturnFocus && _modalReturnFocus.focus) { try { _modalReturnFocus.focus(); } catch(_){} }
   _modalReturnFocus = null;
+  // The ask sheet has someone awaiting it. It can be dismissed by routes that never
+  // go through askCancel — Escape and the backdrop tap both call closeModal directly
+  // — and an unsettled promise would hang that caller forever, leaving a half-finished
+  // action with no error. Settling here makes EVERY close path a clean cancel.
+  if (id === 'modal-ask') askSettle(null);
 }
+
+// ── askText(): the in-app replacement for window.prompt() ────────────────────
+// Same contract as prompt(): resolves to the entered string, or null if cancelled.
+// opts: {title, message, label, value, type, inputMode, placeholder, hint, okLabel}
+let _askResolve = null;
+function askText(opts) {
+  const o = opts || {};
+  return new Promise(resolve => {
+    askSettle(null);                       // a stacked call can't strand the earlier one
+    _askResolve = resolve;
+    document.getElementById('ask-title').textContent = o.title || 'Enter a value';
+    const msg = document.getElementById('ask-msg');
+    msg.textContent = o.message || '';
+    msg.style.display = o.message ? '' : 'none';
+    document.getElementById('ask-label').textContent = o.label || 'Value';
+    const hint = document.getElementById('ask-hint');
+    hint.textContent = o.hint || '';
+    hint.style.display = o.hint ? '' : 'none';
+    const inp = document.getElementById('ask-input');
+    inp.type = o.type || 'text';
+    if (o.inputMode) inp.setAttribute('inputmode', o.inputMode); else inp.removeAttribute('inputmode');
+    inp.placeholder = o.placeholder || '';
+    inp.value = o.value != null ? String(o.value) : '';
+    const ok = document.getElementById('ask-ok');
+    ok.innerHTML = '<i class="ti ti-check"></i> ' + escHtml(o.okLabel || 'OK');
+    openModal('modal-ask');
+    // Unlike the other sheets this one exists ONLY to take input, so focusing the
+    // field (and the keyboard that follows) is what the user wants.
+    setTimeout(() => { try { inp.focus(); inp.select(); } catch(_) {} }, 120);
+  });
+}
+function askOk() {
+  const v = document.getElementById('ask-input').value;
+  askSettle(v);                            // resolve BEFORE closing…
+  closeModal('modal-ask');                 // …so closeModal's settle is a no-op
+}
+function askCancel() { askSettle(null); closeModal('modal-ask'); }
+// Idempotent: the first caller to settle wins, everything after is a no-op.
+function askSettle(v) { const r = _askResolve; _askResolve = null; if (r) r(v); }
 // Guard async save buttons against double-taps + show progress during the write.
 // (saveInvoice manages its own button already; the other save modals opt in via
 // onclick="withBusy(this,saveX)".)
@@ -11529,17 +11803,22 @@ function renderLockUI() {
 }
 
 async function toggleAppLock() {
+  // type:'password' matters here — window.prompt() rendered the passcode in clear
+  // text, in a box sized for someone standing next to you to read.
   if (lockPinSet()) {
-    const pin = prompt('Enter your current passcode to turn off App Lock');
+    const pin = await askText({ title: 'Turn off App Lock', label: 'Current passcode',
+      type: 'password', inputMode: 'numeric', okLabel: 'Turn off' });
     if (pin == null) return;
     if (await sha256(pin) !== lsGet('bk-lock-pin')) { showToast('Wrong passcode', 'error'); return; }
     lsRemove('bk-lock-pin'); lsRemove('bk-lock-len'); lsRemove('bk-lock-cred');
     showToast('App lock off', 'success'); renderLockUI(); return;
   }
-  const p1 = prompt('Set a passcode (4–8 digits)');
+  const p1 = await askText({ title: 'Set a passcode', label: 'New passcode',
+    type: 'password', inputMode: 'numeric', hint: '4–8 digits.', okLabel: 'Next' });
   if (p1 == null) return;
   if (!/^\d{4,8}$/.test(p1)) { showToast('Use 4–8 digits', 'error'); return; }
-  const p2 = prompt('Re-enter the passcode');
+  const p2 = await askText({ title: 'Confirm passcode', label: 'Re-enter passcode',
+    type: 'password', inputMode: 'numeric', okLabel: 'Turn on' });
   if (p2 == null) return;
   if (p1 !== p2) { showToast('Passcodes didn’t match', 'error'); return; }
   lsSet('bk-lock-pin', await sha256(p1)); lsSet('bk-lock-len', String(p1.length));

@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **483** (see `version.json` — that file is the source of truth).
+Current version: **484** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -419,18 +419,56 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Two test suites run the SHIPPED code (they extract functions out of `index.html` by
+Four test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
 node test/reconcile.test.mjs   # the bank-statement matcher
 node test/modules.test.mjs     # Sections (show/hide) + the cross-section form rules
+node test/money.test.mjs       # balanceDue / effectiveStatus / invoiceRevenue
+node test/ask.test.mjs         # askText() — every dismiss route must settle its promise
 ```
 
 `modules.test.mjs` also statically checks the markup: every `data-module` /
 `data-module-all` / `isModuleHidden('…')` id must exist in `MODULES`, and every module
 page must have a `#page-<id>` element and a `NAV_ORDER` entry. A typo in any of those
 silently does nothing at runtime, which is exactly what code review misses.
+
+---
+
+## Two data-safety rules (v484) — both failed SILENTLY before
+
+**1. Never `.select()` a whole table without paging.** Supabase/PostgREST caps a
+response at **1000 rows** by default and returns the truncated set with **no error**.
+Because the ledgers are ordered newest-first, what silently disappeared was the oldest
+history — so the P&L, the expense summary and reconciliation would quietly stop seeing
+records that are still sitting in the database. `loadAllData()` now pages every table
+through `paged(build)` in `PAGE_ROWS` blocks until a short page comes back. Two things
+that matter if you touch it: `build` must be a **factory** (each page needs a fresh
+query builder), and every paged query ends with a unique tiebreaker (`.order('id')`) —
+without one, rows sharing a date reshuffle between pages, which duplicates some and
+drops others.
+
+**2. Never write a collection-shaped jsonb column from the in-memory `profile`.**
+`bill_paid`, `paycheck_amounts`, `budget_bills`, `recon_bank`, `expense_categories`,
+`account_categories` and `bank_labels` are collections that a phone and a laptop add to
+independently. The old pattern cloned the `profile` fetched **at login**, changed one
+entry, and wrote the whole column back — so a tab left open since morning would
+overwrite everything the other device had done since, with no error (a perfectly valid
+write built on a stale base, which is why nobody noticed).
+
+Use **`updateProfileJson(col, apply, empty)`**: it re-reads the column immediately
+before writing and applies the change as a **delta** to that fresh value. `apply(current)`
+must be pure and must touch **only** the entries it owns — then a concurrent edit to any
+other key survives. For the two ordered arrays the user edits wholesale
+(`budget_bills`, `expense_categories`) pass the edit through **`mergeListEdit(base, next,
+fresh, key)`**, a 3-way merge that honours local deletes and keeps entries only the
+server knows about. Neither is atomic — PostgREST gives us no transaction — but the
+conflict window drops from "as long as this tab has been open" to one round trip.
+
+Scalar settings (`notify_hour`, `logo`, `time_format`, `hourly_rate`,
+`push_subscription`, `hidden_modules`) are a different case: last-write-wins is the
+correct semantics for a single value, so they still write directly.
 
 ---
 
@@ -1039,6 +1077,31 @@ behaviors are easy to break without noticing. What exists and must keep working:
 ---
 
 ## Gotchas learned the hard way
+
+- **`window.prompt()` is banned — use `askText()`.** It was the entry point for real
+  records (a customer name that becomes an invoice) while being unstyled, unreadable on
+  a phone, showing the app-lock passcode in clear text, and blocked outright by some
+  browsers in an installed PWA. `askText({title, message, label, value, type,
+  inputMode, placeholder, hint, okLabel})` returns a Promise with `prompt()`'s exact
+  contract: the string, or `null` when cancelled. **The promise must settle on EVERY
+  dismiss route** — OK, Cancel, the X, Escape, the backdrop tap and Android back — and
+  only two of those call `askCancel()`. That is why `closeModal()` itself settles when
+  the id is `modal-ask`, and why `askSettle()` is idempotent. Get this wrong and the
+  awaiting call site hangs forever with no error and the sheet already gone from the
+  screen. `test/ask.test.mjs` pins all six routes.
+- **Receipt photos are downscaled before upload** (`shrinkReceipt`, ~1600px JPEG q0.8,
+  reusing `decodeImageForCrop` so iPhone HEIC works). A camera photo is 3–8MB, which is
+  a stalled save on rural cell service and ~15× more of the 1GB storage allowance than
+  a receipt needs. It returns the ORIGINAL file untouched on any failure, and keeps the
+  original if the re-encode didn't actually get smaller — a slow upload always beats a
+  lost receipt.
+- **`invoiceRevenue(inv, idx)` takes an optional index.** Without it, it re-scans every
+  expense; the dashboard's 6-month chart calls it per paid invoice per month, which was
+  ~70ms of pure re-scanning per render at ~1500 invoices / 6000 expenses (worse on a
+  phone). Loops build `reimbursedByInvoice()` once and pass it. Nothing is memoized on
+  purpose — there is no cache to go stale after an expense is edited. `money.test.mjs`
+  pins the indexed and scanning paths against each other, because if they ever diverge
+  the chart and the P&L report different revenue for the same year.
 
 - **localStorage** works in the real PWA but is blocked in sandbox/preview —
   anything using it (theme `bk-theme`, categories `bk-expense-cats`,
