@@ -2,12 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- No maximum-scale / user-scalable=no: blocking pinch-zoom fails WCAG 1.4.4 and
-     Lighthouse flags it. It also bought nothing — iOS has ignored both since iOS 10
-     (Apple overrides them for accessibility), so the only browser that honoured it
-     was Chrome/Samsung Internet on Android, i.e. the one place it did real harm.
-     Android doesn't auto-zoom on input focus (that's iOS, and only under 16px —
-     the base input rule is already 16px), so nothing regresses by dropping it. -->
+<!-- No maximum-scale / user-scalable=no: blocking pinch-zoom fails WCAG 1.4.4, and
+     Android was the only platform still honouring it for pinch — i.e. the one place
+     it did real harm.
+     It was NOT harmless to drop, though: iOS does still honour maximum-scale for
+     auto-zoom-on-focus, so the tag had been masking the inline sub-16px font sizes on
+     the tight form rows. Removing it stranded the page zoomed-in after focusing an
+     invoice line item. The real fix is the `@media (pointer: coarse)` 16px guard in
+     the stylesheet — see the comment on it. Don't re-add these attributes. -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="description" content="Bookkeeper — free single-file accounting for a one-person business: invoices, expenses, mileage, time, budget, bank reconciliation and reports.">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -641,6 +643,24 @@ tr:hover td{background:var(--surface2)}
 .form-group{margin-bottom:1rem}
 label{display:block;font-size:11px;font-weight:700;color:var(--text2);margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace}
 input,select,textarea{width:100%;padding:.55rem .75rem;border:1px solid var(--border2);border-radius:var(--radius-sm);font-size:16px;font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg2);color:var(--text);outline:none;transition:border .15s,box-shadow .15s}
+/* ── 16px MINIMUM on every touch form control. Do not weaken this rule. ──
+   iOS zooms the whole page in when you focus a form control whose font is under
+   16px, and it does NOT zoom back out afterwards — you're left stranded at ~2x with
+   the layout cut off, which is what happened on the invoice line-item boxes (13px).
+   16px is Apple's threshold, not a preference.
+   The base rule above is already 16px; what defeated it was a scattering of inline
+   style="font-size:13px" overrides on the tight rows (invoice lines, the mileage and
+   time date filters, the statements month picker, the MFA secret). Hence !important —
+   inline styles win over everything else.
+   Scoped to `pointer: coarse` so mouse-driven desktop keeps its compact table type,
+   where none of this applies. It deliberately covers iPad in landscape too: that's
+   >768px, so it renders the DESKTOP layout while still being a touch device.
+   NEVER "fix" a zoom complaint by putting maximum-scale / user-scalable=no back on
+   the viewport — that was the old crutch, it blocks pinch-zoom (WCAG 1.4.4), and it
+   only ever masked this. Raise the font size instead. */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
+}
 /* date inputs: keep content inside the box, align left, never overflow on iOS */
 input[type="date"]{
   -webkit-appearance:none;appearance:none;
