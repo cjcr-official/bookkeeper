@@ -286,12 +286,64 @@ test('processRecurring skips kinds whose section is off', () => {
 test('Home\'s calendar surfaces linger while ANY of their sources is on', () => {
   // Events come from Jobs, but the same cards also carry invoice due dates,
   // recurring runs, budget bills and loan payments — so they use data-module-all.
-  const all = 'data-module-all="jobs invoicing expenses budget loan"';
-  for (const id of ['dash-grp-cal', 'dash-card-up', 'dash-card-cal']) {
+  // Each card must list EXACTLY what it draws from: renderUpcoming has no budget-bill
+  // rows, so tagging it with `budget` would leave a permanently-empty Upcoming card
+  // on Home for someone running Budget on its own.
+  const want = {
+    'dash-grp-cal':  'jobs invoicing expenses budget loan',   // header over both cards
+    'dash-card-up':  'jobs invoicing expenses loan',          // renderUpcoming's sources
+    'dash-card-cal': 'jobs invoicing expenses budget loan',   // calItemsByDate's sources
+  };
+  for (const [id, list] of Object.entries(want)) {
     const tag = src.match(new RegExp('<div[^>]*id="' + id + '"[^>]*>'));
     ok(tag, id + ' not found');
-    ok(tag[0].includes(all), id + ' should hide only when every calendar source is off');
+    ok(tag[0].includes('data-module-all="' + list + '"'),
+      id + ' should hide only when every section it draws from is off (expected: ' + list + ')');
   }
+  // The two renderers back that up: only the calendar reads budget bills.
+  ok(/isModuleHidden\('budget'\)/.test(extract('calItemsByDate')), 'calendar should draw budget bills');
+  ok(!/isModuleHidden\('budget'\)/.test(extract('renderUpcoming')), 'Upcoming has no budget rows to gate');
+});
+
+test('a topbar action never writes into a switched-off section', () => {
+  // "Rebuild" on the Mileage tab overwrites mileage on EVERY invoice and recreates
+  // their trips — a destructive bulk write into Invoices, offered from a different
+  // tab. Logging a trip needs nothing but Mileage, so only Rebuild is gated.
+  const body = extract('showPage');
+  ok(/mileage:\(isModuleHidden\('invoicing'\)\?''/.test(body),
+    'the Mileage tab still offers Rebuild with Invoices switched off');
+  ok(/openTripModal\(\)/.test(body), 'Log Trip must survive — Mileage stands alone');
+});
+
+test('a hidden card does not keep calling out to the network', () => {
+  // The Tax card is data-module="invoicing" and openTaxModal() is only reachable
+  // from it, so with Invoices off every dashboard render was posting to
+  // /tax-estimate (which proxies PolicyEngine) for a card nobody can see.
+  const body = extract('renderTaxCard');
+  ok(/isModuleHidden\('invoicing'\)/.test(body), 'renderTaxCard still fetches with Invoices off');
+  ok(body.indexOf("isModuleHidden('invoicing')") < body.indexOf('ensureLiveTax()'),
+    'the gate must come before the fetch');
+});
+
+test('a section that is off costs nothing at launch', () => {
+  // ensurePlaidBanks() runs fire-and-forget from loadAllData on every launch. With
+  // Statements off every picker it feeds is hidden, so the round trip is pure waste
+  // — and it must NOT memoize the empty result, or switching Statements back on
+  // mid-session could never fetch for real.
+  const body = extract('ensurePlaidBanks');
+  ok(/isModuleHidden\('statements'\)/.test(body), 'ensurePlaidBanks still fetches with Statements off');
+  const gate = body.indexOf("isModuleHidden('statements')");
+  ok(gate >= 0 && gate < body.indexOf('if (_plaidBanksPromise)'),
+    'the gate must come before the promise memo, or the empty result gets cached');
+});
+
+test('the Notifications panel follows everything that can push', () => {
+  // Push only fires for recurring items (Invoices/Expenses) and events (Jobs).
+  const tag = 'data-module-all="invoicing expenses jobs"';
+  eq((src.match(new RegExp(tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length, 2,
+    'the Notifications nav button and panel should both be tagged');
+  ok(/data-module-all="invoicing expenses">\s*<span><span class="setting-row-title">Morning reminder time/.test(src),
+    'the morning-reminder row configures recurring items only — gate it on those');
 });
 
 test('the "new event" buttons follow Jobs alone', () => {

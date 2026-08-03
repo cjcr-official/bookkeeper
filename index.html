@@ -1537,9 +1537,12 @@ tr.bulk-sel{background:var(--accent-bg)}
         <!-- Upcoming + Calendar are shared surfaces: events come from Jobs, but the
              other chips come from Invoices, recurring items, budget bills and loans.
              So the cards linger as long as ANY of those sections is on (data-module-all),
-             while the "new event" buttons follow Jobs alone. -->
+             while the "new event" buttons follow Jobs alone. Each card lists exactly
+             the sections it actually draws from — Upcoming has no budget-bill rows,
+             so `budget` is on the group + calendar only, and turning Budget on by
+             itself can't leave an always-empty Upcoming card on Home. -->
         <div class="dash-group" id="dash-grp-cal" data-module-all="jobs invoicing expenses budget loan">Calendar</div>
-        <div class="card collapsible collapsed" id="dash-card-up" data-module-all="jobs invoicing expenses budget loan">
+        <div class="card collapsible collapsed" id="dash-card-up" data-module-all="jobs invoicing expenses loan">
           <div class="card-header" onclick="toggleDashCard(this)"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" data-module="jobs" aria-label="New event" onclick="event.stopPropagation();openJobModal()"><i class="ti ti-plus"></i> <span>Event</span></button><i class="ti ti-chevron-down dash-chev"></i></div>
           <div id="upcoming-list"></div>
         </div>
@@ -1709,7 +1712,7 @@ tr.bulk-sel{background:var(--accent-bg)}
         <aside class="settings-nav">
           <button class="settings-nav-item active" data-sec="appearance" onclick="showSettingsSection('appearance')"><i class="ti ti-palette"></i>Appearance</button>
           <button class="settings-nav-item" data-sec="sections" onclick="showSettingsSection('sections')"><i class="ti ti-layout-grid"></i>Sections</button>
-          <button class="settings-nav-item" data-sec="notifications" onclick="showSettingsSection('notifications')"><i class="ti ti-bell"></i>Notifications</button>
+          <button class="settings-nav-item" data-sec="notifications" data-module-all="invoicing expenses jobs" onclick="showSettingsSection('notifications')"><i class="ti ti-bell"></i>Notifications</button>
           <button class="settings-nav-item" data-sec="invoice" data-module="invoicing" onclick="showSettingsSection('invoice')"><i class="ti ti-file-invoice"></i>Invoice Defaults</button>
           <button class="settings-nav-item" data-sec="categories" data-module="expenses" onclick="showSettingsSection('categories')"><i class="ti ti-tags"></i>Expense Categories</button>
           <button class="settings-nav-item" data-sec="security" onclick="showSettingsSection('security')"><i class="ti ti-shield-lock"></i>Security</button>
@@ -1746,11 +1749,14 @@ tr.bulk-sel{background:var(--accent-bg)}
         <div class="card settings-section" data-sec="sections">
           <div class="card-header"><h3>Sections</h3></div>
           <div class="modal-body">
-            <p style="font-size:12.5px;color:var(--text3);margin:0 0 .6rem;line-height:1.55">Turn off parts of the app you don’t use. Hidden sections disappear from the navigation everywhere — you can switch them back on anytime. Home and Settings always stay.</p>
+            <p style="font-size:12.5px;color:var(--text3);margin:0 0 .6rem;line-height:1.55">Turn off parts of the app you don’t use. A section you switch off disappears everywhere — its tab, its cards on Home, and any field on another form that points at it. It also goes quiet: no reminders, no notifications, and nothing generated in the background until you switch it back on. Your records are kept either way. Home and Settings always stay.</p>
             <div id="module-toggles"></div>
           </div>
         </div>
-        <div class="card settings-section" data-sec="notifications">
+        <!-- Push only ever fires for recurring items (Invoices/Expenses) and events
+             (Jobs). With all three off there is nothing left for it to announce, so
+             the panel goes with them — same rule as Invoice Defaults below. -->
+        <div class="card settings-section" data-sec="notifications" data-module-all="invoicing expenses jobs">
           <div class="card-header"><h3>Notifications</h3></div>
           <div class="modal-body">
             <button class="setting-row" id="push-switch-row" role="switch" aria-checked="false" aria-label="Push notifications" onclick="togglePush()">
@@ -1760,7 +1766,7 @@ tr.bulk-sel{background:var(--accent-bg)}
             <div id="push-status" style="font-size:12px;color:var(--text2);margin-top:.5rem;display:none"></div>
             <div id="push-debug" style="margin-top:.5rem"></div>
             <div id="push-prefs" style="display:none;margin-top:.5rem;padding-top:.75rem;border-top:1px solid var(--border)">
-              <div class="setting-row" style="cursor:default">
+              <div class="setting-row" style="cursor:default" data-module-all="invoicing expenses">
                 <span><span class="setting-row-title">Morning reminder time</span><span class="setting-row-sub">When a recurring item comes due</span></span>
                 <select id="s-notify-hour" onchange="saveNotifyHour()" style="width:auto;flex-shrink:0">
                   <option value="6">6:00 AM</option>
@@ -1776,7 +1782,7 @@ tr.bulk-sel{background:var(--accent-bg)}
                 <button class="btn btn-sm" onclick="enablePush()"><i class="ti ti-refresh"></i> Re-register</button>
               </div>
             </div>
-            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Get a morning ping when a recurring item comes due, plus per-event reminders at the time you set on each event. iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari. Android and Samsung Internet work straight away, installed or not.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5"><span data-module-all="invoicing expenses">Get a morning ping when a recurring item comes due. </span><span data-module="jobs">Events remind you at the time you set on each one. </span>iPhone needs iOS 16.4+ and the app installed via Share → Add to Home Screen — open it from the home-screen icon, not Safari. Android and Samsung Internet work straight away, installed or not.</div>
           </div>
         </div>
         <!-- These two panels configure one section each, so they follow it. Both the
@@ -3540,7 +3546,11 @@ function showPage(page, el, fromBack) {
     invoices:`<button class="btn" aria-label="Select invoices" onclick="bulkStart('invoices')"><i class="ti ti-checkbox"></i> <span>Select</span></button> <button class="btn" aria-label="Recurring invoices" onclick="openRecurringManager('invoice')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New invoice" onclick="openInvoiceModal()"><i class="ti ti-plus"></i> <span>New Invoice</span></button>`,
     customers:`<button class="btn btn-primary" aria-label="New customer" onclick="openCustomerModal()"><i class="ti ti-plus"></i> <span>New Customer</span></button>`,
     expenses:`<button class="btn" aria-label="Select expenses" onclick="bulkStart('expenses')"><i class="ti ti-checkbox"></i> <span>Select</span></button> <button class="btn" aria-label="Recurring expenses" onclick="openRecurringManager('expense')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="New expense" onclick="openExpenseModal()"><i class="ti ti-plus"></i> <span>New Expense</span></button>`,
-    mileage:`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> <button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
+    // Rebuild rewrites mileage on every INVOICE (and recreates their trips), so it
+    // only belongs here while Invoices is on — otherwise the Mileage tab offers a
+    // destructive bulk write into a section the user switched off. Logging a trip
+    // needs nothing but the Mileage section itself.
+    mileage:(isModuleHidden('invoicing')?'':`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> `)+`<button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
     time:`<button class="btn btn-primary" aria-label="Add time entry" onclick="openTimeEntry(null)"><i class="ti ti-plus"></i> <span>Add Entry</span></button>`,
     budget:`<button class="btn" aria-label="Pay schedule" onclick="openPayScheduleModal()"><i class="ti ti-calendar"></i> <span>Paydays</span></button> <button class="btn btn-primary" aria-label="Add bill" onclick="openBillModal(null)"><i class="ti ti-plus"></i> <span>Add Bill</span></button>`,
     loan:`<button class="btn btn-primary" aria-label="New loan" onclick="openLoanModal(null)"><i class="ti ti-plus"></i> <span>New Loan</span></button>`,
@@ -4011,6 +4021,10 @@ function renderTaxCard(profit) {
   _taxProfit = profit;
   if (!document.getElementById('tax-setaside')) return;
   paintTaxCard();
+  // The Tax card is data-module="invoicing", and openTaxModal() is only reachable
+  // from it — so with Invoices off, every dashboard render was posting to
+  // /tax-estimate (which proxies PolicyEngine) for a card nobody can see.
+  if (isModuleHidden('invoicing')) return;
   ensureLiveTax();
 }
 // Fetch a live estimate for the current inputs unless it's cached, in-flight, or
@@ -7930,6 +7944,11 @@ function knownPlaidBanks() {
 // Memoized per session; never throws (no bank sync configured is a normal state).
 let _plaidBanksPromise = null;
 function ensurePlaidBanks() {
+  // Statements off → every "Paid from" picker is hidden anyway (reconBankChoices),
+  // so this is a network round trip on every launch for a feature the user turned
+  // off. Deliberately NOT memoized into _plaidBanksPromise: switching Statements
+  // back on mid-session has to be able to fetch for real.
+  if (isModuleHidden('statements')) return Promise.resolve([]);
   if (knownPlaidBanks().length) return Promise.resolve(_plaidBanks);
   if (_plaidBanksPromise) return _plaidBanksPromise;
   _plaidBanksPromise = (async () => {
