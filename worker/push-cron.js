@@ -472,6 +472,26 @@ async function deleteAccount(req, env) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Sections (profiles.hidden_modules) — a push for a section the user switched off
+// is a notification they can't act on: tapping it opens an app with no such tab.
+// So the cron has to know the same hidden set the client does. Best-effort: a
+// missing column (migration not run) or any read failure means "nothing hidden",
+// which is exactly the behavior before this existed.
+async function hiddenModulesFor(env, userIds) {
+  const out = {};
+  if (!userIds.length) return out;
+  try {
+    const rows = await supaGet(env, `profiles?id=in.(${userIds.join(',')})&select=id,hidden_modules`);
+    for (const p of rows) if (Array.isArray(p.hidden_modules)) out[p.id] = new Set(p.hidden_modules);
+  } catch (e) { /* hidden_modules column not added yet — nobody has anything hidden */ }
+  return out;
+}
+function moduleOff(hiddenBy, userId, id) {
+  const s = hiddenBy[userId];
+  return !!(s && s.has(id));
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // Push reminders cron — fires per-job at the user-configured offset.
 async function runReminders(env) {
   const jobs = await supaGet(env, 'jobs?done=eq.false&remind_minutes=not.is.null&reminded_at=is.null&select=id,user_id,title,date,time,remind_minutes');
@@ -484,6 +504,7 @@ async function runReminders(env) {
     : [];
   const subByUser = {};
   for (const p of profs) subByUser[p.id] = p.push_subscription;
+  const hiddenBy = await hiddenModulesFor(env, userIds);
 
   for (const j of jobs) {
     if (!j.date) continue;
@@ -495,6 +516,10 @@ async function runReminders(env) {
       missed++;
       continue;
     }
+    // Jobs & Calendar switched off → don't ping. Left unstamped on purpose: the
+    // window-expiry branch above clears the row 30 min later, and until then
+    // turning the section back on still lets the reminder land.
+    if (moduleOff(hiddenBy, j.user_id, 'jobs')) continue;
     const sub = subByUser[j.user_id];
     if (!sub || !sub.endpoint) continue;
     try {
@@ -535,9 +560,14 @@ async function runRecurringReminders(env) {
     const hrs = await supaGet(env, `profiles?id=in.(${userIds.join(',')})&select=id,notify_hour`);
     for (const p of hrs) if (p.notify_hour != null) hourByUser[p.id] = p.notify_hour;
   } catch (e) { /* notify_hour column not added yet — everyone defaults to 8 */ }
+  const hiddenBy = await hiddenModulesFor(env, userIds);
   let fired = 0, failed = 0;
   for (const r of due) {
     if (hour < (hourByUser[r.user_id] ?? 8)) continue;    // before this user's chosen time
+    // A recurring invoice belongs to Invoices, a recurring expense to Expenses —
+    // with that section off the client isn't generating them either (see
+    // processRecurring), so a "due today" ping would be about nothing.
+    if (moduleOff(hiddenBy, r.user_id, r.kind === 'invoice' ? 'invoicing' : 'expenses')) continue;
     const sub = subByUser[r.user_id];
     if (!sub || !sub.endpoint) continue;                  // no device yet — try again next run
     try {

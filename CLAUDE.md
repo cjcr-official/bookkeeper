@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **485** (see `version.json` — that file is the source of truth).
+Current version: **486** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -502,7 +502,11 @@ correct semantics for a single value, so they still write directly.
 ### Sections — every tab can be switched off, so every section must stand alone
 
 `MODULES` (one entry per switchable section: `invoicing`, `expenses`, `mileage`,
-`time`, `budget`, `statements`, `loan`) maps a module id → the nav page(s) it owns.
+`time`, `jobs`, `budget`, `statements`, `loan`) maps a module id → the nav page(s) it
+owns. **A module can own NO page** — `jobs` (Jobs & Calendar) lives entirely on Home,
+so its `pages` is `[]`; `hiddenPagesSet()` then adds nothing and every gate is a
+`data-module` attribute or an `isModuleHidden('jobs')` check. Don't invent a nav tab
+just to make a section switchable.
 The hidden set lives on `profiles.hidden_modules` with a `bk-hidden-modules`
 localStorage mirror so the nav hides instantly on boot and keeps working before the
 migration runs. `getHiddenModules()` / `hiddenPagesSet()` are **memoized** (`_hidMods`
@@ -535,8 +539,43 @@ the customer form, and the invoice link on the expense form. **A hidden field ke
 its value** (`open<Thing>Modal()` still populates it and `save<Thing>()` still writes
 it) so switching a section off never destroys existing links.
 
+**Hiding a section also has to silence what it generates in the background (v486).**
+A tab disappearing is the easy half; the leaks were everywhere the app speaks up on
+its own:
+
+- **The bell** (`buildNotifications`) filters per source — invoices follow
+  `invoicing`, events follow `jobs`, a recurring item follows the section its `kind`
+  belongs to. It feeds the unread badge AND the Home Screen app-icon badge, so a leak
+  here is a red dot for a tab that no longer exists, on a row that opens a hidden page.
+- **`processRecurring()`** skips a kind whose section is off, so a hidden section
+  can't quietly auto-post expenses or pile up draft invoices. It deliberately does NOT
+  advance `next_date` for those — turning the section back on catches everything up
+  exactly as it always did.
+- **The Worker cron** reads the same `profiles.hidden_modules`
+  (`hiddenModulesFor(env, userIds)` → `moduleOff(...)`) before sending a job or
+  recurring push. Best-effort: a missing column or a failed read means "nothing
+  hidden", i.e. the behavior before this existed. A skipped job reminder is left
+  unstamped on purpose — the existing window-expiry branch clears the row 30 min
+  later, and until then re-enabling the section still lets it land.
+- **Home's shared surfaces** — the Upcoming card and the month calendar draw from
+  five sections at once (events, invoice due dates, recurring runs, budget bills,
+  loan payments), so they carry `data-module-all="jobs invoicing expenses budget
+  loan"` and only vanish when all five are off. The "new event" buttons inside them
+  carry `data-module="jobs"` on their own. With Jobs off the calendar stays as a
+  read-only view (a second tap on a day no longer opens the event sheet).
+- **Settings panels that configure one section follow it** — Invoice Defaults
+  (`invoicing`) and Expense Categories (`expenses`), both the nav button and the
+  panel. On desktop the panel column is `.active`-driven, so `applyModuleVisibility`
+  clearing the inline style hands it straight back to that CSS; if the *active* panel
+  is the one that just went off, it falls back to Appearance (which can never hide).
+- **Switching every section off** leaves Home with nothing to draw, which read as a
+  broken app. `#dash-all-off` explains it and links to Settings → Sections. Its
+  display is JS-managed from `applyModuleVisibility` — that's why it has no
+  `data-module` tag.
+
 `test/modules.test.mjs` pins all of this, including a static check that every module
-id used in markup or `isModuleHidden()` actually exists.
+id used in markup or `isModuleHidden()` actually exists, and a functional harness that
+runs the shipped `buildNotifications()` over each hidden set.
 
 ### The usual task — add a field to an entity
 1. Add the `<input>`/`<select>` to that entity's modal HTML.
@@ -798,7 +837,8 @@ minute until the cache refreshes.
   Income-vs-Expenses bar chart + collapsible Reports. (The Recent
   Invoices/Expenses cards were removed in v452 — the Invoices/Expenses tabs
   hold the full lists.)
-- **Jobs / Calendar:** add jobs (title + date + optional time + optional
+- **Jobs / Calendar:** its own switchable section (`jobs`, no nav tab — see
+  Sections). Add jobs (title + date + optional time + optional
   customer link + optional `remind_minutes` push reminder). The Calendar card
   on the dashboard shows a month grid with color-coded chips (violet=job,
   amber=invoice due, cyan=recurring). Tap a day to select; tap again (or the
@@ -812,6 +852,7 @@ minute until the cache refreshes.
   `now >= triggerAt` and `now < triggerAt + 30 min`, sends a Web Push and stamps
   `reminded_at`. If `now > triggerAt + 30 min` (window blown), stamps
   `reminded_at = triggerAt` so the row stops matching the predicate.
+  Skipped entirely (unstamped) when the user has the `jobs` section switched off.
   **Detailed payloads (v335+):** `sendWebPush(sub, env, message)` encrypts the
   `{title, body, url, tag}` JSON per RFC 8291 (aes128gcm) using the stored
   subscription's `keys.p256dh`/`keys.auth` (from `sub.toJSON()`), so the push
@@ -829,12 +870,14 @@ minute until the cache refreshes.
   and stamps `reminded_date = next_date` to dedupe per occurrence (the client
   advancing `next_date` in `processRecurring()` re-arms the next one). Toggled
   per item by the "Push reminder on the due date" checkbox in the recurring
-  editor (default on).
+  editor (default on), and skipped when the section that owns the item's `kind`
+  (`invoicing` / `expenses`) is switched off.
 - **Notification center (in-app, v318+):** a bell in the top bar
   (`#notif-bell`) with a red unread-count badge (`#notif-badge`). Notifications
   are **derived client-side from `cache`** (no DB table) by `buildNotifications()`:
   overdue/due-soon invoices, jobs today or missed, recurring items coming due
-  (`NOTIF_SOON_DAYS = 3` horizon). Each has a **stable id**; seen ids live in
+  (`NOTIF_SOON_DAYS = 3` horizon) — **each source gated on its own section**
+  (v486). Each has a **stable id**; seen ids live in
   localStorage `bk-notif-seen`. `refreshNotifBadge()` (called from `showPage()`
   and on load) sets the badge to the unseen count **and mirrors it to the Home
   Screen app-icon badge via the Web Badging API** (`setIconBadge()` →
