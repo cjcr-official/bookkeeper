@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **492** (see `version.json` — that file is the source of truth).
+Current version: **493** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -367,7 +367,14 @@ banks** — tapping one sets `_selBank` (the selected `item_id`), and the audit 
 must redraw the new bank's audit grid **synchronously** (`renderAuditBlock` reads the
 in-memory `audited_months`, no network) before kicking off the async
 `renderPlaidBlock()` — otherwise the month grid blanks out while `/plaid/status`
-reloads and the Owner Activity card below pops up, then back down (v461 fix). `/plaid/transactions`
+reloads and the Owner Activity card below pops up, then back down (v461 fix).
+**Same rule, same reason, for `acctId` (v493):** `renderAuditBlock(null, …)` falls back
+to the legacy `'_'` bucket, which `migratePlaidKeys` deletes — so the grid draws from an
+empty map and every month reads as a hollow "not checked yet" dot. `renderAccountsPage`
+was passing null, which flashed a wiped audit history on every Statements open and every
+rotation until `/plaid/status` answered. Every caller holding a bank passes `_selBank`;
+only the genuinely bankless branches (Plaid not configured, no bank linked) may pass
+null, and `test/reconcile.test.mjs` pins that split. `/plaid/transactions`
 takes an optional `{item_id}` and pulls just that one bank (omit it → legacy
 merge-all). Everything downstream is namespaced per bank: the session pull cache
 (`_plaidCache[item_id][month]` via `bankCache()`), the audit grid (`audited_months`
