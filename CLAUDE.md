@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **487** (see `version.json` — that file is the source of truth).
+Current version: **488** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -120,6 +120,21 @@ on every pull by `applyTxnEdits` inside `buildPlaidStmt` so match indices stay
 valid), and **`skip_fps`** (records the user set aside as "not on this statement" for
 that month).
 
+**A bank line is referenced by CONTENT, never by position (v488).** `manual_matches`
+and `unmatch_t` used to store bare indices into a month that is re-fetched live on
+every pull. One transaction settling late inserts itself into the (date, description,
+amount) sort order and shifts every index after it — silently re-pointing an explicit
+pairing at a *different* transaction, which can flip a month's verdict with no error
+anywhere. They now also carry `tKeys` / `unmatch_tk`: `txnKey(t)` =
+`date|description|amount`, stamped in `savePlaidRecon` (the single place every writer
+funnels through, so the ~12 call sites keep working in live indices) and re-resolved in
+`buildPlaidStmt` by `makeTxnRefResolver`. The resolver **consumes** keys, so two
+byte-identical lines stay distinct; it falls back date+amount → unique amount within 3
+days (banks rewrite the merchant name when a charge settles); and a keyed reference
+that resolves to nothing is **dropped, not guessed** — the record simply returns to the
+auto-match pool. Rows saved before keys existed have no key and still use their index.
+If you add a new field holding bank-line positions, key it the same way.
+
 **Account separation is ONE explicit source: the "Paid from" tag (`recon_bank`).**
 A record clears through the account the USER said it clears through — set on a manual
 match (`matchSelected` writes the tag, multi-bank only), a "Paid from" pick, or a
@@ -141,6 +156,47 @@ separation; weak `matched_fps` are intentionally dropped, not baked in. The matc
 covered by `test/reconcile.test.mjs` (`node test/reconcile.test.mjs`) — extend it when
 you touch `reconcileMatch`.
 
+**Cross-month settlement (v488) — a record clears when the BANK says it did.**
+A record dated near a month boundary routinely settles on the next month's
+statement: the date on the record is when the purchase happened, the bank line is
+when it posted. A July 30th expense that cleared August 1st made July report it as
+"in your books · not on the bank" and FAIL, while August matched it and passed. The
+only escape was to unlink and re-match by hand — which writes a `manual_matches`
+entry, and *that* (via `gManual`) is what finally told July the record was spoken
+for. Auto-matches now close the same loop, in **two phases**:
+
+- **Phase 1** is `reconcileMatch` — unchanged, per-month, knows nothing of its
+  neighbours.
+- **Phase 2** is `applyClearedElsewhere(comp, clearedElsewhereMap(neighbourComps))`:
+  an in-period record a neighbouring month MATCHED at the bank moves out of
+  `inRecordsOnly` into `comp.clearedElsewhere` (`{...rec, clearedIn:'YYYY-MM'}`) and
+  `passed` is recomputed. It renders as a "Cleared on a neighbouring statement"
+  reference section with a button to open that month, and as a green
+  `Cleared · <Mon>` chip in the finder.
+
+Three constraints, all load-bearing:
+1. **Phase 2 runs AFTER matching, never as a filter on the candidate pool.**
+   Withholding a record up front would let BOTH months drop it — each seeing the
+   other's match — and both would fail. Post-matching forgiveness is *monotone*: it
+   can only turn a failure into a pass, so it can never invent a discrepancy. An
+   unexplained bank line still fails the month.
+2. **Only real matches forgive, not set-asides.** "Not on August's statement" is no
+   evidence a record cleared in July. (`accountedFpsOf`, which includes set-asides,
+   is for the finder's *display* only — `clearedElsewhereMap` reads `matchedFps`.)
+3. **Nothing is persisted.** It re-derives from the session's pulls on every render,
+   exactly like the auto-matches it reads. This is NOT the retired `matched_fps`
+   map — see the paragraph above; don't turn it into one.
+
+Neighbours are only knowable if they're in the session cache, so `plaidPull` now
+fetches month−1…month+1 in **one** ranged call (`pullMonthSpan`, bucketed by month,
+pending bucketed by its own date) — the same round trip as asking for one month —
+and `plaidCheckYear` extends its span one month either side of the 12 it reports.
+Opening a month also **re-stamps its neighbours' audit marks** (`nbStamps` →
+`recordAudit`'s `extraStamps`), so pulling August heals July's amber dot instead of
+leaving the owner to chase it. `setAuditResult` refuses future months and
+`compHasContent` keeps the re-stamp from painting marks on empty months nobody asked
+about.
+
 Cash records are NOT excluded from matching — this business deposits cash income,
 so a cash-paid invoice hits the bank as a deposit and reconciles like everything
 else (several cash payments deposited together match via the combo pass). A
@@ -152,16 +208,19 @@ matched in another month (button opens that month), set aside (cash/user, with
 Restore), in this month's list, or unmatched in another month (actionable
 checkbox row) — and, before typing, auto-surfaces unmatched records dated within
 ±18 days of the month, so "an expense is missing" always has a visible answer.
-Two anti-false-alarm rules: (1) the CURRENT month stamps pass/fail like any
+Three anti-false-alarm rules: (1) the CURRENT month stamps pass/fail like any
 other month, so its grid dot shows discrepancies on load — `refreshLiveAudit`
-quietly re-checks it against the bank whenever the Statements page opens
-(session cache reused; failures silent) — but its on-screen status pill reads
+quietly re-checks it (and LAST month, against each other) whenever the Statements
+page opens, re-pulling when the session copy is over 10 minutes old; failures are
+silent — but its on-screen status pill reads
 "In progress" rather than "Needs review", since mid-month unmatched records are
 usually just bank lag;
 (2) an out-of-period record isn't called a stray if its own month accounts for
-it — `monthAccountedFps(m)` recomputes the adjacent months' reconciles from the
-session cache (fallback: their stamped audit) and such records render as
-"accounted for on the <Mon> statement" instead of unmatched. Each
+it — `monthReconcile(m, bank)` recomputes an adjacent month from the session
+cache and `accountedFpsOf` reads what it matched OR set aside (fallback: that
+month's stamped audit); such records render as
+"accounted for on the <Mon> statement" instead of unmatched;
+(3) **cross-month settlement (v488)** — see below. Each
 unmatched bank line has a labeled ⋯ menu (`openTxnMenu`) that records the line
 into the books and explicit-pairs it via `manual_matches`. **Every action follows the
 section it files into (v483)** — expense/reimbursement/prior-year-refund need
@@ -452,7 +511,8 @@ drops others.
 
 **2. Never write a collection-shaped jsonb column from the in-memory `profile`.**
 `bill_paid`, `paycheck_amounts`, `budget_bills`, `recon_bank`, `expense_categories`,
-`account_categories` and `bank_labels` are collections that a phone and a laptop add to
+`account_categories`, `bank_labels` and — since v488 — `plaid_recon` and
+`audited_months` are collections that a phone and a laptop add to
 independently. The old pattern cloned the `profile` fetched **at login**, changed one
 entry, and wrote the whole column back — so a tab left open since morning would
 overwrite everything the other device had done since, with no error (a perfectly valid
@@ -466,6 +526,12 @@ other key survives. For the two ordered arrays the user edits wholesale
 fresh, key)`**, a 3-way merge that honours local deletes and keeps entries only the
 server knows about. Neither is atomic — PostgREST gives us no transaction — but the
 conflict window drops from "as long as this tab has been open" to one round trip.
+
+The two reconciliation columns were the last holdouts (v488): `savePlaidRecon`,
+`resetMonthMatches`, `recordAudit`/`persistAuditStamps`, `migratePlaidKeys` and
+`persistOrphanMerge` all write a **delta** now — one month, or one re-key applied
+inside `apply(current)` — so reconciling March on the phone can't roll back the months
+the laptop checked since login.
 
 Scalar settings (`notify_hour`, `logo`, `time_format`, `hourly_rate`,
 `push_subscription`, `hidden_modules`) are a different case: last-write-wins is the

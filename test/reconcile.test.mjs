@@ -44,7 +44,9 @@ function extract(name) {
 }
 
 const NEEDED = ['fmt', 'parseDate', 'ymd', 'budDateAt', 'billRecurs', 'billDueDay',
-  'reconBankMap', 'reconBankKey', 'recBankFor', 'manualMatchTagMap', 'reconcileMatch'];
+  'reconBankMap', 'reconBankKey', 'recBankFor', 'manualMatchTagMap', 'reconcileMatch',
+  'shiftMonthKey', 'adjMonths', 'accountedFpsOf', 'clearedElsewhereMap',
+  'applyClearedElsewhere', 'txnKey', 'makeTxnRefResolver'];
 
 // --- Sandbox globals the extracted functions close over. ---------------------
 // Tests set `cache` / `profile` per scenario via the returned setters.
@@ -52,7 +54,8 @@ const sandbox = { cache: {}, profile: {} };
 const bodies = NEEDED.map(extract).join('\n\n');
 const factory = new Function(
   'cache', 'profile', 'billPaidMap', 'getBills',
-  bodies + '\n\nreturn { reconcileMatch, parseDate, manualMatchTagMap };'
+  bodies + '\n\nreturn { reconcileMatch, parseDate, manualMatchTagMap, shiftMonthKey, adjMonths,'
+         + ' accountedFpsOf, clearedElsewhereMap, applyClearedElsewhere, txnKey, makeTxnRefResolver };'
 );
 function build() {
   return factory(
@@ -310,6 +313,127 @@ test('skip_fps sets a record aside without failing the month', ({ reconcileMatch
   eq(r.inRecordsOnly.length, 0, 'skipped record not in unmatched list');
   eq(r.skippedRecs.map(x => x.fp), ['e:e1'], 'record shows in skipped list');
   eq(r.passed, true, 'empty statement with only a set-aside still passes');
+});
+
+// ============================================================================
+// CROSS-MONTH SETTLEMENT (v488). A record dated near a month boundary clears on
+// the NEXT month's statement. Its own month used to report it "in your books ·
+// not on the bank" and fail, while the neighbour matched it and passed — the
+// July-30th / August-1st bug. Phase 2 forgives exactly that, after matching.
+// ============================================================================
+
+// 7. The reported bug, end to end: July fails on its own, passes once August's
+//    reconcile is taken into account, and says where the record went.
+test('a July 30th record that posts August 1st stops failing July', (api) => {
+  const { reconcileMatch, clearedElsewhereMap, applyClearedElsewhere } = api;
+  sandbox.cache.expenses = [
+    { id: 'e1', date: '2026-07-30', amount: 80, vendor: 'Month-end parts' },
+    { id: 'e2', date: '2026-07-05', amount: 20, vendor: 'Mid-month' },
+  ];
+  const july = reconcileMatch(stmt('2026-07', [{ date: '2026-07-06', amount: -20, description: 'MID' }], { period_end: '2026-07-31' }), null);
+  eq(july.inRecordsOnly.map(r => r.fp), ['e:e1'], 'July alone reports the 30th as missing');
+  eq(july.passed, false, 'July alone fails');
+
+  const aug = reconcileMatch(stmt('2026-08', [{ date: '2026-08-01', amount: -80, description: 'PARTS' }]), null);
+  eq(aug.matchedFps, ['e:e1'], 'August matched it at the bank');
+  eq(aug.passed, true, 'August passes');
+
+  applyClearedElsewhere(july, clearedElsewhereMap({ '2026-08': aug }));
+  eq(july.passed, true, 'July passes once August is taken into account');
+  eq(july.inRecordsOnly.length, 0, 'no longer reported as a discrepancy');
+  eq(july.clearedElsewhere.map(r => [r.fp, r.clearedIn]), [['e:e1', '2026-08']], 'reported as cleared in August instead');
+});
+
+// 7b. Forgiveness is MONOTONE — it can only turn a failure into a pass. A bank
+//     line with no record behind it must still fail the month.
+test('cross-month forgiveness never hides an unexplained bank line', (api) => {
+  const { reconcileMatch, clearedElsewhereMap, applyClearedElsewhere } = api;
+  sandbox.cache.expenses = [{ id: 'e1', date: '2026-07-30', amount: 80, vendor: 'Parts' }];
+  const july = reconcileMatch(stmt('2026-07', [{ date: '2026-07-12', amount: -13.5, description: 'MYSTERY' }], { period_end: '2026-07-31' }), null);
+  const aug = reconcileMatch(stmt('2026-08', [{ date: '2026-08-01', amount: -80, description: 'PARTS' }]), null);
+  applyClearedElsewhere(july, clearedElsewhereMap({ '2026-08': aug }));
+  eq(july.inRecordsOnly.length, 0, 'the record is forgiven');
+  eq(july.onBankOnly.length, 1, 'the unexplained bank line is untouched');
+  eq(july.passed, false, 'July still fails on the bank line');
+});
+
+// 7c. Only real MATCHES forgive. "Set aside" in the neighbour means "not on THAT
+//     statement" — no evidence at all that it cleared here.
+test('a set-aside in the neighbour month does not forgive', (api) => {
+  const { reconcileMatch, clearedElsewhereMap, applyClearedElsewhere, accountedFpsOf } = api;
+  sandbox.cache.expenses = [{ id: 'e1', date: '2026-07-30', amount: 80, vendor: 'Parts' }];
+  const july = reconcileMatch(stmt('2026-07', [], { period_end: '2026-07-31' }), null);
+  const aug = reconcileMatch(stmt('2026-08', [], { skip_fps: ['e:e1'] }), null);
+  eq([...accountedFpsOf(aug)], ['e:e1'], 'the finder still knows August accounted for it');
+  applyClearedElsewhere(july, clearedElsewhereMap({ '2026-08': aug }));
+  eq(july.inRecordsOnly.map(r => r.fp), ['e:e1'], 'but it is NOT forgiven as cleared');
+  eq(july.passed, false, 'July still needs review');
+});
+
+// 7d. Month-key arithmetic used to pick the neighbours (rolls over years).
+test('adjMonths gives the two neighbouring month keys', ({ adjMonths, shiftMonthKey }) => {
+  eq(adjMonths('2026-01'), ['2025-12', '2026-02'], 'January neighbours cross the year');
+  eq(adjMonths('2026-12'), ['2026-11', '2027-01'], 'December neighbours cross the year');
+  eq(shiftMonthKey('2026-03', -3), '2025-12', 'multi-month shift');
+});
+
+// ============================================================================
+// BANK-LINE IDENTITY (v488). Manual matches and Unlinks were stored as bare
+// positions into a live-refetched month, so one late-settling transaction shifted
+// every later index and silently re-pointed them at a different line.
+// ============================================================================
+
+// 8. A transaction that settles into the middle of the month must not move an
+//    existing manual match onto its neighbour.
+test('a manual match survives a transaction inserted before it', ({ makeTxnRefResolver, txnKey }) => {
+  const before = [
+    { date: '2026-07-01', description: 'A', amount: -10 },
+    { date: '2026-07-15', description: 'B', amount: -20 },
+    { date: '2026-07-20', description: 'C', amount: -30 },
+  ];
+  const saved = { tIdxs: [2], tKeys: [txnKey(before[2])] };
+  const after = [before[0], { date: '2026-07-10', description: 'LATE', amount: -5 }, before[1], before[2]];
+  eq(makeTxnRefResolver(after)(saved.tKeys, saved.tIdxs), [3], 'follows the line, not the position');
+  eq(makeTxnRefResolver(after)(null, saved.tIdxs), [2], 'legacy rows with no key still use the stored index');
+});
+
+// 8b. Two byte-identical lines stay distinguishable — keys are consumed, so the
+//     same line is never handed to two different matches.
+test('duplicate bank lines resolve to distinct indices', ({ makeTxnRefResolver, txnKey }) => {
+  const txns = [
+    { date: '2026-07-08', description: 'FUEL', amount: -40 },
+    { date: '2026-07-08', description: 'FUEL', amount: -40 },
+  ];
+  const resolve = makeTxnRefResolver(txns);
+  const k = txnKey(txns[0]);
+  eq(resolve([k], [0]), [0], 'first reference takes the first line');
+  eq(resolve([k], [1]), [1], 'second reference takes the other one');
+  eq(resolve([k], [0]), [], 'a third has nothing left to claim');
+});
+
+// 8c. Banks rewrite the merchant name when a charge settles — fall back to
+//     date + amount rather than losing the pairing.
+test('a renamed merchant still resolves on date + amount', ({ makeTxnRefResolver, txnKey }) => {
+  const key = txnKey({ date: '2026-07-08', description: 'SQ *PENDING AUTH', amount: -40 });
+  const settled = [{ date: '2026-07-08', description: 'Ace Hardware', amount: -40 }];
+  eq(makeTxnRefResolver(settled)(key ? [key] : [], [0]), [0], 'matched by date + amount');
+});
+
+// 8d. A keyed reference to a line the bank no longer reports is DROPPED, not
+//     guessed onto whatever now sits at that index.
+test('an unresolvable keyed reference is dropped, not guessed', ({ makeTxnRefResolver, txnKey }) => {
+  const key = txnKey({ date: '2026-07-08', description: 'GONE', amount: -40 });
+  const txns = [{ date: '2026-07-09', description: 'SOMETHING ELSE', amount: -95 }];
+  eq(makeTxnRefResolver(txns)([key], [0]), [], 'no pairing rather than a wrong one');
+});
+
+// 8e. A '|' inside the description must not corrupt the date/amount parsing the
+//     looser fallback tiers do.
+test('a pipe in the description does not corrupt the key', ({ makeTxnRefResolver, txnKey }) => {
+  const t = { date: '2026-07-08', description: 'ACME | STORE #12', amount: -40 };
+  eq(makeTxnRefResolver([t])([txnKey(t)], [0]), [0], 'exact key still matches');
+  const renamed = [{ date: '2026-07-08', description: 'ACME STORE', amount: -40 }];
+  eq(makeTxnRefResolver(renamed)([txnKey(t)], [0]), [0], 'date + amount fallback still parses');
 });
 
 // ============================================================================

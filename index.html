@@ -8796,22 +8796,29 @@ function plaidSelectBank(itemId) {
 // One-time: legacy single-bank data lived under the audit key '_' and bare-month
 // plaid_recon keys. Move it under the primary bank's item_id so history survives
 // the switch to per-bank keying.
+// Both columns are collections, so the re-key runs INSIDE a fresh-read write —
+// migrating from a login-time snapshot would roll back every month another device
+// reconciled in the meantime (CLAUDE.md data-safety rule 2).
 async function migratePlaidKeys(primaryId) {
   if (_plaidKeysMigrated || !primaryId) return;
   _plaidKeysMigrated = true;
-  let changed = false;
-  const am = profile.audited_months;
-  if (am && typeof am === 'object' && am['_'] && !am[primaryId]) { am[primaryId] = am['_']; delete am['_']; changed = true; }
-  const pr = profile.plaid_recon;
-  if (pr && typeof pr === 'object') {
-    const monthKeys = Object.keys(pr).filter(k => /^\d{4}-\d{2}$/.test(k));
-    if (monthKeys.length) {
-      pr[primaryId] = pr[primaryId] || {};
-      monthKeys.forEach(k => { if (pr[primaryId][k] == null) pr[primaryId][k] = pr[k]; delete pr[k]; });
-      changed = true;
-    }
+  const am = profile.audited_months, pr = profile.plaid_recon;
+  if (am && typeof am === 'object' && am['_'] && !am[primaryId]) {
+    await updateProfileJson('audited_months', cur => {
+      if (cur['_'] && !cur[primaryId]) { cur[primaryId] = cur['_']; delete cur['_']; }
+      return cur;
+    }, {});
   }
-  if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
+  if (pr && typeof pr === 'object' && Object.keys(pr).some(k => /^\d{4}-\d{2}$/.test(k))) {
+    await updateProfileJson('plaid_recon', cur => {
+      Object.keys(cur).filter(k => /^\d{4}-\d{2}$/.test(k)).forEach(k => {
+        cur[primaryId] = cur[primaryId] || {};
+        if (cur[primaryId][k] == null) cur[primaryId][k] = cur[k];
+        delete cur[k];
+      });
+      return cur;
+    }, {});
+  }
 }
 // Recovery: when a bank link breaks and is re-linked, Plaid may issue a NEW
 // item_id, leaving the old months' audit results + manual matches orphaned under
@@ -8825,18 +8832,22 @@ function orphanedReconKeys() {
   Object.keys(profile.plaid_recon || {}).forEach(k => { if (isReal(k)) keys.add(k); });
   return [...keys];
 }
-// Merge orphaned months onto a target bank id (gap-fill: months already redone on
-// the target win; orphans fill the rest), then drop the old keys. Mutates profile
-// in place — caller persists.
-function mergeOrphansOnto(targetId, orphans) {
-  profile.audited_months = profile.audited_months || {};
-  profile.plaid_recon = profile.plaid_recon || {};
+// Merge orphaned months onto a target bank id inside ONE column's map (gap-fill:
+// months already redone on the target win; orphans fill the rest), then drop the
+// old keys. Takes the map it works on so the merge can run against a freshly-read
+// column rather than a login-time snapshot.
+function mergeOrphansInto(map, targetId, orphans) {
   orphans.forEach(oldId => {
-    if (profile.audited_months[oldId]) profile.audited_months[targetId] = Object.assign({}, profile.audited_months[oldId], profile.audited_months[targetId] || {});
-    if (profile.plaid_recon[oldId]) profile.plaid_recon[targetId] = Object.assign({}, profile.plaid_recon[oldId], profile.plaid_recon[targetId] || {});
-    delete profile.audited_months[oldId];
-    delete profile.plaid_recon[oldId];
+    if (map[oldId]) map[targetId] = Object.assign({}, map[oldId], map[targetId] || {});
+    delete map[oldId];
   });
+  return map;
+}
+async function persistOrphanMerge(targetId, orphans) {
+  const a = await updateProfileJson('audited_months', cur => mergeOrphansInto(cur, targetId, orphans), {});
+  const p = await updateProfileJson('plaid_recon', cur => mergeOrphansInto(cur, targetId, orphans), {});
+  if (a.error || p.error) { console.error('restore failed', a.error || p.error); return false; }
+  return true;
 }
 // Disconnect/reconnect issues a NEW Plaid item_id, orphaning the old bank's months.
 // When exactly one bank is connected there's no ambiguity about where that history
@@ -8848,11 +8859,8 @@ async function autoRestoreOrphans(targetId) {
   if (!targetId || (_plaidBanks || []).length !== 1) return false;
   const orphans = orphanedReconKeys();
   if (!orphans.length) return false;
-  mergeOrphansOnto(targetId, orphans);
-  try {
-    await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id);
-    showToast('Reconciliation history restored', 'success');
-  } catch (e) { console.error(e); return false; }
+  if (!(await persistOrphanMerge(targetId, orphans))) return false;
+  showToast('Reconciliation history restored', 'success');
   return true;
 }
 async function restoreReconToSelected() {
@@ -8865,13 +8873,10 @@ async function restoreReconToSelected() {
   const targetName = _selBank ? bankDisplayName(_selBank) : 'the selected bank';
   if (!confirm(`Restore ${monthsSet.size} month(s) of reconciliation history onto ${targetName}? This moves your earlier audit results and manual matches from the old (broken) bank link onto the reconnected one. Months you've already redone are kept.`)) return;
   // Existing (already-redone) months on the target win; old months fill the gaps.
-  mergeOrphansOnto(_selBank, orphans);
-  try {
-    await sb.from('profiles').update({ audited_months: profile.audited_months, plaid_recon: profile.plaid_recon }).eq('id', currentUser.id);
-    showToast('Reconciliation history restored', 'success');
-    _recState = null;
-    renderPlaidBlock();
-  } catch (e) { showToast('Restore failed: ' + (e.message || e), 'error'); }
+  if (!(await persistOrphanMerge(_selBank, orphans))) { showToast('Restore failed', 'error'); return; }
+  showToast('Reconciliation history restored', 'success');
+  _recState = null;
+  renderPlaidBlock();
 }
 // Open Plaid Link → exchange the public_token server-side → refresh the card.
 // Require account-level 2FA (TOTP) to be ON before a bank can be linked. If it
@@ -8970,21 +8975,42 @@ async function plaidPullMonth(month) {
   if (!_plaidConnected) return;
   await plaidPull(month, month === today().slice(0, 7));
 }
+// Last calendar day of a month key, as YYYY-MM-DD.
+function monthEndDay(mk) { const [y, m] = mk.split('-').map(Number); return `${mk}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; }
+// Fetch a CONTIGUOUS span of months in one ranged Plaid call and bucket the result
+// into the session cache by month. Asking for three months costs the same round
+// trip as asking for one, and it's what makes cross-month settlement real rather
+// than guesswork — a record dated the 30th can only be seen clearing on the 1st if
+// the next month is actually in the cache. Pending lines are bucketed by their own
+// date, so the current month's count is unchanged from a single-month pull.
+async function pullMonthSpan(span, force) {
+  const bc = bankCache();
+  if (!span.length || (!force && span.every(m => bc[m]))) return;
+  const start = span[0] + '-01';
+  const cap = today();
+  let end = monthEndDay(span[span.length - 1]);
+  if (end > cap && cap >= start) end = cap;   // don't ask the bank for the future
+  const data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ item_id: _selBank, start_date: start, end_date: end }) });
+  const bucket = {};
+  const at = Date.now();
+  span.forEach(m => { bucket[m] = { transactions: [], pending: [], institution: data.institution, pulledAt: at }; });
+  const put = (list, key) => (list || []).forEach(t => { const b = bucket[(t.date || '').slice(0, 7)]; if (b) b[key].push(t); });
+  put(data.transactions, 'transactions');
+  put(data.pending, 'pending');
+  span.forEach(m => { bc[m] = bucket[m]; });
+}
 async function plaidPull(monthArg, force) {
   const month = monthArg || '';
   if (!/^\d{4}-\d{2}$/.test(month)) { showToast('Pick a month first.', 'error'); return; }
-  const [y, m] = month.split('-').map(Number);
-  const start = month + '-01';
-  const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
   const out = document.getElementById('rec-result');
   const bc = bankCache();
+  const [prev, next] = adjMonths(month);
   try {
-    let data = (!force && bc[month]) ? bc[month] : null;
-    if (!data) {
-      if (out) out.innerHTML = `<div id="rec-audit"></div><div style="display:flex;align-items:center;gap:.5rem;color:var(--text3);font-size:13px;padding:.35rem 0"><span class="spinner"></span> Pulling from the bank…</div>`;
-      data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({ item_id: _selBank, start_date: start, end_date: end }) });
-      bc[month] = data;   // cache this bank's raw response for this session
+    if (force || !bc[month] || !bc[prev] || !bc[next]) {
+      if (out && (force || !bc[month])) out.innerHTML = `<div id="rec-audit"></div><div style="display:flex;align-items:center;gap:.5rem;color:var(--text3);font-size:13px;padding:.35rem 0"><span class="spinner"></span> Pulling from the bank…</div>`;
+      await pullMonthSpan([prev, month, next], force);
     }
+    const data = bc[month] || { transactions: [], pending: [] };
     if (month === today().slice(0, 7) && Array.isArray(data.pending)) { _plaidPending = data.pending.length; renderPlaidPendingNote(); }
     renderReconcile(buildPlaidStmt(month, data), null, null, {}, null);
   } catch (e) {
@@ -9001,21 +9027,33 @@ let _liveAuditBusy = false;
 async function refreshLiveAudit() {
   if (!_plaidConnected || _liveAuditBusy) return;
   const m = today().slice(0, 7);
+  const prev = shiftMonthKey(m, -1);
   _liveAuditBusy = true;
   const bc = bankCache();
   try {
-    let data = bc[m];
-    if (!data) {
-      const [y, mo] = m.split('-').map(Number);
-      data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({
-        item_id: _selBank, start_date: m + '-01', end_date: `${m}-${String(new Date(y, mo, 0).getDate()).padStart(2, '0')}` }) });
-      bc[m] = data;
-    }
-    if (Array.isArray(data.pending)) { _plaidPending = data.pending.length; renderPlaidPendingNote(); }
-    const comp = reconcileMatch(buildPlaidStmt(m, data), null);
-    if (setAuditResult(_selBank, m, comp.passed)) {
-      try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); }
-    }
+    // LAST month is refreshed alongside this one, and the two are reconciled
+    // against each other. That's the whole point on the 1st–3rd: a purchase dated
+    // the 30th posts on the 1st, and last month's mark should heal itself here
+    // rather than sit amber until the owner goes hunting for the "missing" record.
+    //
+    // Re-pull once the session's copy has gone cold. This check exists for
+    // freshness — a charge that posts during the day has to be able to move the
+    // mark — and reusing an hours-old pull on every page open quietly defeated
+    // that. Ten minutes keeps repeated tab switches free.
+    const at = bc[m] && bc[m].pulledAt;
+    await pullMonthSpan([prev, m], !at || (Date.now() - at) > 600000);
+    const data = bc[m];
+    if (data && Array.isArray(data.pending)) { _plaidPending = data.pending.length; renderPlaidPendingNote(); }
+    const comps = {};
+    [prev, m].forEach(k => { comps[k] = monthReconcile(k, _selBank); });
+    const stamps = [];
+    [prev, m].forEach(k => {
+      const c = comps[k]; if (!c) return;
+      const others = {}; [prev, m].forEach(o => { if (o !== k && comps[o]) others[o] = comps[o]; });
+      applyClearedElsewhere(c, clearedElsewhereMap(others));
+      if (compHasContent(c)) stamps.push(setAuditResult(_selBank, k, c.passed));
+    });
+    await persistAuditStamps(stamps);
     if (!_recState) renderAuditBlock(_selBank, '', '', null);
   } catch (e) { console.error(e); }
   finally { _liveAuditBusy = false; }
@@ -9091,6 +9129,16 @@ function buildPlaidStmt(month, data, bankKey) {
     (a.date || '').localeCompare(b.date || '') || (a.description || '').localeCompare(b.description || '') || ((a.amount || 0) - (b.amount || 0)));
   const saved = reconBucket(bankKey)[month] || {};
   applyTxnEdits(txns, saved.txn_edits);
+  // Saved bank-line references are resolved by CONTENT, not position — see
+  // makeTxnRefResolver. Manual matches and unlinks each get their own resolver so
+  // one line can be both explicitly paired and parked in unmatch_t (which is what
+  // Unlink-then-re-Match produces).
+  const resolveManual = makeTxnRefResolver(txns);
+  const manual = (saved.manual_matches || []).map(m => ({
+    rFps: m.rFps || [],
+    tIdxs: resolveManual(m.tKeys, m.tIdxs)
+  })).filter(m => m.tIdxs.length && m.rFps.length);
+  const unmatchT = makeTxnRefResolver(txns)(saved.unmatch_tk, saved.unmatch_t);
   return {
     account_name: data.institution || 'Bank (Plaid)',
     bankKey: bankKey,   // audit grid + saved matches are namespaced per bank
@@ -9101,11 +9149,66 @@ function buildPlaidStmt(month, data, bankKey) {
     // pull predates pending support (stale session cache), [] = the bank
     // reported nothing pending — the UI tells these apart on the current month.
     pending: Array.isArray(data.pending) ? data.pending : null,
-    manual_matches: saved.manual_matches || [],
-    unmatch_t: saved.unmatch_t || [],
+    manual_matches: manual,
+    unmatch_t: unmatchT,
     unmatch_r: saved.unmatch_r || [],
     txn_edits: saved.txn_edits || [],
     skip_fps: saved.skip_fps || []
+  };
+}
+
+// What identifies a bank line across re-pulls. NOT its position: Plaid re-fetches
+// the month live, and a transaction that settles late inserts itself into the
+// (date, description, amount) sort order — shifting every index after it. Manual
+// matches and Unlinks were stored as bare indices, so one late-posting charge
+// silently re-pointed them at neighbouring lines: an explicit pairing the owner
+// made would quietly claim the wrong transaction, and a month could pass or fail
+// on it. Now they're stored by content key and re-resolved on every pull.
+function txnKey(t) {
+  return ((t && t.date) || '') + '|' + ((t && t.description) || '') + '|' + (Math.round(((t && parseFloat(t.amount)) || 0) * 100) / 100);
+}
+// Resolve saved bank-line references to indices in the freshly-pulled month.
+// Returns a stateful resolver: keys are CONSUMED, so two byte-identical lines stay
+// distinguishable and no line is handed out twice. Tiers, strictest first:
+//   1. exact key (date + description + amount)
+//   2. date + amount — banks rewrite the merchant name when a charge settles
+//   3. amount + date within 3 days, only when it's unambiguous (one candidate)
+// A keyed reference that resolves to nothing is DROPPED rather than guessed: the
+// record falls back into the auto-match pool, which normally re-pairs it anyway.
+// Entries saved before keys existed have no key and fall back to their index.
+function makeTxnRefResolver(txns) {
+  const list = txns || [];
+  const used = new Set();
+  const take = pred => {
+    for (let i = 0; i < list.length; i++) if (!used.has(i) && pred(list[i])) { used.add(i); return i; }
+    return -1;
+  };
+  const amtOf = t => Math.round(((parseFloat(t.amount)) || 0) * 100) / 100;
+  return (keys, idxs) => {
+    const out = [];
+    (idxs || []).forEach((legacy, n) => {
+      const key = (keys && keys[n] != null) ? String(keys[n]) : null;
+      let i = -1;
+      if (key != null) {
+        const kd = key.slice(0, key.indexOf('|'));
+        const ka = parseFloat(key.slice(key.lastIndexOf('|') + 1));
+        i = take(t => txnKey(t) === key);
+        if (i < 0) i = take(t => (t.date || '') === kd && Math.abs(amtOf(t) - ka) <= 0.005);
+        if (i < 0) {
+          const near = [];
+          list.forEach((t, j) => {
+            if (used.has(j) || Math.abs(amtOf(t) - ka) > 0.005) return;
+            if (!kd || !t.date || Math.abs((parseDate(t.date) - parseDate(kd)) / 864e5) > 3) return;
+            near.push(j);
+          });
+          if (near.length === 1) { used.add(near[0]); i = near[0]; }
+        }
+      } else if (legacy != null && legacy >= 0 && legacy < list.length && !used.has(legacy)) {
+        used.add(legacy); i = legacy;   // saved before keys existed — position is all we have
+      }
+      if (i >= 0) out.push(i);
+    });
+    return out;
   };
 }
 // Re-apply saved bank-line edits (splits, amount fixes) to a fresh pull, in the
@@ -9129,19 +9232,95 @@ function applyTxnEdits(txns, edits) {
   });
 }
 
+// 'YYYY-MM' arithmetic (month keys, not dates — parseDate('2026-03-01') then
+// setMonth is the only rollover-safe way to do this).
+function shiftMonthKey(mk, d) { const x = parseDate(mk + '-01'); x.setMonth(x.getMonth() + d); return x.toISOString().slice(0, 7); }
+// The months whose auto-match window can reach a record dated inside month `mk`
+// (the window is the period ±18 days, so exactly the two neighbours).
+function adjMonths(mk) { return [shiftMonthKey(mk, -1), shiftMonthKey(mk, 1)]; }
+
+// Session pull cache for a specific bank (bankCache() is the selected one).
+function bankCacheFor(bankKey) {
+  const k = bankKey || _selBank;
+  if (!k) return {};
+  return (_plaidCache[k] = _plaidCache[k] || {});
+}
+// Phase-1 reconcile of an already-pulled month for a bank — the same computation
+// that month's own view does. null when the month isn't in the session cache
+// (nothing pulled means nothing to say about it).
+function monthReconcile(m, bankKey) {
+  const bc = bankCacheFor(bankKey);
+  if (!m || !bc[m]) return null;
+  return reconcileMatch(buildPlaidStmt(m, bc[m], bankKey), null);
+}
 // Which of month m's records are accounted for (matched or set aside) by that
 // month's OWN reconcile? Auto-matches are per-view, so a June record matched in
-// June looks "unmatched" from July's view — this recomputes June's truth. Uses
-// the session cache; returns null when the month hasn't been pulled (caller
-// falls back to the stamped audit).
-function monthAccountedFps(m) {
-  const bc = bankCache();
-  if (!bc[m]) return null;
-  const comp = reconcileMatch(buildPlaidStmt(m, bc[m]), null);
+// June looks "unmatched" from July's view — this reads June's truth. Feeds the
+// record finder's "accounted for on the <Mon> statement" label.
+function accountedFpsOf(comp) {
   const fps = new Set();
-  comp.matched.forEach(g => (g.rIdxs||[]).forEach(ri => { const r = comp.recs[ri]; if (r) fps.add(r.fp); }));
-  comp.skippedRecs.forEach(r => fps.add(r.fp));
+  if (!comp) return fps;
+  (comp.matchedFps || []).forEach(fp => fps.add(fp));
+  (comp.skippedRecs || []).forEach(r => fps.add(r.fp));
   return fps;
+}
+
+// ── CROSS-MONTH SETTLEMENT (v488) ───────────────────────────────────────────
+// A record dated near a month boundary routinely clears the bank in the NEXT
+// month: the date on the record is when the work/purchase happened, the bank line
+// is when it settled. A July 30th expense that posted August 1st was reported by
+// July as "in your books · not on the bank" — so July failed — while August
+// matched it and passed. The only way out was to unlink and re-match by hand,
+// which wrote a manual_matches entry, and THAT (via gManual) is what finally told
+// July the record was spoken for.
+//
+// This closes the same loop for auto-matches, without persisting anything: the
+// neighbouring months' own reconciles are recomputed live from the session's
+// pulls, and a record they matched at the bank is reported here as cleared there
+// instead of as a discrepancy.
+//
+// Two deliberate constraints:
+//   • It runs AFTER matching, never as a filter on the candidate pool. Withholding
+//     a record before matching would let BOTH months drop it — each seeing the
+//     other's match — and both would fail. Forgiveness is monotone: it can only
+//     turn a failure into a pass, so it can never invent a discrepancy.
+//   • Only real MATCHES count, not set-asides. "Not on August's statement" is no
+//     evidence a record cleared in July.
+// Nothing here is written to the profile — it re-derives on every render, exactly
+// like the auto-matches it reads (see the retired matched_fps note in CLAUDE.md).
+function clearedElsewhereMap(comps) {
+  const map = new Map();
+  Object.keys(comps || {}).forEach(m => {
+    const c = comps[m]; if (!c) return;
+    (c.matchedFps || []).forEach(fp => { if (!map.has(fp)) map.set(fp, m); });
+  });
+  return map;
+}
+// Does this month have anything to report at all? A month with no bank lines and
+// no records "passes" by definition, which is the right answer when the user opens
+// it — but it must not paint a green mark on months nobody asked about, so the
+// neighbour re-stamp only speaks for months that actually hold something.
+function compHasContent(c) {
+  return !!(c && (c.txns.length || c.matched.length || c.inRecordsOnly.length
+    || c.onBankOnly.length || c.skippedRecs.length || (c.clearedElsewhere || []).length));
+}
+// Phase 2: move in-period records that a neighbouring month cleared out of the
+// unmatched bucket and recompute the month's verdict. Pure — takes a phase-1
+// result and mutates only its own summary fields, so it can be applied to any
+// month's comp (the open one, or a neighbour being re-stamped).
+function applyClearedElsewhere(comp, clearedMap) {
+  comp.clearedElsewhere = [];
+  if (clearedMap && clearedMap.size) {
+    const keep = [];
+    comp.inRecordsOnly.forEach(r => {
+      const m = clearedMap.get(r.fp);
+      if (m) comp.clearedElsewhere.push({ ...r, clearedIn: m });
+      else keep.push(r);
+    });
+    comp.inRecordsOnly = keep;
+  }
+  comp.passed = comp.onBankOnly.length === 0 && comp.inRecordsOnly.length === 0 && comp.balanceOk !== false;
+  return comp;
 }
 
 // One-tap yearly audit: a single ranged pull, bucketed by month, each month run
@@ -9157,21 +9336,33 @@ async function plaidCheckYear() {
     const months = [];
     const d = new Date(); d.setDate(1);
     for (let k = 12; k >= 1; k--) { const x = new Date(d); x.setMonth(x.getMonth() - k); months.push(x.toISOString().slice(0, 7)); }
-    const last = months[months.length - 1];
-    const [ly, lm] = last.split('-').map(Number);
-    const data = await plaidFetch('/plaid/transactions', { method: 'POST', body: JSON.stringify({
-      item_id: _selBank, start_date: months[0] + '-01', end_date: `${last}-${String(new Date(ly, lm, 0).getDate()).padStart(2, '0')}` }) });
-    const byMonth = {};
-    (data.transactions || []).forEach(t => { const m = (t.date || '').slice(0, 7); (byMonth[m] = byMonth[m] || []).push(t); });
+    // Pull one month either side of the reported window as well: a record dated at
+    // the very edge of the range clears on the neighbouring statement, and without
+    // that month in hand its own month gets reported short (the July-30th /
+    // August-1st case). The extra months are reconciled and stamped like any other;
+    // only the original 12 are summarised.
+    const span = [shiftMonthKey(months[0], -1)].concat(months, [today().slice(0, 7)]);
+    await pullMonthSpan(span, true);
     const bc = bankCache();
-    let changed = false;
-    const results = months.map(m => {
-      bc[m] = { transactions: byMonth[m] || [], institution: data.institution };   // month taps are instant now
-      const comp = reconcileMatch(buildPlaidStmt(m, bc[m]), null);
-      changed = setAuditResult(_selBank, m, comp.passed) || changed;
-      return { m, passed: comp.passed, label: comp.monthLabel || m, issues: comp.onBankOnly.length + comp.inRecordsOnly.length };
+    if (bc[today().slice(0, 7)] && Array.isArray(bc[today().slice(0, 7)].pending)) {
+      _plaidPending = bc[today().slice(0, 7)].pending.length; renderPlaidPendingNote();
+    }
+    // Phase 1 for every month (month taps are instant now), then phase 2 pairing
+    // each month against its neighbours before the verdict is stamped.
+    const comps = {};
+    span.forEach(m => { comps[m] = reconcileMatch(buildPlaidStmt(m, bc[m]), null); });
+    const asked = new Set(months);   // the 12 the user asked about are always stamped
+    const stamps = span.map(m => {
+      const nb = {}; adjMonths(m).forEach(x => { if (comps[x]) nb[x] = comps[x]; });
+      applyClearedElsewhere(comps[m], clearedElsewhereMap(nb));
+      if (!asked.has(m) && !compHasContent(comps[m])) return null;
+      return setAuditResult(_selBank, m, comps[m].passed);
     });
-    if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch (e) { console.error(e); } }
+    const results = months.map(m => ({
+      m, passed: comps[m].passed, label: comps[m].monthLabel || m,
+      issues: comps[m].onBankOnly.length + comps[m].inRecordsOnly.length
+    }));
+    await persistAuditStamps(stamps);
     _recState = null;   // the summary replaces any open month view
     const bad = results.filter(r => !r.passed);
     const chip = r => `<button class="btn btn-sm" onclick="plaidPullMonth('${r.m}')" style="font-size:11.5px">${escHtml(r.label)} · ${r.issues} to review</button>`;
@@ -9208,17 +9399,33 @@ function reconBucket(bankKey) {
 async function savePlaidRecon(stmt) {
   const month = (stmt.statement_month || '').slice(0, 7);
   if (!month) return;
-  const bucket = reconBucket(stmt.bankKey || _selBank);
-  bucket[month] = {
-    manual_matches: stmt.manual_matches || [],
+  const bank = stmt.bankKey || _selBank || '_';
+  // Callers work in live indices (correct within one render); they're translated to
+  // content keys HERE, in the one place everything funnels through, so the next
+  // pull can find the same lines after the bank reorders or backfills the month.
+  const txns = stmt.transactions || [];
+  const keysFor = idxs => (idxs || []).map(i => (txns[i] ? txnKey(txns[i]) : null));
+  const entry = {
+    manual_matches: (stmt.manual_matches || []).map(m => ({
+      rFps: m.rFps || [], tIdxs: m.tIdxs || [], tKeys: keysFor(m.tIdxs)
+    })),
     unmatch_t: stmt.unmatch_t || [],
+    unmatch_tk: keysFor(stmt.unmatch_t),
     unmatch_r: stmt.unmatch_r || [],
     txn_edits: stmt.txn_edits || [],   // splits + amount fixes, re-applied on the next pull
     skip_fps: stmt.skip_fps || [],     // records set aside for this month ("not on this statement")
     statement_month: stmt.statement_month || (month + '-01')
   };
-  try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); }
-  catch (e) { console.error('plaid_recon save failed', e); showToast('Save failed: ' + (e.message || e), 'error'); }
+  reconBucket(bank)[month] = entry;    // keep the in-memory copy live for this render
+  // plaid_recon is a per-bank/per-month COLLECTION, so it must never be written
+  // wholesale from the in-memory profile — that replays a login-time snapshot over
+  // whatever another device reconciled since, with no error (CLAUDE.md data-safety
+  // rule 2). Write just this month as a delta onto a freshly-read column.
+  const { error } = await updateProfileJson('plaid_recon', cur => {
+    (cur[bank] = cur[bank] || {})[month] = entry;
+    return cur;
+  }, {});
+  if (error) { console.error('plaid_recon save failed', error); showToast('Save failed: ' + (error.message || error), 'error'); }
 }
 
 // Search across EVERY record (not just other-month unmatched ones) and show
@@ -10278,10 +10485,17 @@ async function resetMonthMatches() {
   const month = (s.stmt.statement_month || '').slice(0, 7);
   s.stmt.manual_matches = []; s.stmt.unmatch_t = []; s.stmt.unmatch_r = [];
   s.stmt.txn_edits = []; s.stmt.skip_fps = [];
-  const bucket = reconBucket(s.stmt.bankKey || _selBank);
+  const bank = s.stmt.bankKey || _selBank || '_';
+  const bucket = reconBucket(bank);
   if (month && bucket[month]) {
     delete bucket[month];
-    try { await sb.from('profiles').update({ plaid_recon: profile.plaid_recon }).eq('id', currentUser.id); } catch (e) { console.error(e); }
+    // Delta delete, not a whole-column write — another device's other months must
+    // survive (CLAUDE.md data-safety rule 2).
+    const { error } = await updateProfileJson('plaid_recon', cur => {
+      if (cur[bank]) delete cur[bank][month];
+      return cur;
+    }, {});
+    if (error) console.error('plaid_recon reset failed', error);
   }
   showToast('Re-matched from scratch');
   // Rebuild from the cached raw pull so splits and amount edits revert too.
@@ -10580,13 +10794,33 @@ function reconcileMatch(stmt, acctId) {
   const winEnd   = periodEnd   ? shiftDate(periodEnd,   +18) : null;
   const inWin = d => !d || ((!winStart || d >= winStart) && (!winEnd || d <= winEnd));
 
+  // Amount index (cents → record indices, ascending) for the one-to-one passes.
+  // A real ledger is thousands of records against ~a hundred bank lines, and the
+  // full nested scan was essentially the entire cost of a reconcile — which matters
+  // now that a render reconciles the neighbouring months too. The probe spans ±2
+  // cents so the ±$0.01 tolerance (and its rounding edges) is still covered, and
+  // `close()` stays the actual test. Candidates stay in ascending record order, so
+  // a distance tie still breaks on the lowest index exactly as the full scan did.
+  const cents = a => Math.round((parseFloat(a)||0) * 100);
+  const byCents = new Map();
+  recs.forEach((r, i) => { const k = cents(r.amount); const a = byCents.get(k); if (a) a.push(i); else byCents.set(k, [i]); });
+  const candidates = amt => {
+    const base = cents(amt); let out = null;
+    for (let d = -2; d <= 2; d++) {
+      const a = byCents.get(base + d); if (!a) continue;
+      out = out ? out.concat(a) : a;
+    }
+    if (!out) return [];
+    return out.length > 1 ? out.slice().sort((x, y) => x - y) : out;
+  };
+
   // Passes 1–2: one-to-one by amount (±$0.01), closest date wins. Tight (±7 days)
   // first, then wider (±18) for records posted a bit off from when they cleared.
   for (const win of [7, 18]) {
     for (let ti=0; ti<txns.length; ti++) {
       if (usedT[ti] || blockedT.has(ti)) continue;
       let best=-1, bestD=Infinity;
-      for (let ri=0; ri<recs.length; ri++) {
+      for (const ri of candidates(txns[ti].amount)) {
         if (usedR[ri] || blockedR.has(recs[ri].fp) || !inWin(recs[ri].date) || !close(txns[ti].amount, recs[ri].amount)) continue;
         if (txns[ti].date && recs[ri].date) {
           const d = dayDiff(txns[ti].date, recs[ri].date);
@@ -10700,15 +10934,32 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   // any bank — but the audit grid + saved matches key off the statement's bank.
   const aKey = stmt.bankKey || acctId || '_';
   const comp = reconcileMatch(stmt, acctId);
-  const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceHtml, monthKey, monthLabel, passed, gManual, assignedAway } = comp;
+  // Cross-month settlement: recompute the two neighbouring months from the session's
+  // pulls (plaidPull fetches them alongside the one being viewed) and forgive records
+  // they already cleared at the bank. Phase 2 only — see applyClearedElsewhere.
+  const nbComps = {};
+  if (comp.monthKey) adjMonths(comp.monthKey).forEach(m => { nbComps[m] = monthReconcile(m, aKey); });
+  applyClearedElsewhere(comp, clearedElsewhereMap(nbComps));
+  // The same information settles the NEIGHBOURS' verdicts: the record that made last
+  // month look short is visibly cleared here, so heal that month's mark now instead
+  // of leaving an amber dot for the owner to chase. (Only this month's matches are
+  // fed back — a neighbour's own far side is settled when that month is opened.)
+  const nbStamps = [];
+  Object.keys(nbComps).forEach(m => {
+    const c = nbComps[m]; if (!c) return;
+    const one = {}; one[comp.monthKey] = comp;
+    applyClearedElsewhere(c, clearedElsewhereMap(one));
+    if (compHasContent(c)) nbStamps.push(setAuditResult(aKey, m, c.passed));
+  });
+  const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, clearedElsewhere, balanceHtml, monthKey, monthLabel, passed, gManual, assignedAway } = comp;
   const multiBank = (_plaidBanks||[]).length > 1;   // "Paid from" tagging only makes sense with 2+ banks
   const setAside = skippedRecs.filter(r => r.inP);   // this month's set-asides (cash + skips)
   // A truly empty month (no bank lines, nothing recorded, nothing set aside)
   // still records its audit result — an empty month reconciles clean by definition.
-  if (!txns.length && !inRecordsOnly.length && !setAside.length && !matched.length && !(stmt.pending||[]).length) {
+  if (!txns.length && !inRecordsOnly.length && !setAside.length && !matched.length && !clearedElsewhere.length && !(stmt.pending||[]).length) {
     _recState = null;
     out.innerHTML = `<div id="rec-audit"></div><div style="color:var(--text3);font-size:13px">No bank activity and nothing in your books for ${escHtml(monthLabel||'this month')} — nothing to reconcile. If this is an older month that should have transactions, Disconnect &amp; Reconnect your bank once to pull the full 24-month history.</div>`;
-    recordAudit(aKey, monthKey, passed, monthLabel);
+    recordAudit(aKey, monthKey, passed, monthLabel, nbStamps);
     return;
   }
   _recState = { stmt, acctId, path, monthKey, searchPool: [], matchedGroups: matched, recs };
@@ -10780,6 +11031,8 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const statusByFp = {};
   matched.forEach(g => (g.rIdxs||[]).forEach(ri => { const r = recs[ri]; if (r) statusByFp[r.fp] = g.manualIdx!=null ? 'manual' : 'auto'; }));
   skippedRecs.forEach(r => { statusByFp[r.fp] = r.reason; });
+  // Dated in this month, but the bank settled it on a neighbouring statement.
+  const clearedIn = {}; clearedElsewhere.forEach(r => { statusByFp[r.fp] = 'clearedNb'; clearedIn[r.fp] = r.clearedIn; });
   const skipInP = new Set(setAside.map(r => r.fp));   // Restore only applies to this month's set-asides
   const inListFps = new Set(inRecordsOnly.map(r => r.fp));
   const otherFps = new Set(otherUnmatched.map(r => r.fp));
@@ -10789,11 +11042,11 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     return Math.min(Math.abs((parseDate(d) - parseDate(stmt.period_start)) / 864e5), Math.abs((parseDate(d) - parseDate(stmt.period_end)) / 864e5));
   };
   // A record isn't a stray just because it isn't matched in THIS view — its own
-  // month may reconcile it. Recompute the adjacent months live when their pulls
-  // are cached; otherwise fall back to their stamped audit result.
-  const shiftMonth = (mk, d) => { const x = parseDate(mk + '-01'); x.setMonth(x.getMonth() + d); return x.toISOString().slice(0,7); };
+  // month may reconcile it. Reuses the neighbour reconciles computed above (matched
+  // OR set aside counts here: both are answers to "where did this go?"); falls back
+  // to the stamped audit result when a neighbour hasn't been pulled.
   const neighborFps = {};
-  if (monthKey) [shiftMonth(monthKey,-1), shiftMonth(monthKey,1)].forEach(m => { neighborFps[m] = monthAccountedFps(m); });
+  Object.keys(nbComps).forEach(m => { neighborFps[m] = nbComps[m] ? accountedFpsOf(nbComps[m]) : null; });
   const auditPassed = m => { const a = ((profile.audited_months||{})[aKey]||{})[m]; return !!(a && a.passed); };
   // Search-result row: title + amount on the first line, date + a compact
   // status chip on the second — no prose. A tappable chip opens the month
@@ -10839,6 +11092,10 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       }
     } else if (st === 'manual' || st === 'auto') {
       html = chipRow(r, chip('Matched this month', 'check', GREEN[0], GREEN[1]));
+    } else if (st === 'clearedNb') {
+      const cm = clearedIn[r.fp] || '';
+      rank = 2;
+      html = chipRow(r, chip('Cleared · ' + escHtml(monthName(cm)), 'check', GREEN[0], GREEN[1], _plaidConnected ? `plaidPullMonth('${cm}')` : ''));
     } else if (st === 'skipped') {
       rank = 2;
       html = chipRow(r, chip('Set aside by you', 'eye-off', MUTED[0], MUTED[1]),
@@ -10878,10 +11135,16 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   // glance, not a scroll. Pending is display-only → it lives in the reference zone.
   const passedClean = onBankOnly.length===0 && inRecordsOnly.length===0;
   const bankRows = onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t))).join('');
+  // Records dated in this month that the bank settled on a neighbouring statement
+  // (the month-end purchase that posts a day or two later). Reassurance, not a task:
+  // the month is clean, and the row says which statement to look at.
+  const clearedNote = clearedElsewhere.length
+    ? ` ${clearedElsewhere.length} record${clearedElsewhere.length===1?'':'s'} dated here cleared on ${[...new Set(clearedElsewhere.map(r=>monthName(r.clearedIn)))].join(' / ')}.`
+    : '';
   const actionZone = passedClean
     ? `<div class="rec-clear">
         <i class="ti ti-circle-check" style="font-size:22px;color:var(--green);flex-shrink:0"></i>
-        <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14.5px;color:var(--text)">Everything’s matched</div><div style="font-size:12px;color:var(--text2);margin-top:1px">Nothing on ${escHtml(monthLabel||'this month')} needs your attention.</div></div>
+        <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14.5px;color:var(--text)">Everything’s matched</div><div style="font-size:12px;color:var(--text2);margin-top:1px">Nothing on ${escHtml(monthLabel||'this month')} needs your attention.${escHtml(clearedNote)}</div></div>
       </div>`
     : (onBankOnly.length ? `<div class="card rec-action" style="padding:.9rem 1rem;margin-bottom:.85rem">${secHead('On the bank · not in your books', onBankOnly.length)}${bankRows}</div>` : '')
       + (inRecordsOnly.length ? `<div class="card rec-action" style="padding:.9rem 1rem;margin-bottom:.85rem">${secHead('In your books · not on the bank', inRecordsOnly.length)}${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true)))}</div>` : '');
@@ -10892,6 +11155,15 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   const finderSec = refSec('Find any record', null, null, `<input id="rec-rec-search" type="text" placeholder="search by vendor, customer, note, or amount" oninput="searchOtherRecs()" style="margin:.15rem 0 .45rem"><div id="rec-search-results"></div>`, !passedClean);
   const matchedSec = refSec('Matched', matched.length, 'ok', list(matched.map((g,i)=>grpRow(g,i))), false);
   const setAsideSec = setAside.length ? refSec('Set aside · not on the bank', setAside.length, 'mut', setAside.map(skipRow).join(''), false) : '';
+  const clearedRow = r => `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.55rem 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0"><div style="font-size:13.5px;line-height:1.35;word-break:break-word">${escHtml(r.label)}</div><div style="font-size:11px;color:var(--text3);margin-top:.12rem">${r.date?fmtDate(r.date):'—'} · ${escHtml(r.kind)}</div></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;white-space:nowrap;${r.amount<0?'color:var(--red)':'color:var(--green)'}">${fmt(r.amount)}</div>
+      <button onclick="plaidPullMonth('${r.clearedIn}')" class="btn btn-sm" style="flex-shrink:0;padding:.3rem .6rem" title="Open that statement"><i class="ti ti-check"></i>${escHtml(monthName(r.clearedIn))}</button></div>`;
+  const clearedSec = clearedElsewhere.length
+    ? refSec('Cleared on a neighbouring statement', clearedElsewhere.length, 'ok',
+        `<div style="font-size:11.5px;color:var(--text3);padding:.15rem 0 .35rem">Dated in ${escHtml(monthLabel||'this month')}, settled at the bank on the statement shown. Nothing to do.</div>`
+        + clearedElsewhere.map(clearedRow).join(''), false)
+    : '';
   const pendingSec = pendingRows ? refSec('Pending at the bank', (stmt.pending||[]).length, 'mut', `<div style="opacity:.75">${pendingRows}</div>`, false) : '';
 
   out.innerHTML = `
@@ -10904,6 +11176,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     <div class="rec-refzone">
       ${finderSec}
       ${matchedSec}
+      ${clearedSec}
       ${setAsideSec}
       ${pendingSec}
     </div>
@@ -10911,7 +11184,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
       <button class="btn btn-sm" onclick="resetMonthMatches()" style="font-size:11px;color:var(--text3)"><i class="ti ti-refresh"></i> Reset this month</button>
     </div>`;
   searchOtherRecs();   // pre-fill the finder with unmatched records dated near this month
-  recordAudit(aKey, monthKey, passed, monthLabel);
+  recordAudit(aKey, monthKey, passed, monthLabel, nbStamps);
 }
 
 // Open a record's editor from its reconcile fingerprint — one tap to fix a
@@ -10970,17 +11243,37 @@ async function assignRecBank(fp, itemId) {
 
 // Stamp one month's pass/fail into profile.audited_months (in memory only).
 // Only re-stamps when the result actually flips — passive re-opens shouldn't
-// rewrite the row (or move the `at` timestamp) for no reason. Returns true when
-// something changed (the caller persists).
+// rewrite the row (or move the `at` timestamp) for no reason. Returns the delta
+// {key, month, stamp} when something changed, else null; callers collect those
+// and hand them to persistAuditStamps in one write.
 function setAuditResult(key, monthKey, passed) {
-  if (!monthKey) return false;
+  if (!monthKey) return null;
+  // Never stamp a month that hasn't happened. The neighbour re-stamp reaches one
+  // month past the one being viewed, which for the current month is the future —
+  // an empty future month "passes" by definition and would paint a green dot on it.
+  if (monthKey > today().slice(0, 7)) return null;
   if (!profile.audited_months || typeof profile.audited_months !== 'object') profile.audited_months = {};
   const byAcct = profile.audited_months[key] || {};
   const prev = byAcct[monthKey];
-  if (prev && prev.passed === !!passed) return false;
-  byAcct[monthKey] = { passed: !!passed, at: new Date().toISOString() };
+  if (prev && prev.passed === !!passed) return null;
+  const stamp = { passed: !!passed, at: new Date().toISOString() };
+  byAcct[monthKey] = stamp;
   profile.audited_months[key] = byAcct;
-  return true;
+  return { key, month: monthKey, stamp };
+}
+// audited_months is a per-bank/per-month COLLECTION two devices stamp
+// independently, so the whole column must never be written from the in-memory
+// profile (CLAUDE.md data-safety rule 2) — the phone reconciling March would erase
+// the months the laptop checked since login. Write the flipped months as a delta
+// onto a freshly-read column instead. No-ops when nothing flipped.
+async function persistAuditStamps(deltas) {
+  const list = (Array.isArray(deltas) ? deltas : [deltas]).filter(Boolean);
+  if (!list.length) return;
+  const { error } = await updateProfileJson('audited_months', cur => {
+    list.forEach(d => { (cur[d.key] = cur[d.key] || {})[d.month] = d.stamp; });
+    return cur;
+  }, {});
+  if (error) console.error('audited_months save failed', error);
 }
 // Save (and display) the pass/fail result for a month, keyed by account.
 // The CURRENT month stamps pass/fail like any other — the grid dot must show
@@ -10989,10 +11282,13 @@ function setAuditResult(key, monthKey, passed) {
 // still reads "In progress" rather than "Needs review" (see renderAuditBlock):
 // mid-month unmatched records are often just bank lag, so the amber dot flags
 // them without sounding an alarm.
-async function recordAudit(acctId, monthKey, passed, monthLabel) {
-  const changed = setAuditResult(acctId || '_', monthKey, passed);
+// extraStamps: deltas for OTHER months this render settled (see renderReconcile's
+// neighbour re-stamp) — stamped in memory before the grid draws, persisted in the
+// same write as this month's.
+async function recordAudit(acctId, monthKey, passed, monthLabel, extraStamps) {
+  const stamps = [setAuditResult(acctId || '_', monthKey, passed)].concat(extraStamps || []);
   renderAuditBlock(acctId, monthKey, monthLabel, passed);
-  if (changed) { try { await sb.from('profiles').update({ audited_months: profile.audited_months }).eq('id', currentUser.id); } catch(e){ console.error(e); } }
+  await persistAuditStamps(stamps);
 }
 
 // Year grid of audit marks for the selected account (✅ pass · ⚠️ needs review · · not yet).
