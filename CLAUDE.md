@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **493** (see `version.json` — that file is the source of truth).
+Current version: **494** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -530,7 +530,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Seven test suites run the SHIPPED code (they extract functions out of `index.html` by
+Eight test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -541,6 +541,7 @@ node test/ask.test.mjs         # askText() — every dismiss route must settle i
 node test/touch.test.mjs       # viewport zoom + the 16px minimum on touch inputs
 node test/retention.test.mjs   # account deletion actually deletes every table
 node test/reminders.test.mjs   # the Worker's Denver wall-clock → UTC reminder math
+node test/recurring.test.mjs   # unattended auto-posting: no silent skips, no duplicates
 ```
 
 `retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
@@ -1068,6 +1069,16 @@ minute until the cache refreshes.
 - **Recurring (invoices/expenses):** `recurring` table; `processRecurring()` runs
   on boot, catches up missed periods, generates invoices as DRAFTS and auto-posts
   expenses. Keep monthly billing day ≤ 28 (JS month rollover).
+  **This is the only path that writes financial records with nobody watching, so
+  three rules hold it together (v494, `test/recurring.test.mjs`):** (1) `genOneRecurring`
+  **throws** on a failed insert — it used to swallow the error and return normally
+  while the caller advanced `next_date` anyway, which skipped that occurrence
+  *permanently* and still counted it in the success toast; (2) `processRecurring`
+  catches **per item** and stamps `next_date` with whatever DID generate, so a
+  half-finished catch-up resumes instead of re-posting duplicates; (3) nothing may
+  escape — all three login paths `await processRecurring()` immediately before hiding
+  the loading screen with no catch of their own, so an escaping rejection strands the
+  user on the spinner. A failure toasts as an error; it is never silent.
 - **Expenses:** list sorts by date (newest first). User-editable categories saved
   to `profiles.expense_categories` (synced/durable; localStorage `bk-expense-cats`
   is a local cache + fallback);
