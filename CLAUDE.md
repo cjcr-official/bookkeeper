@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **489** (see `version.json` — that file is the source of truth).
+Current version: **490** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -1292,6 +1292,23 @@ behaviors are easy to break without noticing. What exists and must keep working:
   keystroke rule above: re-rendering on each bulk-select tap flickered and reset the
   scroll position (and re-ran `rolodexTick`). `bulkPaint(id)` toggles only the touched
   row's classes.
+- **A reconcile run can outlive the panel it draws into (v490).** `plaidCheckYear`
+  and `plaidPull` are the slowest things in the app, so they're the ones a user
+  actually navigates away from — and `#rec-result` is gone once they do. Every
+  `out.innerHTML` in that flow (`plaidPull`'s catch, `plaidCheckYear`'s summary,
+  `renderReconcile`) now checks `out` first. Two rules when you add another: an
+  unguarded write inside a `try` throws INTO the catch and gets reported as a bank
+  error — `plaidCheckYear` told the owner "couldn't pull from the bank" for a
+  12-month check that had already finished and stamped every mark. And the render
+  is the optional half: `renderReconcile` still calls `recordAudit` when `out` is
+  null, because the month's verdict is real whether or not there's a panel left to
+  show it on.
+- **`bankCache()` falls back to `'_'`, like everything else keyed per bank.** The
+  audit key (`stmt.bankKey || acctId || '_'`) and `reconBucket()` both fall back to
+  `'_'`; the session pull cache used to return a throwaway `{}` instead, so on the
+  legacy no-item_id status shape `pullMonthSpan` wrote each month into an object
+  nobody could read back — every month looked empty and `plaidCheckYear` crashed on
+  the missing bucket. Keep the three fallbacks identical.
 - **Don't reintroduce the mileage auto-calc.** We exhausted Google Routes API,
   Distance Matrix API, Places API, US Census Geocoder + OSRM; none match the
   consumer Maps app. The Maps button (universal link to maps.google.com search)
