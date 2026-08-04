@@ -433,17 +433,28 @@ function svcHeaders(env, prefer) {
   return h;
 }
 // Best-effort wipe of a private bucket's <uid>/ folder.
+// PAGED: the list endpoint caps at 1000 objects and reports no more than it
+// returns, so a single call silently left every receipt past the first 1000 in the
+// bucket — years of a working business, and the same silent-truncation trap as the
+// 1000-row PostgREST cap the client pages around (CLAUDE.md data-safety rule 1).
+// Always list from offset 0: each pass deletes what it just listed, so the next
+// batch takes its place. The iteration cap is a safety net — if a delete ever fails
+// the same page would come back forever — not an expected limit.
 async function deleteUserStorage(env, bucket, uid) {
-  const listRes = await fetch(`${env.SUPABASE_URL}/storage/v1/object/list/${bucket}`, {
-    method: 'POST', headers: svcHeaders(env), body: JSON.stringify({ prefix: uid + '/', limit: 1000 })
-  });
-  if (!listRes.ok) return;
-  const files = await listRes.json().catch(() => []);
-  const names = (Array.isArray(files) ? files : []).map(f => `${uid}/${f.name}`);
-  if (!names.length) return;
-  await fetch(`${env.SUPABASE_URL}/storage/v1/object/${bucket}`, {
-    method: 'DELETE', headers: svcHeaders(env), body: JSON.stringify({ prefixes: names })
-  });
+  for (let pass = 0; pass < 100; pass++) {
+    const listRes = await fetch(`${env.SUPABASE_URL}/storage/v1/object/list/${bucket}`, {
+      method: 'POST', headers: svcHeaders(env), body: JSON.stringify({ prefix: uid + '/', limit: 1000 })
+    });
+    if (!listRes.ok) return;
+    const files = await listRes.json().catch(() => []);
+    const names = (Array.isArray(files) ? files : []).map(f => `${uid}/${f.name}`);
+    if (!names.length) return;
+    const del = await fetch(`${env.SUPABASE_URL}/storage/v1/object/${bucket}`, {
+      method: 'DELETE', headers: svcHeaders(env), body: JSON.stringify({ prefixes: names })
+    });
+    if (!del.ok) return;             // don't spin on a bucket we can't delete from
+    if (names.length < 1000) return; // short page — that was the last of them
+  }
 }
 async function deleteAccount(req, env) {
   const user = await authUser(req, env);
@@ -464,7 +475,14 @@ async function deleteAccount(req, env) {
     try { await deleteUserStorage(env, bucket, uid); } catch (e) { console.error('del storage ' + bucket, e); }
   }
   // 3. Data rows — children before parents so FKs don't block.
-  for (const t of ['store_credits', 'owner_transactions', 'trips', 'jobs', 'recurring', 'expenses', 'invoices', 'customers', 'accounts']) {
+  // EVERY user-owned table has to be listed. time_entries and loans were missing:
+  // deleting the account removed the login, so those rows became unreachable (RLS
+  // keys on auth.uid()) but were never actually deleted — the user's punch history
+  // and their loans, with balances and payment history, stayed in the database
+  // indefinitely. data-retention-policy.html promises "financial records entered by
+  // the user … deleted on account closure", so this was also a broken commitment.
+  // test/retention.test.mjs now fails if a table the client loads isn't listed here.
+  for (const t of ['store_credits', 'owner_transactions', 'time_entries', 'loans', 'trips', 'jobs', 'recurring', 'expenses', 'invoices', 'customers', 'accounts']) {
     try { await fetch(`${env.SUPABASE_URL}/rest/v1/${t}?user_id=eq.${uid}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') }); } catch (e) { console.error('del ' + t, e); }
   }
   try { await fetch(`${env.SUPABASE_URL}/rest/v1/profiles?id=eq.${uid}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') }); } catch (e) { console.error('del profiles', e); }

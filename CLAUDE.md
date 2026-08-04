@@ -530,7 +530,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Five test suites run the SHIPPED code (they extract functions out of `index.html` by
+Six test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -539,7 +539,20 @@ node test/modules.test.mjs     # Sections (show/hide) + the cross-section form r
 node test/money.test.mjs       # balanceDue / effectiveStatus / invoiceRevenue
 node test/ask.test.mjs         # askText() — every dismiss route must settle its promise
 node test/touch.test.mjs       # viewport zoom + the 16px minimum on touch inputs
+node test/retention.test.mjs   # account deletion actually deletes every table
 ```
+
+`retention.test.mjs` is the only one that reads the **Worker**. `deleteAccount()`
+wipes the user's rows from a hard-coded table list, and nothing tied that list to the
+rest of the app — so it fell behind as features were added. `time_entries` (Time
+Clock) and `loans` (balances + payment history) were both missing: deleting the
+account removed the login, so those rows became unreachable through RLS but were
+never actually deleted, and `data-retention-policy.html` publicly promises the
+opposite. The test pins the list against the client's own `cache` literal — which
+names every user-owned table — so **adding a table to `cache` and forgetting
+`deleteAccount` now fails the build**. It also pins the FK delete order and that
+`deleteUserStorage` pages past the storage list API's 1000-object cap (a single call
+left every receipt after the first 1000 sitting in the private bucket).
 
 `modules.test.mjs` also statically checks the markup: every `data-module` /
 `data-module-all` / `isModuleHidden('…')` id must exist in `MODULES`, and every module
