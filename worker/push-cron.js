@@ -623,10 +623,22 @@ function denverParts() {
   return { dateStr, hour };
 }
 
+// A Denver wall-clock date+time → the UTC instant it happens at.
+//
+// TWO PASSES, and the second one is not optional. The offset has to be sampled at
+// the instant the event ACTUALLY occurs, but that instant is what we're solving
+// for — so pass 1 samples it at the wall time read as UTC (6–7 hours early) and
+// pass 2 re-samples at the answer pass 1 gave. One pass is right all year except
+// where those two samples straddle a DST transition, which is a 2:00–8:30am band
+// on the two switch days: an hour early on the November fall-back, an hour late on
+// the March spring-forward. A 6am job reminder firing at 5am is exactly the kind of
+// thing that reads as "the app is broken" and can't be reproduced afterwards.
+// Times that don't exist (the skipped 2–3am hour in March) resolve to a real
+// instant either way; there is no right answer there.
 function wallToUtc(dateStr, timeStr) {
   const naive = new Date(dateStr + 'T' + (timeStr.length === 5 ? timeStr + ':00' : timeStr) + 'Z');
-  const offsetMin = tzOffsetMin(naive);
-  return naive.getTime() - offsetMin * 60000;
+  const firstPass = naive.getTime() - tzOffsetMin(naive) * 60000;
+  return naive.getTime() - tzOffsetMin(new Date(firstPass)) * 60000;
 }
 function tzOffsetMin(date) {
   const inv = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
@@ -641,12 +653,32 @@ async function supaGet(env, path) {
   if (!r.ok) throw new Error(`supabase ${r.status} ${await r.text().catch(()=>'')}`);
   return r.json();
 }
+// supaGet throws on a bad status; this one deliberately does NOT, because the
+// reminder loops call it mid-iteration and one bad row must not abort the rest.
+// But it used to ignore the response entirely, which made the failure invisible in
+// two directions at once. These PATCHes are the loops' only dedupe: a job stamps
+// reminded_at after its push, a recurring item stamps reminded_date. If the write
+// fails, the row still matches the query on the next tick — so the SAME reminder
+// goes out again every minute (up to 30 times before the window-expiry branch, and
+// that branch is a PATCH too, so it can fail the same way). The owner gets a wall
+// of duplicate notifications and there is nothing in the logs to explain it.
+// Returns success so a caller can react; every caller at least gets the log line.
 async function supaPatch(env, path, body) {
-  await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
-    method: 'PATCH',
-    headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify(body)
-  });
+  try {
+    const r = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
+      method: 'PATCH',
+      headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) {
+      console.error('supabase PATCH failed', r.status, path, await r.text().catch(() => ''));
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('supabase PATCH threw', path, String(e && e.message || e));
+    return false;
+  }
 }
 
 // Send a Web Push. When `message` is given (and the subscription carries the
