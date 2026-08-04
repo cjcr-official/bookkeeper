@@ -8096,7 +8096,13 @@ async function genOneRecurring(rec, dstr) {
   if (rec.kind==='expense') {
     const row = {user_id:currentUser.id,date:dstr,vendor:d.vendor||rec.label||'Recurring',category:d.category||'Other',amount:parseFloat(d.amount||0),method:d.method||'',account_id:d.account_id||null,description:d.description||('Recurring — '+(rec.label||'')),reimbursed:false,invoice_id:null};
     const r = await sb.from('expenses').insert(row).select().single();
-    if (!r.error && r.data) cache.expenses.unshift(r.data);
+    // THROW on failure. This used to swallow the error and return normally, and
+    // processRecurring advanced next_date regardless — so a failed insert skipped
+    // that occurrence PERMANENTLY. The March rent expense simply never existed, the
+    // schedule had moved past it, and the success toast counted it as generated.
+    // Silent loss in the one path that writes financial records by itself.
+    if (r.error) throw new Error(r.error.message || 'could not save the expense');
+    if (r.data) cache.expenses.unshift(r.data);
   } else {
     const amount = parseFloat(d.amount||0);
     const taxR = parseFloat(profile.tax||0)/100;
@@ -8104,7 +8110,11 @@ async function genOneRecurring(rec, dstr) {
     const dueDate = (()=>{ const dd=parseDate(dstr); dd.setDate(dd.getDate()+(parseInt(d.due_days)||30)); return dd.toISOString().slice(0,10); })();
     const row = {user_id:currentUser.id,number:nextInvoiceNumber(),customer_id:d.customer_id||null,customer_name:cust?cust.name:'',date:dstr,due:dueDate,status:'draft',lines:[{desc:d.description||rec.label||'Service',qty:1,rate:amount,amount:amount}],subtotal:amount,tax:amount*taxR,total:amount+amount*taxR,notes:d.notes||'',miles:0,trips:1,total_miles:0,amount_paid:0,paid_date:null,payment_method:null};
     const r = await sb.from('invoices').insert(row).select().single();
-    if (!r.error && r.data) cache.invoices.unshift(r.data); // unshift so nextInvoiceNumber increments on catch-up
+    // Throws for the same reason as the expense branch — plus one of its own: the
+    // unshift below is what makes nextInvoiceNumber() advance during a catch-up, so
+    // swallowing a failure meant the NEXT iteration reissued the same number.
+    if (r.error) throw new Error(r.error.message || 'could not save the invoice');
+    if (r.data) cache.invoices.unshift(r.data); // unshift so nextInvoiceNumber increments on catch-up
   }
 }
 
@@ -8116,25 +8126,46 @@ async function processRecurring() {
   // section came back on. The schedule is left alone (next_date is NOT advanced),
   // so turning the section back on catches everything up exactly as it always did.
   const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses');
+  let failed = 0;
   for (const rec of (cache.recurring||[])) {
     if (!rec.active) continue;
     if (rec.kind==='invoice' ? hidInv : hidExp) continue;
     let guard = 0;
-    while (rec.next_date && rec.next_date <= today() && guard < 24) {
-      await genOneRecurring(rec, rec.next_date);
-      rec.next_date = advanceDate(rec.next_date, rec.frequency||'monthly');
-      count++; guard++;
-    }
+    // Per-item try, for two separate reasons.
+    //   1. BOOT. All three login paths `await processRecurring()` immediately before
+    //      hiding the loading screen, with no catch of their own — so letting a
+    //      throw escape would strand the user on the spinner. One unreachable
+    //      Supabase insert must not cost them the whole app.
+    //   2. ISOLATION. One bad template shouldn't stop every other one from
+    //      catching up.
+    try {
+      while (rec.next_date && rec.next_date <= today() && guard < 24) {
+        await genOneRecurring(rec, rec.next_date);
+        rec.next_date = advanceDate(rec.next_date, rec.frequency||'monthly');
+        count++; guard++;
+      }
+    } catch (e) { console.error('recurring generation failed', rec.id, e); failed++; }
+    // Persist progress even when the run above threw. The records that DID generate
+    // are already in the database; leaving next_date where it started would generate
+    // them a second time on the next launch, which for an auto-posted expense means
+    // a duplicate the owner has to find and delete. Stamping what succeeded makes a
+    // partial catch-up resumable instead of repeatable.
     if (guard > 0) await sb.from('recurring').update({next_date:rec.next_date}).eq('id',rec.id);
   }
   if (count > 0) showToast(count+' recurring item'+(count>1?'s':'')+' generated','success');
+  // Never report a skipped occurrence as a success. It won't be retried — next_date
+  // has moved past everything that worked — so the user has to know to add it.
+  if (failed > 0) showToast(failed+' recurring item'+(failed>1?'s':'')+" couldn't be generated — check the Recurring list", 'error');
   return count;
 }
 
 async function generateRecurringNow(id) {
   const rec = (cache.recurring||[]).find(r=>r.id===id);
   if (!rec) return;
-  await genOneRecurring(rec, today());
+  // genOneRecurring throws now, so the manual "generate now" button has to say so
+  // rather than reporting success for a record that was never written.
+  try { await genOneRecurring(rec, today()); }
+  catch (e) { showToast("Couldn't generate: " + (e.message || 'save failed'), 'error'); return; }
   showToast((rec.kind==='invoice'?'Draft invoice':'Expense')+' generated','success');
   renderRecurringList(recurManagerKind);
 }
