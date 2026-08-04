@@ -9014,7 +9014,13 @@ async function plaidPull(monthArg, force) {
     if (month === today().slice(0, 7) && Array.isArray(data.pending)) { _plaidPending = data.pending.length; renderPlaidPendingNote(); }
     renderReconcile(buildPlaidStmt(month, data), null, null, {}, null);
   } catch (e) {
-    console.error(e); out.innerHTML = `<div id="rec-audit"></div><div style="display:flex;align-items:flex-start;gap:.5rem;color:var(--red);font-size:13px;padding:.35rem 0"><i class="ti ti-alert-triangle" style="font-size:15px;flex-shrink:0;margin-top:1px"></i><span>${escHtml(plaidErrMsg(e))}</span></div>`; renderAuditBlock(_selBank, '', '', null);
+    // Guard `out`: leaving the Statements page mid-pull removes it, and an
+    // unguarded write threw a TypeError *inside the catch* — swallowing the real
+    // bank error and, worse, skipping the reconnect prompt below, which is the one
+    // thing that fixes a bank that needs signing in again.
+    console.error(e);
+    if (out) { out.innerHTML = `<div id="rec-audit"></div><div style="display:flex;align-items:flex-start;gap:.5rem;color:var(--red);font-size:13px;padding:.35rem 0"><i class="ti ti-alert-triangle" style="font-size:15px;flex-shrink:0;margin-top:1px"></i><span>${escHtml(plaidErrMsg(e))}</span></div>`; renderAuditBlock(_selBank, '', '', null); }
+    else showToast(plaidErrMsg(e), 'error');
     if (e.data && e.data.reconnect) renderPlaidBlock();
   }
 }
@@ -9041,15 +9047,23 @@ async function refreshLiveAudit() {
     // mark — and reusing an hours-old pull on every page open quietly defeated
     // that. Ten minutes keeps repeated tab switches free.
     const at = bc[m] && bc[m].pulledAt;
-    await pullMonthSpan([prev, m], !at || (Date.now() - at) > 600000);
+    // Pull THREE months but stamp only two. A month's verdict depends on BOTH its
+    // neighbours (cross-month settlement), so judging last month with only this one
+    // in hand is a weaker test than opening it: a record dated the 1st that the bank
+    // posted on the 31st of the month before stayed unforgiven, and the grid showed
+    // an amber dot that turned green the moment the owner tapped it. The month
+    // before last is context only — never stamped, or the same gap just moves down
+    // one and the regress never ends. Still one ranged call, same round trip.
+    const prev2 = shiftMonthKey(m, -2);
+    await pullMonthSpan([prev2, prev, m], !at || (Date.now() - at) > 600000);
     const data = bc[m];
     if (data && Array.isArray(data.pending)) { _plaidPending = data.pending.length; renderPlaidPendingNote(); }
     const comps = {};
-    [prev, m].forEach(k => { comps[k] = monthReconcile(k, _selBank); });
+    [prev2, prev, m].forEach(k => { comps[k] = monthReconcile(k, _selBank); });
     const stamps = [];
     [prev, m].forEach(k => {
       const c = comps[k]; if (!c) return;
-      const others = {}; [prev, m].forEach(o => { if (o !== k && comps[o]) others[o] = comps[o]; });
+      const others = {}; adjMonths(k).forEach(o => { if (comps[o]) others[o] = comps[o]; });
       applyClearedElsewhere(c, clearedElsewhereMap(others));
       if (compHasContent(c)) stamps.push(setAuditResult(_selBank, k, c.passed));
     });
@@ -10295,7 +10309,11 @@ async function applyPaycheckFromTxn(idx, dateKey) {
   await tagFromRecon('pc:'+dateKey, true);
   await saveStmtSidecar(s.stmt, s.path);
   closeModal('modal-txn-menu');
-  showToast(extras.length ? `Paycheck recorded — ${tIdxs.length} deposits combined` : 'Paycheck recorded', 'success');
+  // NOT `extras.length` — that variable never existed, and the ReferenceError threw
+  // right here: the paycheck was saved and the sheet closed, but renderReconcile
+  // below never ran, so the deposit sat in "on the bank · not in your books" and the
+  // month's mark didn't move until the next pull. Count the lines actually paired.
+  showToast(tIdxs.length > 1 ? `Paycheck recorded — ${tIdxs.length} deposits combined` : 'Paycheck recorded', 'success');
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
