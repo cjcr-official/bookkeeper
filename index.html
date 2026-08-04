@@ -4535,7 +4535,10 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-date').value = inv.date;
     document.getElementById('inv-due').value = inv.due;
     document.getElementById('inv-status').value = inv.status;
-    document.getElementById('inv-pay-method').value = inv.payment_method||'';
+    // Same trap as the expense form's method field, one form over: reconciliation
+    // records payments with method 'bank', which isn't in this list, so a plain
+    // assignment blanked it and saving wrote the blank back.
+    selectValuePreserving(document.getElementById('inv-pay-method'), inv.payment_method||'');
     document.getElementById('inv-amount-paid').value = (inv.amount_paid!=null&&parseFloat(inv.amount_paid)>0)?inv.amount_paid:'';
     document.getElementById('inv-paid-date').value = inv.paid_date||'';
     document.getElementById('inv-notes').value = inv.notes||'';
@@ -7691,7 +7694,7 @@ function renderExpenses() {
       </div>`).join('') + `<div style="padding:.85rem .9rem;margin-top:.25rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:var(--shadow);display:flex;justify-content:space-between;align-items:center;font-weight:700"><span>${list.length} expense${list.length===1?'':'s'}${reimbAmt>0?`<br><span style="font-weight:400;font-size:11px;color:var(--text3)">excl. ${fmt(reimbAmt)} reimbursed</span>`:''}</span><span class="red">${fmt(totalAmt)}</span></div>`;
     rolodexTick();
   } else {
-    el.innerHTML = `<table><thead><tr>${bulk?'<th class="bulk-td"></th>':''}<th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${list.map(e=>`<tr class="${bulk&&_bulkSel.has(e.id)?'bulk-sel':''}">${bulk?`<td class="bulk-td" onclick="bulkToggle('${e.id}')">${bulkCheckHTML(e.id)}</td>`:''}<td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span></td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" title="Duplicate" onclick="duplicateExpense('${e.id}')"><i class="ti ti-copy"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody><tfoot><tr><td colspan="${bulk?6:5}" style="font-weight:700;text-align:right;padding:.85rem 1rem;border-top:2px solid var(--border)">${list.length} expense${list.length===1?'':'s'}${reimbAmt>0?` <span style="font-weight:400;color:var(--text3)">· excl. ${fmt(reimbAmt)} reimbursed</span>`:''}</td><td class="red" style="font-weight:700;font-family:'JetBrains Mono',monospace;padding:.85rem 1rem;border-top:2px solid var(--border)">${fmt(totalAmt)}</td><td style="border-top:2px solid var(--border)"></td></tr></tfoot></table>`;
+    el.innerHTML = `<table><thead><tr>${bulk?'<th class="bulk-td"></th>':''}<th>Date</th><th>Vendor</th><th>Category</th><th>Description</th><th>Method</th><th>Amount</th><th></th></tr></thead><tbody>${list.map(e=>`<tr class="${bulk&&_bulkSel.has(e.id)?'bulk-sel':''}">${bulk?`<td class="bulk-td" onclick="bulkToggle('${e.id}')">${bulkCheckHTML(e.id)}</td>`:''}<td>${fmtDate(e.date)}</td><td style="font-weight:500">${esc(e.vendor)}</td><td><span class="badge badge-gray">${esc(e.category)}</span>${e.reimbursed?' <span class="badge badge-green">Reimbursed</span>':''}</td><td style="color:var(--text2);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.description)||'—'}</td><td>${esc(e.method)||'—'}</td><td class="red" style="font-family:'JetBrains Mono',monospace">${fmt(e.amount)}</td><td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-sm" style="margin-right:4px" title="View receipt" onclick="viewReceipt('${e.receipt_path}')"><i class="ti ti-paperclip"></i></button>`:''}<button class="btn btn-sm" style="margin-right:4px" title="Duplicate" onclick="duplicateExpense('${e.id}')"><i class="ti ti-copy"></i></button><button class="btn btn-sm" style="margin-right:4px" onclick="editExpense('${e.id}')"><i class="ti ti-edit"></i></button><button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')"><i class="ti ti-trash"></i></button></td></tr>`).join('')}</tbody><tfoot><tr><td colspan="${bulk?6:5}" style="font-weight:700;text-align:right;padding:.85rem 1rem;border-top:2px solid var(--border)">${list.length} expense${list.length===1?'':'s'}${reimbAmt>0?` <span style="font-weight:400;color:var(--text3)">· excl. ${fmt(reimbAmt)} reimbursed</span>`:''}</td><td class="red" style="font-weight:700;font-family:'JetBrains Mono',monospace;padding:.85rem 1rem;border-top:2px solid var(--border)">${fmt(totalAmt)}</td><td style="border-top:2px solid var(--border)"></td></tr></tfoot></table>`;
   }
 }
 
@@ -7740,12 +7743,43 @@ async function saveCategories(arr, itemId) {
   if (error) { console.error('category save failed', error); showToast('Could not save categories: ' + (error.message||'unknown error'), 'error'); }
 }
 
+// Point a <select> at a stored value, KEEPING that value when it isn't one of the
+// options. Assigning select.value something with no matching <option> sets
+// selectedIndex to -1 — `.value` then reads '' — and the next save writes that blank
+// straight back over the record. The form silently erases a field nobody touched.
+//
+// Records written outside these forms hit this routinely, with no multi-bank setup
+// needed: reconciliation books expenses with method 'bank' and category
+// 'Prior-year refund', and invoice payments with method 'bank', none of which appear
+// in the corresponding option lists. Open one of those to fix a typo, save, and the
+// category or payment method is gone. Per-account category lists (and deleting a
+// category that older expenses still use) reach the same place.
+//
+// Appending the stored value as its own option preserves the record and shows the
+// user it isn't a standard choice. Built with createElement/textContent so an
+// arbitrary stored string can't inject markup.
+function selectValuePreserving(sel, value) {
+  if (!sel) return;
+  const v = value == null ? '' : String(value);
+  sel.value = v;
+  if (v !== '' && sel.value !== v) {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = v + ' (not in the list)';
+    sel.appendChild(o);
+    sel.value = v;
+  }
+}
 function renderCategoryOptions(selected) {
   const sel = document.getElementById('exp-category');
   if (!sel) return;
   const cats = getCategories(currentExpBank());
   const cur = selected || sel.value;
-  sel.innerHTML = cats.map(c=>`<option${c===cur?' selected':''}>${escHtml(c)}</option>`).join('');
+  sel.innerHTML = cats.map(c=>`<option>${escHtml(c)}</option>`).join('');
+  // Falls back to the first category only when there is genuinely nothing to keep
+  // (a brand-new expense); an existing category is never dropped for not being in
+  // the account's list — switching the Bank account field used to do exactly that.
+  selectValuePreserving(sel, cur || cats[0] || '');
 }
 // Bank account changed in the expense form: reshow the categories for that account
 // (resetting to its list) and refresh the inline manager if it's open.
@@ -7866,7 +7900,9 @@ function openExpenseModal(exp) {
   renderExpInvoiceOptions(e.invoice_id||'');
   document.getElementById('exp-category').value = e.category||(getCategories(currentExpBank())[0]||'Other');
   document.getElementById('exp-amount').value = e.amount||'';
-  document.getElementById('exp-method').value = e.method||'Debit Card';
+  // Method is a fixed five-option list, but reconciliation books expenses as 'bank'
+  // — assigning that plainly would blank the field and the save would persist it.
+  selectValuePreserving(document.getElementById('exp-method'), e.method||'Debit Card');
   document.getElementById('exp-desc').value = e.description||'';
   document.getElementById('exp-reimbursed').checked = !!e.reimbursed;
   renderReceiptState(exp);

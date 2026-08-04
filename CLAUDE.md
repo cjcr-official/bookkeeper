@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **494** (see `version.json` — that file is the source of truth).
+Current version: **495** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -530,7 +530,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Eight test suites run the SHIPPED code (they extract functions out of `index.html` by
+Nine test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -542,6 +542,7 @@ node test/touch.test.mjs       # viewport zoom + the 16px minimum on touch input
 node test/retention.test.mjs   # account deletion actually deletes every table
 node test/reminders.test.mjs   # the Worker's Denver wall-clock → UTC reminder math
 node test/recurring.test.mjs   # unattended auto-posting: no silent skips, no duplicates
+node test/forms.test.mjs       # a save must not blank a select value it didn't recognise
 ```
 
 `retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
@@ -1079,7 +1080,20 @@ minute until the cache refreshes.
   escape — all three login paths `await processRecurring()` immediately before hiding
   the loading screen with no catch of their own, so an escaping rejection strands the
   user on the spinner. A failure toasts as an error; it is never silent.
-- **Expenses:** list sorts by date (newest first). User-editable categories saved
+- **Expenses:** list sorts by date (newest first).
+  **A `<select>` never silently drops a stored value (v495).** Assigning
+  `select.value` a string with no matching `<option>` sets `selectedIndex` to −1, so
+  `.value` reads `''` — and every `save*()` reads straight from `.value`, writing that
+  blank back over the record. Reconciliation books expenses with method `'bank'` and
+  category `'Prior-year refund'`, and invoice payments with method `'bank'`, none of
+  which are in the corresponding option lists: opening one of those to fix a typo and
+  saving used to erase the field. Deleting a category older expenses still use, and
+  per-account category lists (switching the Bank account field), reach the same place.
+  **`selectValuePreserving(sel, value)`** appends the stored value as its own labelled
+  option instead — use it for ANY select fed from a record, never a bare
+  `.value =`. It's wired into `exp-category` (via `renderCategoryOptions`),
+  `exp-method` and `inv-pay-method`; `test/forms.test.mjs` pins it.
+  User-editable categories saved
   to `profiles.expense_categories` (synced/durable; localStorage `bk-expense-cats`
   is a local cache + fallback);
   "Reimbursed by customer" flag excludes from net profit / P&L / chart (green
