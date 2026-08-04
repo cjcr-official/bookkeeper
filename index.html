@@ -8597,9 +8597,13 @@ let _plaidBanks = [];
 let _selBank = null;
 let _plaidKeysMigrated = false;
 // The selected bank's slice of the session pull cache ({month: rawData}).
+// Falls back to the '_' key — the SAME fallback reconBucket() and the audit key
+// (`stmt.bankKey || acctId || '_'`) use — so a bank with no item_id (the legacy
+// single-bank status shape) still caches and reads back consistently. Returning a
+// throwaway {} instead meant pullMonthSpan wrote a month into an object nobody
+// could read: every month came back empty and the yearly check crashed on it.
 function bankCache() {
-  if (!_selBank) return {};
-  return (_plaidCache[_selBank] = _plaidCache[_selBank] || {});
+  return (_plaidCache[_selBank || '_'] = _plaidCache[_selBank || '_'] || {});
 }
 
 // ── Per-bank nicknames ──
@@ -8730,7 +8734,13 @@ async function renderPlaidBlock() {
   // Keep a valid selected bank: default to the first, or clear if it vanished.
   if (!_selBank || !banks.some(b => b.item_id === _selBank)) _selBank = banks[0].item_id;
   // One-time move of legacy single-bank reconcile data under the primary bank's id.
-  migratePlaidKeys(banks[0].item_id);
+  // AWAITED: autoRestoreOrphans below rewrites the same two columns, and both go
+  // through updateProfileJson's read-modify-write. Fired off unawaited, the two
+  // could interleave — the second read landing before the first write — and one
+  // set of changes would be silently dropped (CLAUDE.md data-safety rule 2, the
+  // in-process version of it). Costs nothing normally: with nothing to migrate it
+  // returns before its first await.
+  await migratePlaidKeys(banks[0].item_id);
   // Single-bank users: silently reclaim any history orphaned by a disconnect/
   // reconnect (new item_id) so matching survives removing & re-adding the bank.
   await autoRestoreOrphans(banks[0].item_id);
@@ -9035,7 +9045,6 @@ async function refreshLiveAudit() {
   const m = today().slice(0, 7);
   const prev = shiftMonthKey(m, -1);
   _liveAuditBusy = true;
-  const bc = bankCache();
   try {
     // LAST month is refreshed alongside this one, and the two are reconciled
     // against each other. That's the whole point on the 1st–3rd: a purchase dated
@@ -9046,7 +9055,7 @@ async function refreshLiveAudit() {
     // freshness — a charge that posts during the day has to be able to move the
     // mark — and reusing an hours-old pull on every page open quietly defeated
     // that. Ten minutes keeps repeated tab switches free.
-    const at = bc[m] && bc[m].pulledAt;
+    const at = bankCache()[m] && bankCache()[m].pulledAt;
     // Pull THREE months but stamp only two. A month's verdict depends on BOTH its
     // neighbours (cross-month settlement), so judging last month with only this one
     // in hand is a weaker test than opening it: a record dated the 1st that the bank
@@ -9056,6 +9065,12 @@ async function refreshLiveAudit() {
     // one and the regress never ends. Still one ranged call, same round trip.
     const prev2 = shiftMonthKey(m, -2);
     await pullMonthSpan([prev2, prev, m], !at || (Date.now() - at) > 600000);
+    // Re-read the cache AFTER the fetch rather than capturing it up front: tapping a
+    // different bank mid-flight moves _selBank, and everything below (pullMonthSpan's
+    // item_id, monthReconcile, the stamps) already follows the new one. A captured
+    // cache was the odd one out — it published the OLD bank's pending count under the
+    // new bank's card.
+    const bc = bankCache();
     const data = bc[m];
     if (data && Array.isArray(data.pending)) { _plaidPending = data.pending.length; renderPlaidPendingNote(); }
     const comps = {};
@@ -9255,8 +9270,7 @@ function adjMonths(mk) { return [shiftMonthKey(mk, -1), shiftMonthKey(mk, 1)]; }
 
 // Session pull cache for a specific bank (bankCache() is the selected one).
 function bankCacheFor(bankKey) {
-  const k = bankKey || _selBank;
-  if (!k) return {};
+  const k = bankKey || _selBank || '_';   // same '_' fallback as bankCache/reconBucket
   return (_plaidCache[k] = _plaidCache[k] || {});
 }
 // Phase-1 reconcile of an already-pulled month for a bank — the same computation
@@ -9364,7 +9378,9 @@ async function plaidCheckYear() {
     // Phase 1 for every month (month taps are instant now), then phase 2 pairing
     // each month against its neighbours before the verdict is stamped.
     const comps = {};
-    span.forEach(m => { comps[m] = reconcileMatch(buildPlaidStmt(m, bc[m]), null); });
+    // Every span month is bucketed by pullMonthSpan, but one missing bucket must not
+    // take the whole 12-month run down — an empty month reconciles as empty.
+    span.forEach(m => { comps[m] = reconcileMatch(buildPlaidStmt(m, bc[m] || { transactions: [], pending: [] }), null); });
     const asked = new Set(months);   // the 12 the user asked about are always stamped
     const stamps = span.map(m => {
       const nb = {}; adjMonths(m).forEach(x => { if (comps[x]) nb[x] = comps[x]; });
@@ -9380,6 +9396,12 @@ async function plaidCheckYear() {
     _recState = null;   // the summary replaces any open month view
     const bad = results.filter(r => !r.passed);
     const chip = r => `<button class="btn btn-sm" onclick="plaidPullMonth('${r.m}')" style="font-size:11.5px">${escHtml(r.label)} · ${r.issues} to review</button>`;
+    // The 12-month check is the slowest thing in the app, so it's the one a user
+    // actually walks away from — and `out` is gone once they do. Writing to it
+    // unguarded threw INTO the catch below, which reports "couldn't pull from the
+    // bank": a flat lie, since every month was already reconciled and stamped by
+    // this point. The marks are saved; there's just no longer a panel to draw on.
+    if (!out) return;
     out.innerHTML = `<div id="rec-audit"></div>
       <div class="card" style="padding:1rem 1.05rem">
         <div style="display:flex;align-items:center;gap:.55rem;margin-bottom:${bad.length ? '.7rem' : '0'}">
@@ -10970,6 +10992,11 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
     if (compHasContent(c)) nbStamps.push(setAuditResult(aKey, m, c.passed));
   });
   const { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, clearedElsewhere, balanceHtml, monthKey, monthLabel, passed, gManual, assignedAway } = comp;
+  // The panel is gone (navigated away while a pull was in flight). The VERDICT is
+  // still real and still worth keeping — the whole month was just reconciled — so
+  // stamp the audit marks and stop, instead of throwing on a null `out` and losing
+  // them. renderAuditBlock inside recordAudit no-ops on its own missing element.
+  if (!out) { _recState = null; recordAudit(aKey, monthKey, passed, monthLabel, nbStamps); return; }
   const multiBank = (_plaidBanks||[]).length > 1;   // "Paid from" tagging only makes sense with 2+ banks
   const setAside = skippedRecs.filter(r => r.inP);   // this month's set-asides (cash + skips)
   // A truly empty month (no bank lines, nothing recorded, nothing set aside)

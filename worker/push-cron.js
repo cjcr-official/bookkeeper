@@ -407,7 +407,12 @@ async function plaidDisconnect(req, env) {
       try { await plaidApi(env, '/item/remove', { access_token: item.access_token }); } catch (e) { console.error('plaid item/remove', e.plaid || e); }
     }
     try {
-      await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?item_id=eq.${encodeURIComponent(item.item_id)}`, {
+      // Scope the DELETE to the caller as well as the item. `targets` is already
+      // derived from this user's own rows, so today item_id alone is sound — but
+      // this runs on the SERVICE KEY, which bypasses RLS, so the only thing standing
+      // between it and another account's row is an in-memory filter several lines
+      // up. Make the query itself self-scoping instead of trusting that.
+      await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?item_id=eq.${encodeURIComponent(item.item_id)}&user_id=eq.${encodeURIComponent(user.id)}`, {
         method: 'DELETE', headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, Prefer: 'return=minimal' }
       });
     } catch (e) { console.error('plaid_items delete', e); }
