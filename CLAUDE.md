@@ -530,7 +530,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Six test suites run the SHIPPED code (they extract functions out of `index.html` by
+Seven test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -540,9 +540,10 @@ node test/money.test.mjs       # balanceDue / effectiveStatus / invoiceRevenue
 node test/ask.test.mjs         # askText() — every dismiss route must settle its promise
 node test/touch.test.mjs       # viewport zoom + the 16px minimum on touch inputs
 node test/retention.test.mjs   # account deletion actually deletes every table
+node test/reminders.test.mjs   # the Worker's Denver wall-clock → UTC reminder math
 ```
 
-`retention.test.mjs` is the only one that reads the **Worker**. `deleteAccount()`
+`retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
 wipes the user's rows from a hard-coded table list, and nothing tied that list to the
 rest of the app — so it fell behind as features were added. `time_entries` (Time
 Clock) and `loans` (balances + payment history) were both missing: deleting the
@@ -1004,6 +1005,14 @@ minute until the cache refreshes.
   `reminded_at`. If `now > triggerAt + 30 min` (window blown), stamps
   `reminded_at = triggerAt` so the row stops matching the predicate.
   Skipped entirely (unstamped) when the user has the `jobs` section switched off.
+  **`wallToUtc` samples the zone offset TWICE** — once at the wall time read as UTC,
+  then again at the instant that first pass produced. One pass is right all year
+  except where the two samples straddle a DST change, which put the whole 2:00–8:30am
+  band on both switch days a full hour out (early in November, late in March). Don't
+  "simplify" it back. `test/reminders.test.mjs` walks every half hour on both days.
+  Those stamps are also the ONLY dedupe: `supaPatch` used to swallow a failed write
+  entirely, so a dropped stamp re-sent the same reminder every minute with nothing in
+  the logs. It checks the status and returns success now.
   **Detailed payloads (v335+):** `sendWebPush(sub, env, message)` encrypts the
   `{title, body, url, tag}` JSON per RFC 8291 (aes128gcm) using the stored
   subscription's `keys.p256dh`/`keys.auth` (from `sub.toJSON()`), so the push
