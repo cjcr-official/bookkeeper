@@ -374,6 +374,93 @@ test('Home explains itself when every section is off', () => {
     'applyModuleVisibility does not toggle the all-off empty state');
 });
 
+// --- "Paid from" tags must survive a section being switched off ---------------
+// Runs the SHIPPED applyReconBankPicker against a fake <select>. The five save
+// paths (expense, invoice, loan, loan payment, bill) all call it unconditionally,
+// so it is the single place that decides whether a save writes the tag.
+function applyPickerSandbox(selectStub, banks) {
+  const calls = [];
+  const factory = new Function('sel', 'banks', 'calls', `
+    const document = { getElementById: () => sel };
+    const knownPlaidBanks = () => banks;
+    const setReconBank = async (fp, id, exact) => { calls.push([fp, id, !!exact]); };
+    // extract() starts at "function …", dropping the async keyword — put it back,
+    // or the awaits inside are a syntax error.
+    async ${extract('applyReconBankPicker')}
+    return applyReconBankPicker('x', 'e:1');
+  `);
+  factory(selectStub, banks, calls);
+  return calls;
+}
+
+test('switching Statements off does not wipe a record’s "Paid from" tag', () => {
+  // renderReconBankPicker empties the select when the section is hidden (so the
+  // per-account category list falls back to the global one). knownPlaidBanks still
+  // reports the banks, so the old guard let the write through — and sel.value on an
+  // emptied select reads '', which setReconBank treats as "Any account". Editing an
+  // expense for an unrelated reason then silently dropped its account attribution.
+  const banks = [{ item_id: 'itm_a' }, { item_id: 'itm_b' }];
+  eq(applyPickerSandbox({ options: [], value: '' }, banks), [],
+    'an undrawn picker must not write anything');
+});
+
+test('a drawn picker still writes both a bank and an explicit "Any account"', () => {
+  const banks = [{ item_id: 'itm_a' }, { item_id: 'itm_b' }];
+  eq(applyPickerSandbox({ options: [{}, {}, {}], value: 'itm_b' }, banks), [['e:1', 'itm_b', false]],
+    'picking a bank should tag the record');
+  // A drawn picker DOES carry the "Any account" row, so '' there is a real choice
+  // and must still clear the tag — that is the only way to untag from a form.
+  eq(applyPickerSandbox({ options: [{}, {}, {}], value: '' }, banks), [['e:1', null, false]],
+    'explicitly choosing "Any account" should clear the tag');
+});
+
+// --- The reconcile default must not outlive the form it was armed for ---------
+// Fake <select>: innerHTML drives options, the way the real one does, so the
+// picker's own "drawn / not drawn" signal stays honest.
+function fakeSelect() {
+  const sel = { value: '', options: [], _html: '' };
+  Object.defineProperty(sel, 'innerHTML', {
+    get() { return this._html; },
+    set(v) { this._html = v; this.options = (String(v).match(/<option/g) || []).map(() => ({})); }
+  });
+  return sel;
+}
+function renderPickerSandbox(sel, banks, opts) {
+  const grp = { style: {} };
+  const factory = new Function('sel', 'grp', 'banks', 'opts', `
+    const document = { getElementById: id => (id === 'g' ? grp : sel) };
+    const isModuleHidden = () => false;
+    const knownPlaidBanks = () => banks;
+    const escHtml = s => String(s == null ? '' : s);
+    const bankDisplayName = b => b.item_id;
+    const reconBankMap = () => ({});
+    const recBankFor = () => '';
+    let _plaidBanksPromise = true;   // pretend the list is already loading/loaded
+    const ensurePlaidBanks = async () => banks;
+    ${extract('reconBankChoices')}
+    ${extract('renderReconBankPicker')}
+    renderReconBankPicker('s', 'g', null, opts);
+  `);
+  factory(sel, grp, banks, opts);
+  return sel;
+}
+
+test('a form opened from reconciliation defaults its bank — per call, not forever', () => {
+  // addExpenseFromTxn passes the account being reconciled so the new expense is
+  // attributed to it. That used to live in a module-level `_recDefaultBank` that
+  // ONLY openExpenseModal cleared, so one "Add as expense" left it armed for the
+  // whole session and the next new invoice / loan / bill silently pre-tagged itself
+  // to whatever bank the Statements page had open — a wrong "Paid from" written
+  // without the user touching the field.
+  const banks = [{ item_id: 'itm_a' }, { item_id: 'itm_b' }];
+  eq(renderPickerSandbox(fakeSelect(), banks, { defaultBank: 'itm_a' }).value, 'itm_a',
+    'an explicit defaultBank should preselect that account');
+  eq(renderPickerSandbox(fakeSelect(), banks, undefined).value, '',
+    'the very next picker, with no default passed, must fall back to Any account');
+  eq(renderPickerSandbox(fakeSelect(), banks, { defaultBank: 'itm_gone' }).value, '',
+    'a default naming an account that is no longer linked is ignored');
+});
+
 test('a trip can be saved with no client and no expense', () => {
   // The mileage section must stand alone: requiring a customer or an expense link
   // made trips unrecordable whenever Invoices AND Expenses were both switched off,

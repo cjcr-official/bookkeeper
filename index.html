@@ -7838,7 +7838,6 @@ function openExpenseModal(exp) {
   editingExpense = exp || null;
   pendingReceiptFile = null; pendingReceiptRemove = false;
   _recPairTxn = null;      // only addExpenseFromTxn re-arms this after opening
-  _recDefaultBank = '';    // ditto — a normal open must not inherit a reconcile account
   const e = exp || {};
   document.getElementById('exp-title').textContent = exp?'Edit Expense':'New Expense';
   document.getElementById('exp-id').value = e.id||'';
@@ -7881,10 +7880,17 @@ function duplicateExpense(id) {
 // banks, preselecting its current tag. Only shown with 2+ banks (nothing to choose
 // otherwise). fp = the record's reconcile fingerprint ('e:'+id / 'p:'+id); pass null
 // for a brand-new record (tag is applied after it's saved and has an id).
-// While a form is opened FROM reconciliation this holds the account being reconciled,
-// so its "Bank account" field defaults to that account instead of "Any account".
-// Declared before renderReconBankPicker (its first reader) to avoid a TDZ trap.
-let _recDefaultBank = '';
+// opts.defaultBank → preselect this account when the record has no tag of its own.
+//               Passed by addExpenseFromTxn (the form was opened FROM a bank line, so
+//               that charge demonstrably cleared that account). It is an ARGUMENT and
+//               not a module-level global on purpose: as a global (`_recDefaultBank`)
+//               only openExpenseModal cleared it, so one "Add as expense" from
+//               reconciliation left it armed for the rest of the session and the next
+//               NEW invoice / loan / bill silently pre-tagged itself to whatever
+//               account had been open on the Statements page. With two banks that is a
+//               wrong "Paid from" tag written without the user touching the field —
+//               the record then stops matching the bank it really cleared, and that
+//               bank's month fails on an unexplained deposit.
 // opts.exact  → read/write the tag for THIS occurrence only (a single loan payment)
 //               rather than its folded parent; blank then means "inherit the parent".
 // opts.anyLabel → text for the blank option (e.g. "Same as the loan").
@@ -7920,13 +7926,24 @@ function renderReconBankPicker(selectId, groupId, fp, opts) {
   sel.value = fp ? (o.exact ? (reconBankMap()[fp] || '') : recBankFor(fp)) : '';
   // Opened from reconciliation with no tag of its own → default to the account being
   // reconciled. Skipped in exact mode, where blank means "inherit the parent".
-  if (!sel.value && !o.exact && _recDefaultBank && banks.some(b => b.item_id === _recDefaultBank)) sel.value = _recDefaultBank;
+  if (!sel.value && !o.exact && o.defaultBank && banks.some(b => b.item_id === o.defaultBank)) sel.value = o.defaultBank;
 }
 // Apply the picker's choice to the record's reconcile tag once it has an id. No-op
-// when there are fewer than 2 banks (the picker is hidden and must not clear a tag).
+// when no bank is known (the picker is hidden and must not clear a tag).
 async function applyReconBankPicker(selectId, fp, opts) {
-  if (!knownPlaidBanks().filter(b => b.item_id).length) return;
   const sel = document.getElementById(selectId); if (!sel) return;
+  // A picker that was never DRAWN has no options, and its `.value` reads '' —
+  // indistinguishable from the user choosing "Any account". Writing that cleared an
+  // existing "Paid from" tag on an edit that had nothing to do with banks. Two ways
+  // in: Statements switched off (renderReconBankPicker empties the select, and
+  // knownPlaidBanks still reports banks, so the guard below let it through), and
+  // saving before ensurePlaidBanks' fetch lands on a fresh launch. Either way the
+  // record silently lost its account attribution and went back to matching ANY bank
+  // — the account-separation regression, arrived at from the other direction. An
+  // empty option list is the faithful test for "this was never shown to the user":
+  // a drawn picker always carries at least the "Any account" row.
+  if (!sel.options.length) return;
+  if (!knownPlaidBanks().filter(b => b.item_id).length) return;
   await setReconBank(fp, sel.value || null, opts && opts.exact);
 }
 // The connected banks, falling back to the localStorage cache when the Statements
@@ -10057,9 +10074,9 @@ function addExpenseFromTxn(idx) {
   document.getElementById('exp-desc').value = (t.description||'').slice(0, 120);
   // This charge cleared the account being reconciled, so pre-select it (and pull that
   // account's category list with it). Re-render because openExpenseModal already drew
-  // the picker with _recDefaultBank cleared.
-  _recDefaultBank = activeReconBank();
-  renderReconBankPicker('exp-recon-bank', 'exp-recon-bank-group', null);
+  // the picker with no default. Passed as an argument, never parked in a global —
+  // see the defaultBank note on renderReconBankPicker.
+  renderReconBankPicker('exp-recon-bank', 'exp-recon-bank-group', null, { defaultBank: activeReconBank() });
   onExpBankChange();
   _recPairTxn = idx;
 }
@@ -10543,31 +10560,14 @@ async function resetMonthMatches() {
   renderReconcile(s.stmt, s.acctId, s.path);
 }
 
-// Clear a previously-set manual month override and fall back to auto-detect.
-async function clearStmtMonthOverride() {
-  const s = _recState; if (!s) return;
-  const key = s.stmt.bankKey || s.acctId || '_';
-  if (profile.audited_months && profile.audited_months[key]) {
-    delete profile.audited_months[key][s.monthKey];
-  }
-  delete s.stmt.statement_month;
-  await saveStmtSidecar(s.stmt, s.path);
-  renderReconcile(s.stmt, s.acctId, s.path);
-}
-
-// Override the parsed statement month (user correction) and re-record audit.
+// The statement-month override (changeStmtMonth / clearStmtMonthOverride and the
+// picker that called them) is GONE — it was a PDF-era vestige, unreachable since
+// Plaid became the only source: buildPlaidStmt always stamps source:'plaid', and
+// the picker only rendered when source !== 'plaid'. A Plaid month IS the pull month.
+// Worth deleting rather than leaving parked, because both functions deleted an entry
+// out of the in-memory profile.audited_months and never wrote that back — reviving
+// them as-is would drop a month's audit mark on the next device sync.
 let _recState = null;
-async function changeStmtMonth(newM) {
-  const s = _recState; if (!s) return;
-  const key = s.stmt.bankKey || s.acctId || '_';
-  if (newM === s.monthKey) return;
-  if (profile.audited_months && profile.audited_months[key]) {
-    delete profile.audited_months[key][s.monthKey];
-  }
-  s.stmt.statement_month = newM;
-  await saveStmtSidecar(s.stmt, s.path);
-  renderReconcile(s.stmt, s.acctId, s.path);
-}
 
 // Pure matching core (no DOM) shared by the reconcile VIEW and the audit refresh.
 // Compares the statement's transactions against recorded expenses + invoice
@@ -11010,7 +11010,6 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   _recState = { stmt, acctId, path, monthKey, searchPool: [], matchedGroups: matched, recs };
 
   // Month override picker is a PDF-era vestige — a Plaid month IS the pull month.
-  const monthPicker = (stmt.statement_month && stmt.source!=='plaid') ? `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.7rem;font-size:12px;color:var(--text3)"><span style="text-transform:uppercase;letter-spacing:.5px;font-weight:700">Statement month</span><input type="month" value="${monthKey}" onchange="changeStmtMonth(this.value)" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:.3rem .55rem;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px"><button class="btn btn-sm" onclick="clearStmtMonthOverride()" style="font-size:11px">Use auto</button></div>` : '';
   const isCur = !!monthKey && monthKey === today().slice(0,7);
   const noBank = !txns.length ? `<div style="font-size:12px;color:var(--text3);margin-bottom:.8rem">${isCur
     ? 'Nothing has cleared at the bank for this month yet.'
@@ -11213,7 +11212,6 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
 
   out.innerHTML = `
     <div id="rec-audit"></div>
-    ${monthPicker}
     ${balanceHtml}
     ${noBank}
     <div id="rec-match-bar" style="display:none;position:sticky;top:0;background:var(--surface);border:1px solid var(--accent);border-radius:10px;padding:.55rem .75rem;margin-bottom:.75rem;z-index:10;align-items:center;gap:.6rem;flex-wrap:wrap"></div>
