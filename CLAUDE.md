@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **490** (see `version.json` — that file is the source of truth).
+Current version: **491** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -287,11 +287,18 @@ writes a NEGATIVE expense in that expense's own category and pairs it, so the co
 nets to zero and nothing lands in revenue — same vehicle as the prior-year refund),
 plus split/rejoin/fix-amount. **Anything logged from reconciliation is attributed to
 the account being reconciled (v475)** — `activeReconBank()` (open statement's
-`bankKey`, else `_selBank`) feeds both halves: `_recDefaultBank` pre-selects the
-Expense form's "Bank account" field (`addExpenseFromTxn` sets it, then re-renders the
-picker and calls `onExpBankChange()` so the account's own categories load;
-`openExpenseModal` clears it so a normal open never inherits it), and `tagFromRecon(fp,
-exact)` writes the same tag for the form-less actions. It never overrides a tag the
+`bankKey`, else `_selBank`) feeds both halves: `renderReconBankPicker`'s
+**`opts.defaultBank`** pre-selects the Expense form's "Bank account" field
+(`addExpenseFromTxn` passes it and calls `onExpBankChange()` so the account's own
+categories load), and `tagFromRecon(fp, exact)` writes the same tag for the form-less
+actions. **`defaultBank` is an argument, never a global (v491).** It used to be
+`_recDefaultBank`, which only `openExpenseModal` cleared — so a single "Add as
+expense" left it armed for the rest of the session and the next NEW invoice / loan /
+bill silently pre-tagged itself to whatever account the Statements page had open. With
+two banks that's a wrong "Paid from" written without the user touching the field: the
+record stops matching the bank it really cleared, and that bank's month fails on an
+unexplained line. A per-form default has to be passed per call, or every other form
+inherits it. It never overrides a tag the
 user already set, and passes `exact` for loan payments / bill months so one occurrence
 can't retag its whole parent. (The Loan/Bill charge actions only appear when the user
 has loans / budget bills.) **Two ways to book a customer reimbursement, never both
@@ -425,6 +432,20 @@ tag exists only to steer reconciliation, so with Statements off it's dead weight
 every form. `renderReconBankPicker` also CLEARS the select in that case, so
 `currentExpBank()` reads empty and the Expense form falls back to the global category
 list instead of a per-account one.
+
+**But an undrawn picker must never WRITE (v491).** Clearing the select makes
+`sel.value` read `''`, which is exactly what "— Any account —" reads as, so
+`applyReconBankPicker` — called unconditionally by all five save paths — cleared the
+record's existing tag on any unrelated edit. Switch Statements off, fix a typo on a
+tagged expense, and its account attribution is gone; switch Statements back on and it
+auto-matches every bank again. This is the account-separation regression reached from
+the other side, and it broke the Sections rule that **a hidden field keeps its value**.
+The guard is `if (!sel.options.length) return;`: a drawn picker always carries at least
+the "Any account" row, so an empty option list is the faithful test for "never shown to
+the user" — and it covers the other way in too (saving before `ensurePlaidBanks()`
+lands on a fresh launch). Gating on `knownPlaidBanks()` did NOT cover either case: the
+banks are still known, it's the field that isn't there. `test/modules.test.mjs` pins
+it.
 
 ```sql
 alter table profiles add column if not exists audited_months jsonb default '{}'::jsonb;
