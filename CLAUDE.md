@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **488** (see `version.json` — that file is the source of truth).
+Current version: **489** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -210,9 +210,15 @@ checkbox row) — and, before typing, auto-surfaces unmatched records dated with
 ±18 days of the month, so "an expense is missing" always has a visible answer.
 Three anti-false-alarm rules: (1) the CURRENT month stamps pass/fail like any
 other month, so its grid dot shows discrepancies on load — `refreshLiveAudit`
-quietly re-checks it (and LAST month, against each other) whenever the Statements
-page opens, re-pulling when the session copy is over 10 minutes old; failures are
-silent — but its on-screen status pill reads
+quietly re-checks it (and LAST month) whenever the Statements page opens,
+re-pulling when the session copy is over 10 minutes old; failures are
+silent. It pulls **three** months and stamps **two** (v489): a month's verdict
+depends on BOTH its neighbours, so judging last month with only the current one in
+hand was a weaker test than opening it — a record dated the 1st that the bank
+posted on the 31st before stayed unforgiven and the grid painted an amber dot that
+turned green the instant the owner tapped the month. Month−2 is context only and is
+never stamped, or the same gap just moves down one and the regress never ends.
+Still one ranged call. Its on-screen status pill reads
 "In progress" rather than "Needs review", since mid-month unmatched records are
 usually just bank lag;
 (2) an out-of-period record isn't called a stray if its own month accounts for
@@ -259,7 +265,14 @@ combined total (`pcTotal`, mirrored onto each payday button so the figure about 
 saved is visible), spells out `now $X — this replaces it` on a payday that already has
 an amount, and records the SUM for that payday paired to every ticked line
 (`manual_matches` is N↔1). The combined total also auto-matches those
-lines on later pulls via Pass 4, so the pairing survives losing the manual match. If
+lines on later pulls via Pass 4, so the pairing survives losing the manual match.
+`applyPaycheckFromTxn`'s success toast referenced an `extras` variable that never
+existed (v489 fix): the paycheck saved and the sheet closed, then the
+ReferenceError killed the rest of the handler — so the `renderReconcile` on the
+last line never ran and the deposit sat in "on the bank · not in your books" with
+the month's mark unmoved until the next pull. **Nothing after the write is
+optional**; a throw between saving and re-rendering reads to the owner as "it
+didn't work" for a record that is, in fact, already in the books. If
 per-earner amounts are ever needed, that's a `paycheck_amounts` schema change plus the
 Budget page/report — don't fake it with extra date keys, they'd be invisible there.
 The picker offers **projected paydays**

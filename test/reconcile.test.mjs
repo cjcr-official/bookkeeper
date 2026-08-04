@@ -370,6 +370,31 @@ test('a set-aside in the neighbour month does not forgive', (api) => {
   eq(july.passed, false, 'July still needs review');
 });
 
+// 7c-2. Settlement runs BACKWARDS too, and the background audit refresh depends
+//     on it. A bill dated the 1st (its projected due day) that the bank actually
+//     took on the 31st of the month before clears on the EARLIER statement. The
+//     forgiving side is whichever neighbour matched it — there is no "next month
+//     only" rule — which is why refreshLiveAudit pulls a third month of context
+//     and pairs each stamped month against BOTH its neighbours. With only the
+//     later neighbour in hand this record stayed unforgiven and the grid stamped
+//     an amber dot that turned green the moment the owner opened the month.
+test('a record the EARLIER neighbour cleared is forgiven too', (api) => {
+  const { reconcileMatch, clearedElsewhereMap, applyClearedElsewhere, adjMonths } = api;
+  sandbox.cache.expenses = [{ id: 'e1', date: '2026-08-01', amount: 140, vendor: 'Insurance' }];
+  const aug = reconcileMatch(stmt('2026-08', [], { period_end: '2026-08-31' }), null);
+  eq(aug.inRecordsOnly.map(r => r.fp), ['e:e1'], 'August alone reports the 1st as missing');
+  eq(aug.passed, false, 'August alone fails');
+
+  const july = reconcileMatch(stmt('2026-07', [{ date: '2026-07-31', amount: -140, description: 'INSURANCE' }], { period_end: '2026-07-31' }), null);
+  eq(july.matchedFps, ['e:e1'], 'July matched it at the bank');
+
+  // Exactly what refreshLiveAudit now assembles: every neighbour it holds, both sides.
+  const nb = {}; adjMonths('2026-08').forEach(m => { if (m === '2026-07') nb[m] = july; });
+  applyClearedElsewhere(aug, clearedElsewhereMap(nb));
+  eq(aug.passed, true, 'August passes once July is taken into account');
+  eq(aug.clearedElsewhere.map(r => [r.fp, r.clearedIn]), [['e:e1', '2026-07']], 'reported as cleared in July');
+});
+
 // 7d. Month-key arithmetic used to pick the neighbours (rolls over years).
 test('adjMonths gives the two neighbouring month keys', ({ adjMonths, shiftMonthKey }) => {
   eq(adjMonths('2026-01'), ['2025-12', '2026-02'], 'January neighbours cross the year');
