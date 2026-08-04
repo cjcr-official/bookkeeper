@@ -7576,7 +7576,11 @@ function getFilteredExpenses() {
   const cat = document.getElementById('exp-cat-filter')?.value || '';
   const from = document.getElementById('exp-from')?.value || '';
   const to = document.getElementById('exp-to')?.value || '';
-  const bank = document.getElementById('exp-bank-filter')?.value || '';
+  // reconBankChoices(), not the raw bank list: with Statements off the "Paid from"
+  // tag is dead weight everywhere else, so it must not still be silently filtering
+  // this list either. Read through the same single rule the pickers use, so the
+  // filter can't outlive the section it belongs to even for one render.
+  const bank = reconBankChoices().length ? (document.getElementById('exp-bank-filter')?.value || '') : '';
   if (bank) {
     if (bank === '__none__') list = list.filter(e => !expenseReconBank(e));
     else list = list.filter(e => expenseReconBank(e) === bank);
@@ -7613,10 +7617,16 @@ function renderExpenses() {
     catSel.innerHTML = '<option value="">All</option>' + cats.map(c=>`<option value="${escHtml(c)}"${c===current?' selected':''}>${escHtml(c)}</option>`).join('');
   }
   // Account switcher (multi-bank only): rebuild the bank options each render so newly
-  // linked banks appear, preserving the current pick. Hidden for single-bank users.
+  // linked banks appear, preserving the current pick. Hidden for single-bank users —
+  // and for everyone with Statements switched off, which is why this reads
+  // reconBankChoices() and not knownPlaidBanks(). It was the one consumer of the bank
+  // list the Sections sweep missed: the row is JS-managed, so it carries no
+  // data-module attribute for applyModuleVisibility (or the static markup test) to
+  // catch, and it kept offering to filter expenses by an account attribution that
+  // nothing else in the app was still showing.
   const bankSel = document.getElementById('exp-bank-filter'), bankRow = document.getElementById('exp-bank-filter-row');
   if (bankSel && bankRow) {
-    const banks = knownPlaidBanks().filter(b => b.item_id);
+    const banks = reconBankChoices();
     if (banks.length < 2) { bankRow.style.display = 'none'; bankSel.value = ''; }
     else {
       bankRow.style.display = '';
@@ -7977,6 +7987,13 @@ function ensurePlaidBanks() {
         try { lsSet('bk-plaid-banks', JSON.stringify(banks.map(b => ({ item_id: b.item_id, institution: b.institution })))); } catch (e) {}
       }
     } catch (e) { /* not configured / offline — pickers just stay hidden */ }
+    // Only a SUCCESSFUL fetch stays memoized. Launching offline resolved this to []
+    // and cached that for the whole session, and renderReconBankPicker only re-kicks
+    // the fetch when _plaidBanksPromise is falsy — so one bad launch hid every "Paid
+    // from" picker until the app was relaunched or the Statements page was opened.
+    // No bank configured resolves to [] too, but that costs one idle request per
+    // form open, which is the right trade against a field that never comes back.
+    if (!(_plaidBanks || []).length) _plaidBanksPromise = null;
     return _plaidBanks || [];
   })();
   return _plaidBanksPromise;
@@ -11346,7 +11363,13 @@ function auditYearNav(d) {
 function renderAuditBlock(acctId, monthKey, monthLabel, passed, yrOverride) {
   const el = document.getElementById('rec-audit'); if (!el) return;
   const byAcct = ((profile.audited_months||{})[acctId||'_']) || {};
-  const yr = yrOverride || (monthKey || today()).slice(0,4);
+  // With no month in hand, keep showing the year the user is BROWSING. The callers
+  // that pass no monthKey are the passive re-draws — refreshLiveAudit finishing in
+  // the background, renderPlaidBlock, plaidSelectBank — and defaulting them to the
+  // current year yanked the grid back off 2025 a second or two after the owner
+  // pressed ‹, with nothing on screen to explain it. An explicit month still wins
+  // (opening a 2025 month shows 2025), and the first ever draw still lands on today.
+  const yr = yrOverride || (monthKey ? monthKey.slice(0,4) : ((_auditView && _auditView.yr) || today().slice(0,4)));
   _auditView = { acctId, monthKey, monthLabel, passed, yr };
   const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const curMonth = today().slice(0,7);   // don't offer to pull future months

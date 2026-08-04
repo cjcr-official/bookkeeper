@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **491** (see `version.json` — that file is the source of truth).
+Current version: **492** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -105,7 +105,11 @@ books" (set it aside with the eye-off, or "Paid from"-tag it to the bank it real
 lands in). It writes
 a per-month audit result: `profiles.audited_months` (jsonb, keyed
 `{accountId: {"YYYY-MM": {passed, at}}}`) — a month "passes" when nothing is
-unmatched. The page shows a 12-month grid of ✅/⚠️/· marks with ‹ › year arrows;
+unmatched. The page shows a 12-month grid of ✅/⚠️/· marks with ‹ › year arrows
+(`renderAuditBlock` keeps the year the user is BROWSING when it's re-drawn with no
+month — the passive callers are `refreshLiveAudit` finishing, `renderPlaidBlock` and
+`plaidSelectBank`, and defaulting those to the current year yanked the grid off 2025 a
+second after the owner pressed ‹, v492);
 **tap a month to pull & reconcile it**, or use **"Check the last 12 months"**
 (`plaidCheckYear`) — one ranged Plaid pull, bucketed by month, every month run
 through `reconcileMatch` and stamped into the audit grid, ending on a summary of
@@ -427,7 +431,14 @@ from a manual match later — both write `recon_bank`, the single attribution so
 **They also follow the Statements section (v483).** `reconBankChoices()` is
 `knownPlaidBanks()` minus a `isModuleHidden('statements')` gate, and it's the single
 rule behind all of them — the five per-record pickers (expense, invoice, loan, loan
-payment, bill) via `renderReconBankPicker`, plus the bulk-edit "Paid from" row. The
+payment, bill) via `renderReconBankPicker`, the bulk-edit "Paid from" row, and (v492)
+the **Expenses tab's Account switcher**, which had been reading `knownPlaidBanks()`
+directly and so went on filtering the list by an attribution nothing else was still
+showing. That row is JS-managed, so it carries no `data-module` attribute for
+`applyModuleVisibility` — or the static markup checks — to catch; `getFilteredExpenses`
+reads its value through the same rule too, so the filter can't outlive the section even
+for one render. **Anything that surfaces the tag reads `reconBankChoices()`, never
+`knownPlaidBanks()`** — `test/modules.test.mjs` now asserts that. The
 tag exists only to steer reconciliation, so with Statements off it's dead weight on
 every form. `renderReconBankPicker` also CLEARS the select in that case, so
 `currentExpBank()` reads empty and the Expense form falls back to the global category

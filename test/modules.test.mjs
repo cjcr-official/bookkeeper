@@ -461,6 +461,25 @@ test('a form opened from reconciliation defaults its bank — per call, not fore
     'a default naming an account that is no longer linked is ignored');
 });
 
+test('every consumer of the bank list goes through reconBankChoices()', () => {
+  // reconBankChoices() = knownPlaidBanks() + the Statements gate, and CLAUDE.md calls
+  // it "the single rule" behind everything that surfaces the "Paid from" tag. The
+  // Expenses tab's Account switcher was the one consumer that missed it: its row is
+  // JS-managed, so it carries no data-module attribute for applyModuleVisibility (or
+  // the markup checks above) to catch, and it went on offering to filter expenses by
+  // an account attribution nothing else in the app was still showing.
+  // Strip line comments first: these functions EXPLAIN the rule in prose, and a
+  // check that matches its own documentation is a check that proves nothing.
+  const code = name => extract(name).replace(/^\s*\/\/.*$/gm, '');
+  ok(/reconBankChoices\(\)/.test(code('getFilteredExpenses')),
+    'the expenses bank filter is applied without the Statements gate');
+  ok(!/knownPlaidBanks\(/.test(code('renderExpenses')),
+    'renderExpenses reaches for the raw bank list — use reconBankChoices()');
+  // The bulk-edit rows already do this; keep them honest too.
+  ok(/reconBankChoices\(\)/.test(extract('bulkExpFieldsHTML')), 'bulk expense fields');
+  ok(/reconBankChoices\(\)/.test(extract('bulkInvFieldsHTML')), 'bulk invoice fields');
+});
+
 test('a trip can be saved with no client and no expense', () => {
   // The mileage section must stand alone: requiring a customer or an expense link
   // made trips unrecordable whenever Invoices AND Expenses were both switched off,
