@@ -462,6 +462,28 @@ test('a pipe in the description does not corrupt the key', ({ makeTxnRefResolver
 });
 
 // ============================================================================
+// 9. The audit grid is keyed PER BANK (profile.audited_months[item_id]). Passing
+//    null falls back to the legacy '_' bucket, which migratePlaidKeys deletes — so
+//    the grid renders from an empty map and every month shows a hollow "not checked
+//    yet" dot. Every caller that has a bank in hand must pass it; only the genuinely
+//    bankless states (Plaid not configured, no bank linked) may pass null.
+//    Static, because the bug is in the CALLERS, not in renderAuditBlock itself.
+// ============================================================================
+test('callers with a selected bank key the audit grid to it', () => {
+  // Strip comments first — these functions discuss the rule in prose, and a check
+  // that matches its own documentation proves nothing (learned the hard way in v492).
+  const code = name => extract(name).replace(/^\s*\/\/.*$/gm, '');
+  eq(/renderAuditBlock\(_selBank/.test(code('renderAccountsPage')), true,
+    'renderAccountsPage draws the grid before /plaid/status answers — with null it '
+    + 'flashes a wiped audit history on every page open and every rotation');
+  // The two null callers that are correct: both are "there is no bank" states.
+  const plaid = code('renderPlaidBlock');
+  eq((plaid.match(/renderAuditBlock\(null/g) || []).length, 2,
+    'only the not-configured and no-banks branches may pass null');
+  eq(/renderAuditBlock\(_selBank/.test(plaid), true,
+    'the connected branch must key the grid to the selected bank');
+});
+
 console.log('');
 if (fails.length) { console.log(fails.join('\n')); console.log(''); }
 console.log(`${pass} passed, ${fail} failed`);

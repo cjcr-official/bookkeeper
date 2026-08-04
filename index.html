@@ -2694,7 +2694,14 @@ function renderAccountsPage() {
   // (e.g. rotation) — only reset the result area when nothing's loaded.
   if (!_recState) {
     const res = document.getElementById('rec-result');
-    if (res) { res.innerHTML = '<div id="rec-audit"></div>'; renderAuditBlock(null, '', '', null); }
+    // _selBank, NOT null: renderAuditBlock keys off it, and null falls back to the
+    // legacy '_' bucket — which migratePlaidKeys DELETED, so the grid drew from an
+    // empty map and every month came back a hollow "not checked yet" dot. It was
+    // transient (renderPlaidBlock re-draws with the real key once /plaid/status
+    // answers) but that's a network round trip, so opening Statements — or just
+    // rotating the phone — flashed a wiped audit history at the owner. Reading it is
+    // synchronous and in-memory; there is no reason to wait for the network.
+    if (res) { res.innerHTML = '<div id="rec-audit"></div>'; renderAuditBlock(_selBank, '', '', null); }
   }
   renderPlaidBlock();
 }
@@ -8696,8 +8703,19 @@ async function plaidFetch(path, opts = {}) {
   const token = sess && sess.session && sess.session.access_token;
   if (!token) throw new Error('Please sign in again.');
   const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...(opts.headers || {}) } });
-  const data = await res.json().catch(() => ({}));
+  let data = null, parsed = true;
+  try { data = await res.json(); } catch (e) { parsed = false; data = {}; }
   if (!res.ok || data.error) { const e = new Error(data.error || ('Failed (' + res.status + ')')); e.data = data; throw e; }
+  // A 200 that ISN'T JSON is not a success. wrangler.toml sets
+  // not_found_handling = "single-page-application", so any /plaid/* request the
+  // Worker's router doesn't match — a method mismatch, a typo'd path, a route lost
+  // in a refactor — falls through to the asset binding and comes back as index.html
+  // with a 200. That parsed to {} and sailed past the checks above as a valid empty
+  // reply: /plaid/status would read `configured: undefined` and calmly report "Bank
+  // sync isn't set up on this account yet" for what is actually a routing bug. Every
+  // current path+method matches, so this is a guard rather than a live fix — but the
+  // failure it guards against is silent and says the opposite of the truth.
+  if (!parsed) throw new Error('Unexpected reply from the server (not JSON) — try again in a moment.');
   return data;
 }
 // Turn a Plaid/network error into plain, actionable guidance — never a raw API
