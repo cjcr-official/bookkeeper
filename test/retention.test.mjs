@@ -78,6 +78,19 @@ test('the profile row and the login are removed too', () => {
   ok(/plaid_items\?user_id=eq\./.test(body), 'the stored bank tokens are left behind');
 });
 
+// The same "hand-kept copy of the table list" failure, one function over: doLogout
+// rebuilt `cache` from a SECOND literal, and that one never got `loans` — so a
+// signed-out session carried cache.loans === undefined until the next login refilled
+// it. Clearing by key can't drift.
+test('signing out clears every cached table, without a second list', () => {
+  const start = client.indexOf('async function doLogout(');
+  ok(start >= 0, 'could not find doLogout');
+  const body = client.slice(start, client.indexOf('\n}', start));
+  ok(!/cache\s*=\s*\{[^}]*:/.test(body),
+     'doLogout retypes the table list — it will fall behind the real one again');
+  ok(/Object\.keys\(cache\)/.test(body), 'clear every key of the one cache literal');
+});
+
 test('private-bucket wipe pages past the 1000-object list cap', () => {
   const start = worker.indexOf('async function deleteUserStorage(');
   ok(start >= 0, 'could not find deleteUserStorage');

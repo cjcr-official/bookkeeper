@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **500** (see `version.json` — that file is the source of truth).
+Current version: **501** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -279,10 +279,22 @@ optional**; a throw between saving and re-rendering reads to the owner as "it
 didn't work" for a record that is, in fact, already in the books. If
 per-earner amounts are ever needed, that's a `paycheck_amounts` schema change plus the
 Budget page/report — don't fake it with extra date keys, they'd be invisible there.
-The picker offers **projected paydays**
-(`paydaysForMonth`), never a free date, because the Budget page and its report look
-amounts up by exactly that key — an amount stored under any other date would be
-invisible there. With no `pay_schedule` set it doesn't dead-end: it offers
+The picker offers **projected paydays**, never a free date, because the Budget page
+and its report look amounts up by exactly that key — an amount stored under any other
+date would be invisible there. But it asks **`paydaysOnStatement(y,m)`, not
+`paydaysForMonth` (v501)**, and the difference is load-bearing: on a fixed-day
+schedule a payday landing on a weekend MOVES (default "pay the Friday before"), so
+the payday a budget month plans against is routinely dated in the month next door —
+with a monthly schedule on the 1st, August 2026's paycheck is a **July 31st**
+deposit. Reconciling July offered "Jul 1" and nothing else: every option was wrong,
+so the honest move was to record nothing, and the deposit stayed unexplained with
+July's mark amber for good. `paydaysOnStatement` keeps the month's own list (a payday
+can also post a day or two late, which is the same shift seen from the other side)
+and ADDS any neighbouring month's payday whose date lands inside this month. Weekly /
+biweekly schedules are unaffected — their paydays are already dated in the month that
+lists them. `paydaysForMonth` stays keyed to the BUDGET month, because that's where
+the card and the amount key live; don't collapse the two. `test/budget.test.mjs`
+pins both. With no `pay_schedule` set it doesn't dead-end: it offers
 `openPayScheduleModal()` inline (that function is self-contained and `renderBudget()`
 no-ops off-page, so both are safe to call from reconciliation),
 **Reimbursement of an expense** (v474, deposits only: `reimburseFromTxn` → pick the
@@ -530,7 +542,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Twelve test suites run the SHIPPED code (they extract functions out of `index.html` by
+Fourteen test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -546,6 +558,8 @@ node test/forms.test.mjs       # a save must not blank a select value it didn't 
 node test/dates.test.mjs       # "what day is it" — local calendar dates, never UTC
 node test/home.test.mjs        # Home's refresh contract + its fold controls
 node test/loan.test.mjs        # the amortization engine, against closed-form annuities
+node test/budget.test.mjs      # payday projection + which paydays a statement can show
+node test/time.test.mjs        # Time Clock: a punch belongs to its LOCAL day
 ```
 
 `retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
@@ -559,6 +573,12 @@ names every user-owned table — so **adding a table to `cache` and forgetting
 `deleteAccount` now fails the build**. It also pins the FK delete order and that
 `deleteUserStorage` pages past the storage list API's 1000-object cap (a single call
 left every receipt after the first 1000 sitting in the private bucket).
+**There is exactly ONE `cache` literal (v501).** `doLogout` used to rebuild the object
+from a second copy of the table list, and that copy fell a table behind the real one —
+it never got `loans`, so a signed-out session carried `cache.loans === undefined`
+until the next login refilled it. It clears by key now
+(`Object.keys(cache).forEach(...)`), and the test rejects any new literal there:
+the `cache` declaration stays the single source the retention check reads.
 
 `modules.test.mjs` also statically checks the markup: every `data-module` /
 `data-module-all` / `isModuleHidden('…')` id must exist in `MODULES`, and every module
@@ -607,8 +627,14 @@ it cleaned up the deleted loan's `recon_bank` tags by cloning the in-memory map 
 upserting the whole column, so deleting a loan on a tab left open since morning
 silently reverted every "Paid from" tag the other device had set. Its delta now
 recomputes the doomed keys **inside** `apply(current)`, which also catches per-payment
-tags this device has never seen. **Every writer of a collection column goes through
-`updateProfileJson` — grep for `.upsert({ id: currentUser.id` before adding another.**
+tags this device has never seen. `migrateReconTags` was the last one (fixed v501): it
+ran at EVERY login and wrote the whole `recon_bank` map whenever a manual match implied
+a tag the map didn't have yet, so a "Paid from" tag set on the other device in the
+seconds since this one fetched the profile was rolled back — silently, and at the one
+moment a second device is most likely to be in use. `manualMatchTagMap` was already
+pure and only ADDS tags, so it drops straight into `apply(fresh)`. **Every writer of a
+collection column goes through `updateProfileJson` — grep for
+`.upsert({ id: currentUser.id` before adding another.**
 
 Scalar settings (`notify_hour`, `logo`, `time_format`, `hourly_rate`,
 `push_subscription`, `hidden_modules`) are a different case: last-write-wins is the
@@ -1414,10 +1440,19 @@ behaviors are easy to break without noticing. What exists and must keep working:
   `today()`/`parseDate()` as a core primitive) formats a Date's LOCAL parts, and it's
   correct in both hemispheres, which is why the calendar's own cell keys use it too.
   A full timestamp (`clock_in`, audit stamps) is a different thing and still uses
-  `toISOString()` — the rule is about truncating an instant to a *day*.
+  `toISOString()` — the rule is about truncating an instant to a *day*. **But
+  truncating a STORED timestamp is the same bug (v501):** the Time Log's From/To
+  filter did `t.clock_in.slice(0,10)`, which is that instant's UTC day, while the row
+  beside it printed the LOCAL day (`fmtDayShort`). An evening punch in Montana was
+  filed under tomorrow, so filtering Aug 4 → Aug 4 hid an entry the app had just drawn
+  as Aug 4, and the header's hours + dollar total — and any "create invoice" selection
+  made from that view — silently left it out. `timeDay(t)` = `ymd(new Date(t.clock_in))`
+  is the single reader now; use it (or `ymd`) for any instant → day.
   `test/dates.test.mjs` pins the behavior under several timezones AND statically
-  rejects any new `new Date()…toISOString().slice(0,10)` in the source, because the
-  bug is one plausible-looking line away and reads fine in review.
+  rejects both shapes — a new `new Date()…toISOString().slice(0,10)` and a
+  `clock_in`/`created_at`/`reminded_at` sliced to a day — because either is one
+  plausible-looking line away and reads fine in review. `test/time.test.mjs` covers
+  the punch clock's own math (elapsed hours across DST, per-entry vs profile rate).
 - **`window.prompt()` is banned — use `askText()`.** It was the entry point for real
   records (a customer name that becomes an invoice) while being unstyled, unreadable on
   a phone, showing the app-lock passcode in clear text, and blocked outright by some

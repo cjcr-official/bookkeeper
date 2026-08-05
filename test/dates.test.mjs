@@ -204,6 +204,22 @@ test('no calendar date is derived from the current instant via UTC', () => {
   ok(offenders.length === 0, 'use ymd()/today() instead:\n      ' + offenders.join('\n      '));
 });
 
+// The other half of the same rule: a STORED timestamp truncated to a day is just as
+// wrong, and it doesn't need `new Date()` to get there. The Time Log's From/To
+// filter sliced clock_in's ISO string, so an evening punch was filed under tomorrow
+// while the row beside it printed today (test/time.test.mjs has the full story).
+test('no stored timestamp is truncated to a day in UTC either', () => {
+  const script = src.slice(src.indexOf('<script>', src.indexOf('</style>')))
+    .replace(/^\s*\/\/.*$/gm, '');
+  // Columns that hold an INSTANT. Date-only columns (date, due, next_date, paid_date)
+  // are bare 'YYYY-MM-DD' strings — slicing those is fine and common.
+  const stamps = 'clock_in|clock_out|created_at|updated_at|reminded_at';
+  const offenders = [...script.matchAll(new RegExp('\\b(?:' + stamps + ')\\b[^;\\n]*?\\.slice\\(\\s*0\\s*,\\s*(?:10|7|4)\\s*\\)', 'g'))]
+    .map(m => m[0].trim());
+  ok(offenders.length === 0,
+     'truncate it with ymd(new Date(ts)) — an ISO slice is the UTC day:\n      ' + offenders.join('\n      '));
+});
+
 test('today() is the single definition, and it is local', () => {
   eq((src.match(/function today\(\)/g) || []).length, 1, 'one today()');
   eq((src.match(/function ymd\(/g) || []).length, 1, 'one ymd()');
