@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **501** (see `version.json` — that file is the source of truth).
+Current version: **502** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -542,7 +542,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Fourteen test suites run the SHIPPED code (they extract functions out of `index.html` by
+Fifteen test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -560,6 +560,7 @@ node test/home.test.mjs        # Home's refresh contract + its fold controls
 node test/loan.test.mjs        # the amortization engine, against closed-form annuities
 node test/budget.test.mjs      # payday projection + which paydays a statement can show
 node test/time.test.mjs        # Time Clock: a punch belongs to its LOCAL day
+node test/a11y.test.mjs        # tappable divs stay operable through every redraw
 ```
 
 `retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
@@ -1406,15 +1407,30 @@ behaviors are easy to break without noticing. What exists and must keep working:
 
 - **`innerHTML` wipes accessibility, and Home is where that showed (v497).**
   `enhanceA11y()` retrofits `role="button"` + `tabindex` onto the app's tappable
-  DIVs (and the keydown handler turns Enter/Space into a click). It runs ONCE over
+  DIVs (and the keydown handler turns Enter/Space into a click). It ran ONCE over
   the static shell, then only via `rerenderCurrentView()` — so anything redrawn by
-  its own renderer keeps whatever the last sweep left. Home is the worst case: all
+  its own renderer kept whatever the last sweep left. Home is the worst case: all
   three login paths call `renderDashboard()` **directly**, never through
   `rerenderCurrentView()`, so the landing page's generated rows had no roles at all
   until the user navigated away and back; the same held for a lazily-expanded widget
   and for every calendar month change. `renderDashCard()` and `renderCalendar()`
-  re-run it on what they just wrote — **do the same in any new render that emits
-  `[onclick]` markup.** Its nested-control guard skips an element containing a real
+  re-run it on what they just wrote.
+  **A MutationObserver now does this for every renderer (v502).** Per-renderer calls
+  were the fix you have to remember each time, and it was still missed everywhere
+  else: typing in the invoice or expense search re-renders that list on every
+  keystroke, so do a filter change, the year scope, a status tab, and every save or
+  delete — all of them came back as bare `onclick` DIVs until the user left the page
+  and returned. Modals that draw their own rows never got a sweep at all, which is
+  why the **notification centre had never been keyboard-reachable**. The observer
+  watches `document.body` for inserted elements and hands each subtree to
+  `enhanceA11y`; it cannot feed itself (it watches `childList`, and `enhanceA11y`
+  only sets attributes), a microtask hop batches one render into one sweep, and the
+  function is idempotent so the explicit calls above just cost a no-op. **Two rules
+  if you touch it:** never add `attributes: true` (that is the self-trigger), and
+  keep `enhanceA11y` checking the ROOT node itself — a row inserted by
+  `list.innerHTML = rows.map(...)` IS the `[onclick]` div, and a descendants-only
+  scan wires the insides of every row and skips the row. `test/a11y.test.mjs` pins
+  both against a fake DOM. Its nested-control guard skips an element containing a real
   control (a button inside a `role=button` hides the inner one from assistive tech);
   it used to skip headings too, which disqualified exactly one shape — the fold
   header (`<div class="card-header" onclick="toggle…"><h3>…</h3>`) — i.e. the
@@ -1464,6 +1480,18 @@ behaviors are easy to break without noticing. What exists and must keep working:
   the id is `modal-ask`, and why `askSettle()` is idempotent. Get this wrong and the
   awaiting call site hangs forever with no error and the sheet already gone from the
   screen. `test/ask.test.mjs` pins all six routes.
+- **Deleting an expense row deletes its receipt file — from every path (v502).**
+  The row is the only reference to the object, so a receipt left behind is
+  unreachable AND still counted against the 1GB storage allowance.
+  `deleteExpense` and the expenses bulk-delete did it; the three paths that
+  delete an expense as a SIDE EFFECT of an invoice — deleting the invoice,
+  bulk-deleting invoices, and removing a billed row from the invoice editor
+  (`syncInvoiceExpenses`) — dropped the row and orphaned the photo. All five
+  call sites (including `saveExpense` replacing a photo) now go through
+  **`removeReceipts(rows)`**, and `test/a11y.test.mjs` fails if a path that
+  deletes an expense doesn't call it, or if anything else calls storage remove
+  directly. It stays fire-and-forget: an orphaned file is waste, not data loss,
+  and must never hold up the delete the user asked for.
 - **Receipt photos are downscaled before upload** (`shrinkReceipt`, ~1600px JPEG q0.8,
   reusing `decodeImageForCrop` so iPhone HEIC works). A camera photo is 3–8MB, which is
   a stalled save on rural cell service and ~15× more of the 1GB storage allowance than

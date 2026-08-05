@@ -4838,7 +4838,7 @@ async function syncInvoiceExpenses(invId, inv, cust) {
   for (const e of existing) {
     if (!keepIds.includes(e.id)) {
       const r = await sb.from('expenses').delete().eq('id', e.id);
-      if (!r.error) cache.expenses = cache.expenses.filter(x=>x.id!==e.id);
+      if (!r.error) { removeReceipts([e]); cache.expenses = cache.expenses.filter(x=>x.id!==e.id); }
     }
   }
 }
@@ -4854,7 +4854,7 @@ async function deleteInvoice(id) {
   // remove linked customer expenses
   const linkedExp = (cache.expenses||[]).filter(e=>e.invoice_id===id);
   for (const e of linkedExp) { await sb.from('expenses').delete().eq('id',e.id); }
-  if (linkedExp.length) cache.expenses = cache.expenses.filter(e=>e.invoice_id!==id);
+  if (linkedExp.length) { removeReceipts(linkedExp); cache.expenses = cache.expenses.filter(e=>e.invoice_id!==id); }
   showToast('Invoice deleted'); renderInvoices(); refreshReconcileIfOpen();
 }
 
@@ -7825,8 +7825,7 @@ async function bulkDelete(){
       const dels = cache.expenses.filter(e=>_bulkSel.has(e.id));
       const { error } = await sb.from('expenses').delete().in('id', ids);
       if (error){ showToast(error.message,'error'); return; }
-      const paths = dels.map(e=>e.receipt_path).filter(Boolean);
-      if (paths.length) sb.storage.from('receipts').remove(paths);
+      removeReceipts(dels);
       const linkedInv = [...new Set(dels.map(e=>e.invoice_id).filter(Boolean))];
       cache.expenses = cache.expenses.filter(e=>!_bulkSel.has(e.id));
       (cache.trips||[]).forEach(t=>{ if(ids.includes(t.expense_id)) t.expense_id=null; });
@@ -7839,7 +7838,7 @@ async function bulkDelete(){
       const linkedTrips = (cache.trips||[]).filter(t=>ids.includes(t.invoice_id));
       if (linkedTrips.length){ await sb.from('trips').delete().in('id', linkedTrips.map(t=>t.id)); cache.trips = cache.trips.filter(t=>!ids.includes(t.invoice_id)); }
       const linkedExp = (cache.expenses||[]).filter(e=>ids.includes(e.invoice_id));
-      if (linkedExp.length){ await sb.from('expenses').delete().in('id', linkedExp.map(e=>e.id)); cache.expenses = cache.expenses.filter(e=>!ids.includes(e.invoice_id)); }
+      if (linkedExp.length){ await sb.from('expenses').delete().in('id', linkedExp.map(e=>e.id)); removeReceipts(linkedExp); cache.expenses = cache.expenses.filter(e=>!ids.includes(e.invoice_id)); }
     }
   } catch(e){ showToast('Bulk delete failed: '+(e.message||e),'error'); return; }
   bulkCancel();
@@ -8335,10 +8334,10 @@ async function saveExpense() {
     const up = await sb.storage.from('receipts').upload(path, f, { upsert:false, contentType:f.type||'image/jpeg' });
     if (up.error) { showToast('Receipt upload failed: '+up.error.message,'error'); return; }
     row.receipt_path = path;
-    if (id) { const old=cache.expenses.find(e=>e.id===id); if(old&&old.receipt_path) sb.storage.from('receipts').remove([old.receipt_path]); }
+    if (id) removeReceipts([cache.expenses.find(e=>e.id===id)]);   // the photo being replaced/cleared
   } else if (pendingReceiptRemove) {
     row.receipt_path = null;
-    if (id) { const old=cache.expenses.find(e=>e.id===id); if(old&&old.receipt_path) sb.storage.from('receipts').remove([old.receipt_path]); }
+    if (id) removeReceipts([cache.expenses.find(e=>e.id===id)]);   // the photo being replaced/cleared
   }
   let err, newId=null;
   if (id) { const r=await sb.from('expenses').update(row).eq('id',id); err=r.error; if(!err){const idx=cache.expenses.findIndex(e=>e.id===id);cache.expenses[idx]={...cache.expenses[idx],...row};} }
@@ -8355,13 +8354,26 @@ async function saveExpense() {
   showToast('Expense saved','success'); closeModal('modal-expense'); renderExpenses(); refreshReconcileIfOpen();
 }
 
+// Deleting an expense row has to delete its receipt file too: the row is the only
+// thing that references the object, so anything left behind is unreachable AND still
+// counted against the storage allowance. deleteExpense and the expenses bulk-delete
+// did this; the three paths that delete an expense as a SIDE EFFECT of an invoice —
+// deleting the invoice, bulk-deleting invoices, and removing a billed row from the
+// invoice editor — dropped the row and left the photo. Fire-and-forget, like the
+// original: a receipt that outlives its row is waste, not data loss, and it must
+// never hold up the delete the user asked for.
+function removeReceipts(expenses) {
+  const paths = (expenses || []).map(e => e && e.receipt_path).filter(Boolean);
+  if (paths.length) sb.storage.from('receipts').remove(paths);
+}
+
 async function deleteExpense(id) {
   if (!confirm('Delete this expense?')) return;
   const exp = (cache.expenses||[]).find(e=>e.id===id);
   const linkedInvId = exp ? exp.invoice_id : null;
   const {error} = await sb.from('expenses').delete().eq('id',id);
   if (error) { showToast(error.message,'error'); return; }
-  if (exp && exp.receipt_path) sb.storage.from('receipts').remove([exp.receipt_path]);
+  removeReceipts([exp]);
   cache.expenses = cache.expenses.filter(e=>e.id!==id);
   (cache.trips||[]).forEach(t=>{ if(t.expense_id===id) t.expense_id=null; });
   // if this expense was billed on an invoice, recompute that invoice's totals
@@ -12498,7 +12510,17 @@ document.querySelectorAll('.modal-overlay').forEach(m=>m.addEventListener('click
 let _a11yUid = 0;
 function enhanceA11y(root) {
   root = root || document;
-  root.querySelectorAll('label:not([for])').forEach(lb => {
+  // querySelectorAll never returns the root itself, and the root IS the control in
+  // the commonest case there is: a renderer sets `list.innerHTML = rows.map(...)`,
+  // so every inserted node is a tappable `<div class="m-card" onclick=…>` at the top
+  // of its own subtree. Scanning descendants only would wire the insides of each row
+  // and skip the row.
+  const scope = sel => {
+    const out = [...root.querySelectorAll(sel)];
+    if (root.nodeType === 1 && root.matches && root.matches(sel)) out.unshift(root);
+    return out;
+  };
+  scope('label:not([for])').forEach(lb => {
     if (lb.querySelector('input,select,textarea')) return;   // wrapping label — already tied
     let n = lb.nextElementSibling, ctrl = null;
     while (n && !ctrl) {
@@ -12511,7 +12533,7 @@ function enhanceA11y(root) {
     if (!ctrl.id) ctrl.id = 'a11y-f' + (++_a11yUid);
     lb.setAttribute('for', ctrl.id);
   });
-  root.querySelectorAll('[onclick]').forEach(el => {
+  scope('[onclick]').forEach(el => {
     if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA|LABEL)$/.test(el.tagName)) return;
     if (el.hasAttribute('role') || el.hasAttribute('tabindex')) return;
     // A nested REAL control means this is a container, not a control — wiring it
@@ -12548,8 +12570,35 @@ document.addEventListener('keydown', e => {
   }
 });
 // Wire up the static shell + all static modals once the DOM is parsed (this script
-// runs at the end of <body>); re-renders re-run enhanceA11y() via rerenderCurrentView().
+// runs at the end of <body>).
 enhanceA11y(document);
+
+// …and keep it wired as the app redraws itself. enhanceA11y only ever ran over the
+// static shell and, through rerenderCurrentView(), on page navigation and rotation —
+// so anything a renderer redrew IN PLACE came back as bare onclick <div>s: no role,
+// no tab stop, nothing announced. That is most of the app in normal use: typing in
+// the invoice or expense search, changing a filter or the year scope, saving or
+// deleting a record (every one of those re-renders its list), and every modal that
+// draws its own rows — the notification centre's rows have never been reachable by
+// keyboard at all. v497 fixed Home and the calendar by adding a call to each
+// renderer; the same hole was still open in a dozen more, which is the argument for
+// doing it in ONE place instead of remembering it N times. So: watch for inserted
+// elements and enhance exactly those subtrees. It can't feed itself — the observer
+// watches childList, while enhanceA11y only sets attributes — and it is idempotent,
+// so a subtree enhanced by its renderer's own explicit call costs one no-op pass.
+// A microtask hop batches a whole render into a single sweep.
+const _a11yPending = new Set();
+let _a11yQueued = false;
+new MutationObserver(muts => {
+  for (const m of muts) for (const n of m.addedNodes) if (n.nodeType === 1) _a11yPending.add(n);
+  if (_a11yQueued || !_a11yPending.size) return;
+  _a11yQueued = true;
+  Promise.resolve().then(() => {
+    _a11yQueued = false;
+    const nodes = [..._a11yPending]; _a11yPending.clear();
+    nodes.forEach(n => { try { if (n.isConnected) enhanceA11y(n); } catch (e) {} });
+  });
+}).observe(document.body, { childList: true, subtree: true });
 
 // ====== BOOT ======
 async function boot() {
