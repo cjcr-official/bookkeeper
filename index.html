@@ -1497,13 +1497,15 @@ tr.bulk-sel{background:var(--accent-bg)}
 
       <!-- DASHBOARD -->
       <div id="page-dashboard" class="page active">
-        <!-- Every section can be switched off, and switching ALL of them off left Home
-             completely blank with no hint of why. Display is toggled from
-             applyModuleVisibility(), so no data-module tag here. -->
+        <!-- Home draws nothing when none of the six sections it reads from is on —
+             which is NOT the same as "every section is off": Time Clock and Bank
+             Statements have no surface here at all, so running only those left this
+             page completely blank with no hint of why. Display + copy are both
+             driven from applyModuleVisibility(), so no data-module tag here. -->
         <div class="card" id="dash-all-off" style="display:none;text-align:center;padding:2rem 1.25rem">
           <i class="ti ti-layout-grid" style="font-size:34px;color:var(--accent)"></i>
-          <h3 style="margin:.6rem 0 .3rem;font-size:16px">Every section is switched off</h3>
-          <p style="font-size:13px;color:var(--text3);margin-bottom:1rem;line-height:1.5">Bookkeeper is modular — turn on just the parts you want (invoices, expenses, mileage, the calendar, and the rest) and leave the others off.</p>
+          <h3 id="dash-off-title" style="margin:.6rem 0 .3rem;font-size:16px">Every section is switched off</h3>
+          <p id="dash-off-sub" style="font-size:13px;color:var(--text3);margin-bottom:1rem;line-height:1.5">Bookkeeper is modular — turn on just the parts you want (invoices, expenses, mileage, the calendar, and the rest) and leave the others off.</p>
           <button class="btn btn-primary" onclick="showPage('settings',null);showSettingsSection('sections')"><i class="ti ti-settings"></i> Choose your sections</button>
         </div>
         <div class="overview" data-module-all="invoicing expenses mileage">
@@ -3392,6 +3394,12 @@ const MODULES = [
   { id:'statements', label:'Statements',           icon:'ti-file-dollar',  desc:'Bank statements and reconciliation.',                pages:['accounts'] },
   { id:'loan',       label:'Loan Calculator',      icon:'ti-calculator',   desc:'Estimate loan payments and interest.',               pages:['loan'] },
 ];
+// The sections Home actually draws from — every data-module id used inside
+// #page-dashboard. `time` and `statements` are deliberately absent: they own a tab
+// and nothing else, so Home has no surface for them. That's why the empty-state card
+// can't key off "every module is hidden" — running ONLY the Time Clock left Home
+// blank with the explanation card still suppressed.
+const HOME_MODULES = ['invoicing','expenses','mileage','jobs','budget','loan'];
 // The hidden set is read constantly — nav layout, every gated dashboard card and
 // form field, each render pass — and re-reading localStorage + re-parsing JSON +
 // re-validating on every one of those calls was pure waste. It only ever changes
@@ -3435,10 +3443,14 @@ function applyModuleVisibility() {
     el.style.display = el.dataset.moduleAll.split(/\s+/).every(id => hid.includes(id)) ? 'none' : '';
   });
   layoutBottomNav();   // recompute which tabs are on the bar vs behind More
-  // With everything off, Home has nothing left to draw — say so rather than
-  // showing an empty screen the user can't explain.
+  // With nothing left for Home to draw, say so rather than showing an empty screen
+  // the user can't explain.
   const allOff = document.getElementById('dash-all-off');
-  if (allOff) allOff.style.display = MODULES.every(m => hid.includes(m.id)) ? '' : 'none';
+  if (allOff) {
+    const empty = HOME_MODULES.every(id => hid.includes(id));
+    allOff.style.display = empty ? '' : 'none';
+    if (empty) paintHomeEmptyCard(hid);
+  }
   // A Settings panel whose section just went off is still the .active one on
   // desktop, which would leave the panel column empty. Fall back to Appearance,
   // which can never be hidden.
@@ -3455,6 +3467,25 @@ function applyModuleVisibility() {
     syncReportTabActive();
   }
   if (isPageHidden(currentPage)) showPage('dashboard', null);
+}
+// Home's empty state says two different things. With EVERY section off, the app is
+// switched off and the card explains the model. With sections still on that simply
+// don't draw here (Time Clock, Bank Statements), telling the user "every section is
+// switched off" would be plainly false — name what they're running and where it
+// lives instead, so a blank Home reads as a choice rather than a broken screen.
+function paintHomeEmptyCard(hid) {
+  const t = document.getElementById('dash-off-title'), s = document.getElementById('dash-off-sub');
+  if (!t || !s) return;
+  const on = MODULES.filter(m => !hid.includes(m.id)).map(m => m.label);
+  if (!on.length) {
+    t.textContent = 'Every section is switched off';
+    s.textContent = 'Bookkeeper is modular — turn on just the parts you want (invoices, expenses, mileage, the calendar, and the rest) and leave the others off.';
+  } else {
+    const names = on.length > 1 ? on.slice(0, -1).join(', ') + ' and ' + on[on.length - 1] : on[0];
+    t.textContent = 'Nothing to show on Home';
+    s.textContent = names + (on.length > 1 ? ' have their own tabs' : ' has its own tab')
+      + ' and nothing else is switched on, so there is nothing to put here. Turn on Invoices, Expenses, Mileage, the Calendar, Budget or Loan and this page fills in.';
+  }
 }
 function toggleModule(id) {
   // Build a NEW array rather than splicing — getHiddenModules() hands back the live
@@ -4000,7 +4031,7 @@ function renderCategoryBreakdown(){
     const rows = c.items.slice().sort((a,b)=>parseFloat(b.amount||0)-parseFloat(a.amount||0)).map(e=>
       `<div class="cat-detail-row">
         <span class="cdr-date">${fmtDate(e.date)}</span>
-        <span class="cdr-name">${esc(e.vendor||e.note||'—')}</span>
+        <span class="cdr-name">${esc(e.vendor||e.description||'—')}</span>
         <span class="cdr-amt">${fmt(e.amount)}</span>
       </div>`).join('');
     return `<div class="cat-row" onclick="toggleCatRow(this)">

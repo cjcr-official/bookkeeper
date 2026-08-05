@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **497** (see `version.json` — that file is the source of truth).
+Current version: **498** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -724,10 +724,17 @@ its own:
   panel. On desktop the panel column is `.active`-driven, so `applyModuleVisibility`
   clearing the inline style hands it straight back to that CSS; if the *active* panel
   is the one that just went off, it falls back to Appearance (which can never hide).
-- **Switching every section off** leaves Home with nothing to draw, which read as a
-  broken app. `#dash-all-off` explains it and links to Settings → Sections. Its
-  display is JS-managed from `applyModuleVisibility` — that's why it has no
-  `data-module` tag.
+- **Leaving Home with nothing to draw** read as a broken app, so `#dash-all-off`
+  explains it and links to Settings → Sections. Its display is JS-managed from
+  `applyModuleVisibility` — that's why it has no `data-module` tag. **The trigger is
+  `HOME_MODULES`, not "every module is hidden" (v498):** `time` and `statements` own
+  a tab and draw NOTHING on Home, so running only the Time Clock left the page blank
+  with the explanation still suppressed — the exact failure the card exists to
+  prevent. `HOME_MODULES` is the six ids used inside `#page-dashboard`, and
+  `test/modules.test.mjs` pins it against the markup: **put a new section on Home and
+  you must add its id there**, or its blank state goes unexplained. `paintHomeEmptyCard`
+  also switches the copy — telling someone running the Time Clock that "every section
+  is switched off" is plainly false, so it names what they have on and where it lives.
 
 `test/modules.test.mjs` pins all of this, including a static check that every module
 id used in markup or `isModuleHidden()` actually exists, and a functional harness that

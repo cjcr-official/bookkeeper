@@ -392,10 +392,42 @@ test('customer expenses on an invoice follow the Expenses section', () => {
   ok(/id="inv-exp-wrap"/.test(src) && /function saveInvoice/.test(src));
 });
 
-test('Home explains itself when every section is off', () => {
-  ok(/id="dash-all-off"/.test(src), 'no all-sections-off empty state on Home');
-  ok(/MODULES\.every\(m => hid\.includes\(m\.id\)\)/.test(extract('applyModuleVisibility')),
-    'applyModuleVisibility does not toggle the all-off empty state');
+test('Home explains itself whenever it has nothing to draw', () => {
+  ok(/id="dash-all-off"/.test(src), 'no empty state on Home');
+  // NOT "every module is hidden": Time Clock and Bank Statements own a tab and
+  // draw nothing on Home, so running only those left the page blank AND kept the
+  // explanation suppressed — the exact failure this card exists to prevent.
+  const body = extract('applyModuleVisibility');
+  ok(/HOME_MODULES\.every\(id => hid\.includes\(id\)\)/.test(body),
+    'the empty state should key off the sections Home actually draws from');
+  // And that list must be exactly the module ids used inside #page-dashboard.
+  const home = src.slice(src.indexOf('<div id="page-dashboard"'), src.indexOf('id="page-invoices"'));
+  const used = new Set();
+  for (const m of home.matchAll(/data-module(?:-all)?="([^"]+)"/g))
+    m[1].split(/\s+/).forEach(x => used.add(x));
+  const declared = extractConst('HOME_MODULES').match(/'([a-z]+)'/g).map(s => s.slice(1, -1));
+  eq(declared.slice().sort(), [...used].sort(),
+    'HOME_MODULES must match the sections Home draws from — add the id here when you '
+    + 'put a new section on Home, or its blank state goes unexplained');
+  // The copy has to be able to tell the two cases apart.
+  ok(/id="dash-off-title"/.test(src) && /id="dash-off-sub"/.test(src), 'the copy needs its hooks');
+  // Run the shipped copy-painter against a stub document for both cases.
+  const say = hidden => {
+    const els = { 'dash-off-title': { textContent: '' }, 'dash-off-sub': { textContent: '' } };
+    new Function('document', 'hid', `
+      ${extractConst('MODULES')}
+      ${extract('paintHomeEmptyCard')}
+      paintHomeEmptyCard(hid);
+    `)({ getElementById: id => els[id] || null }, hidden);
+    return els['dash-off-title'].textContent + ' | ' + els['dash-off-sub'].textContent;
+  };
+  const allIds = new Function(`${extractConst('MODULES')} return MODULES.map(m => m.id);`)();
+  ok(/Every section is switched off/.test(say(allIds)), 'everything off should say so');
+  const timeOnly = say(allIds.filter(id => id !== 'time'));
+  ok(/Nothing to show on Home/.test(timeOnly), 'a section that draws nothing here is not "every section off"');
+  ok(/Time Clock has its own tab/.test(timeOnly), 'and the card should name it: ' + timeOnly);
+  ok(/Time Clock and Statements have their own tabs/
+    .test(say(allIds.filter(id => id !== 'time' && id !== 'statements'))), 'two of them read naturally');
 });
 
 // --- "Paid from" tags must survive a section being switched off ---------------
