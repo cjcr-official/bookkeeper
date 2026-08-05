@@ -92,7 +92,8 @@ function buildNotifSandbox(hidden, cache) {
     ${extract('setHiddenModulesLS')}
     ${extract('isModuleHidden')}
     const NOTIF_SOON_DAYS = 3;
-    const today = () => new Date().toISOString().slice(0,10);
+    ${extract('ymd')}
+    ${extract('today')}
     ${extract('_daysAhead')}
     const effectiveStatus = i => i.status;
     const balanceDue = i => i.total || 0;
@@ -303,6 +304,29 @@ test('Home\'s calendar surfaces linger while ANY of their sources is on', () => 
   // The two renderers back that up: only the calendar reads budget bills.
   ok(/isModuleHidden\('budget'\)/.test(extract('calItemsByDate')), 'calendar should draw budget bills');
   ok(!/isModuleHidden\('budget'\)/.test(extract('renderUpcoming')), 'Upcoming has no budget rows to gate');
+});
+
+test('a folded Home widget is not drawn, and unfolding it draws it', () => {
+  // The widgets default to COLLAPSED and a collapsed card's body is display:none,
+  // so drawing one is a full pass over the ledgers that nobody can see. They're
+  // rendered lazily instead — which only works if the SAVED fold state is applied
+  // before the draw pass, and if expanding a card draws it right then. Get the
+  // order wrong and the failure is silent: an expanded card comes back empty.
+  const body = extract('renderDashboard');
+  const applyAt = body.indexOf('applyDashCollapsed()');
+  const firstDraw = body.indexOf('renderDashCard(');
+  ok(applyAt > -1 && firstDraw > -1, 'renderDashboard should apply fold state, then draw');
+  ok(applyAt < firstDraw, 'applyDashCollapsed() must run BEFORE the widgets are drawn');
+  for (const id of ['dash-card-flow', 'dash-card-spend', 'dash-card-cat', 'dash-card-up'])
+    ok(body.includes("renderDashCard('" + id + "')"), id + ' should be drawn lazily');
+
+  const gate = extract('renderDashCard');
+  ok(/classList\.contains\('collapsed'\)/.test(gate), 'renderDashCard should skip a folded card');
+  ok(/if \(!collapsed\) renderDashCard\(card\.id\)/.test(extract('toggleDashCard')),
+    'unfolding a card must draw it');
+  // The calendar is opened by inline display, not the .collapsed class, and no write
+  // path redraws it — so renderDashboard has to refresh it while it's open.
+  ok(/calendarOpen\(\)\) renderCalendar\(\)/.test(body), 'an open calendar should be refreshed');
 });
 
 test('a topbar action never writes into a switched-off section', () => {

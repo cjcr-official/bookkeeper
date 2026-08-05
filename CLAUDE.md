@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **495** (see `version.json` — that file is the source of truth).
+Current version: **496** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -530,7 +530,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Nine test suites run the SHIPPED code (they extract functions out of `index.html` by
+Ten test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -543,6 +543,7 @@ node test/retention.test.mjs   # account deletion actually deletes every table
 node test/reminders.test.mjs   # the Worker's Denver wall-clock → UTC reminder math
 node test/recurring.test.mjs   # unattended auto-posting: no silent skips, no duplicates
 node test/forms.test.mjs       # a save must not blank a select value it didn't recognise
+node test/dates.test.mjs       # "what day is it" — local calendar dates, never UTC
 ```
 
 `retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
@@ -991,6 +992,17 @@ minute until the cache refreshes.
   Income-vs-Expenses bar chart + collapsible Reports. (The Recent
   Invoices/Expenses cards were removed in v452 — the Invoices/Expenses tabs
   hold the full lists.)
+  **The collapsible widgets are drawn LAZILY (v496)** — each one (cash flow, spend
+  heat grid, category donut, Upcoming) is a full pass over the ledgers, they all
+  default to *collapsed*, and a collapsed card's body is `display:none`, so every
+  `renderDashboard()` was building four things nobody could see. `renderDashboard`
+  now calls `applyDashCollapsed()` **first** and then `renderDashCard(id)` per card,
+  which no-ops on a folded one; `toggleDashCard()` draws a card the moment it's
+  unfolded. **Order is load-bearing** — draw before the saved fold state is applied
+  and an expanded card comes back empty, silently. The Calendar is NOT part of this
+  (it's opened by inline `display`, not the `.collapsed` class); it's refreshed by
+  `renderDashboard` whenever `calendarOpen()`, since no write path redraws it and a
+  paid invoice used to leave a stale chip on its old due date.
 - **Jobs / Calendar:** its own switchable section (`jobs`, no nav tab — see
   Sections). Add jobs (title + date + optional time + optional
   customer link + optional `remind_minutes` push reminder). The Calendar card
@@ -1320,6 +1332,24 @@ behaviors are easy to break without noticing. What exists and must keep working:
 
 ## Gotchas learned the hard way
 
+- **A calendar date is read with `ymd()`/`today()`, NEVER `toISOString()` (v496).**
+  Every date in this app is a bare `'YYYY-MM-DD'` string a human typed in Montana,
+  but `today()` derived that string in UTC — so from 6pm MDT (5pm MST) until
+  midnight, the app thought it was TOMORROW. Nothing errored; it just quietly
+  disagreed with the wall clock for the last third of every day: an invoice due
+  today rendered (and pushed) as **overdue**, tonight's job showed as a **missed
+  event** in the bell, the calendar's today-ring and the **Today** button landed on
+  tomorrow, and an expense logged after supper **saved with tomorrow's date**. On
+  New Year's Eve it moved the *year*, against YTD totals that bucket by local year.
+  `parseDate()` has always parsed at LOCAL NOON to dodge exactly this in the other
+  direction — `today()` was the hole in the same wall. `ymd(d)` (now declared beside
+  `today()`/`parseDate()` as a core primitive) formats a Date's LOCAL parts, and it's
+  correct in both hemispheres, which is why the calendar's own cell keys use it too.
+  A full timestamp (`clock_in`, audit stamps) is a different thing and still uses
+  `toISOString()` — the rule is about truncating an instant to a *day*.
+  `test/dates.test.mjs` pins the behavior under several timezones AND statically
+  rejects any new `new Date()…toISOString().slice(0,10)` in the source, because the
+  bug is one plausible-looking line away and reads fine in review.
 - **`window.prompt()` is banned — use `askText()`.** It was the entry point for real
   records (a customer name that becomes an invoice) while being unstyled, unreadable on
   a phone, showing the app-lock passcode in clear text, and blocked outright by some

@@ -1252,6 +1252,9 @@ input,select,textarea{border-radius:var(--radius-sm)}
   #dash-card-up{grid-area:up}
   #dash-card-cal{grid-area:cal;align-self:start}
   #dash-card-reports{grid-area:rep}
+  /* Not in the template areas (it's the everything-is-off fallback), so it would be
+     auto-placed into a single column and read as a half-width orphan. */
+  #dash-all-off{grid-column:1/-1}
   /* A collapsed card sits at its natural header height at the top of its track
      instead of stretching to fill it — so a folded Category card doesn't balloon
      across the two rows it spans, and collapsed widgets stay visually uniform. */
@@ -2790,12 +2793,20 @@ function fmtTime(t) {
   const ap = H < 12 ? 'AM' : 'PM'; let h = H % 12; if (h === 0) h = 12;
   return h + ':' + M + ' ' + ap;
 }
-function today() { return new Date().toISOString().slice(0,10); }
+// A clock instant → the LOCAL calendar date, as 'YYYY-MM-DD'. Never toISOString():
+// that formats in UTC, so west of Greenwich every evening reads as tomorrow. In
+// Montana (UTC-6/-7) `new Date().toISOString().slice(0,10)` flipped to the next day
+// at 6pm — which made today's invoice "overdue", today's job a "missed event", the
+// calendar ring land on tomorrow, and an expense logged after supper save with
+// tomorrow's date. This is the same bug parseDate() already guards from the other
+// direction; every "what day is it" read goes through here.
+function ymd(d){ const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function today() { return ymd(new Date()); }
 // New-invoice due date = issue date + the user's payment-terms window (default 30 days).
 function invDefaultDue() {
   const n = parseInt(profile && profile.invoice_due_days, 10);
   const days = isNaN(n) ? 30 : n;
-  const d = new Date(); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10);
+  const d = new Date(); d.setDate(d.getDate()+days); return ymd(d);
 }
 // Parse a date-only 'YYYY-MM-DD' string at LOCAL noon so getFullYear()/getMonth()
 // never roll back a day in negative-UTC timezones (e.g. Montana). new Date('2026-01-01')
@@ -3711,15 +3722,36 @@ function renderDashboard() {
   document.getElementById('stat-outstanding').textContent = fmt(outstanding);
   renderTaxCard(profit);
 
-  drawCashFlow();
-  renderSpendMonth();
-  renderCategoryBreakdown();
   renderDashMileage();
 
-  renderUpcoming();
+  // The widgets default to COLLAPSED, and a collapsed card's body is display:none —
+  // so building its chart / heat grid / donut is a full pass over the ledgers whose
+  // result nobody can see. Apply the saved fold state FIRST, then draw only what's
+  // open; toggleDashCard() draws a card the moment it's expanded.
   applyDashCollapsed();
+  renderDashCard('dash-card-flow');
+  renderDashCard('dash-card-spend');
+  renderDashCard('dash-card-cat');
+  renderDashCard('dash-card-up');
+  // The calendar isn't collapsible (it's opened by inline display, not the .collapsed
+  // class) and nothing that calls renderDashboard() redraws it — so paying an invoice
+  // with the calendar open left a stale chip sitting on its old due date.
+  if (calendarOpen()) renderCalendar();
   // Reports render on demand when the collapsible card is opened (see toggleReports)
 }
+
+// Draw one lazily-rendered dashboard widget, but only when it's actually unfolded.
+// (An if/else chain rather than a lookup table on purpose: renderDashboard() must
+// never depend on a top-level const declared further down the file.)
+function renderDashCard(id) {
+  const card = document.getElementById(id);
+  if (!card || card.classList.contains('collapsed')) return;
+  if (id === 'dash-card-flow') drawCashFlow();
+  else if (id === 'dash-card-spend') renderSpendMonth();
+  else if (id === 'dash-card-cat') renderCategoryBreakdown();
+  else if (id === 'dash-card-up') renderUpcoming();
+}
+function calendarOpen() { const b = document.getElementById('calendar-body'); return !!b && b.style.display !== 'none'; }
 
 // ══ ORIGIN-STYLE DASHBOARD WIDGETS ══
 // Dependency-free inline SVG. Income is always green, expenses red (house rule).
@@ -3820,12 +3852,22 @@ function drawCashFlow(){
     if (vline){ vline.setAttribute('x1',xAt(i)); vline.setAttribute('x2',xAt(i)); vline.style.opacity='1'; }
   };
   const hide = () => { tip.style.opacity='0'; if (vline) vline.style.opacity='0'; };
+  // Touch: the handler used to preventDefault on a non-passive touchstart, which
+  // cancels the SCROLL that gesture was starting — the chart is a full-width card
+  // on a phone, so a thumb landing on it pinned the page. Show passively instead
+  // (scrolling keeps working) and let the tooltip linger, then fade, on release.
+  let tipTimer = null;
+  const showTouch = i => { clearTimeout(tipTimer); show(i); };
+  const hideSoon = () => { clearTimeout(tipTimer); tipTimer = setTimeout(hide, 2200); };
   svg.querySelectorAll('.ac-hit').forEach(r=>{
     const i = +r.dataset.i;
     r.addEventListener('mouseenter', ()=>show(i));
     r.addEventListener('mousemove', ()=>show(i));
-    r.addEventListener('touchstart', (e)=>{ e.preventDefault(); show(i); }, {passive:false});
+    r.addEventListener('touchstart', ()=>showTouch(i), {passive:true});
+    r.addEventListener('touchmove',  ()=>showTouch(i), {passive:true});
   });
+  svg.addEventListener('touchend', hideSoon, {passive:true});
+  svg.addEventListener('touchcancel', hideSoon, {passive:true});
   svg.addEventListener('mouseleave', hide);
 }
 
@@ -4130,7 +4172,7 @@ function renderUpcoming() {
   if (!el) return;
   const todayStr = today();
   const h = new Date(); h.setDate(h.getDate()+30);
-  const horizon = h.toISOString().slice(0,10);
+  const horizon = ymd(h);
   const items = [];
   const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses');
   (cache.recurring||[]).forEach(r => {
@@ -4223,7 +4265,7 @@ const NOTIF_SOON_DAYS = 3;               // "coming up" horizon for due/schedule
 let _notifCache = [];                    // last-built list, indexed by openNotifPane()
 let _notifFgShown = false;               // did we already auto-open the pane this foreground?
 
-function _daysAhead(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function _daysAhead(n){ const d=new Date(); d.setDate(d.getDate()+n); return ymd(d); }
 
 function buildNotifications() {
   const t = today(), soon = _daysAhead(NOTIF_SOON_DAYS);
@@ -5574,7 +5616,7 @@ document.addEventListener('visibilitychange', () => {
 // rounding — matches the Mileage page). Hidden with the Mileage module.
 function renderDashMileage() {
   const el = document.getElementById('stat-miles'); if (!el) return;
-  const yr = new Date().toISOString().slice(0,4);
+  const yr = today().slice(0,4);
   const yearMiles = (cache.trips || [])
     .filter(t => (t.date||'').slice(0,4) === yr)
     .reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
@@ -5585,8 +5627,8 @@ function renderMileage() {
   renderTracker();
   const all = cache.trips;
   const now = new Date();
-  const ym = now.toISOString().slice(0,7);
-  const yr = now.toISOString().slice(0,4);
+  const ym = ymd(now).slice(0,7);
+  const yr = ymd(now).slice(0,4);
   // invoice mileage now lives as linked trips in the log, so just sum the trips
   const monthMiles = all.filter(t=>(t.date||'').slice(0,7)===ym).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
   const yearMiles = all.filter(t=>(t.date||'').slice(0,4)===yr).reduce((s,t)=>s+parseFloat(t.total_miles||0),0);
@@ -6796,7 +6838,7 @@ async function savePayScheduleObj(sched, label){
 }
 
 // ── Actual paycheck amounts (what you were really paid), keyed by payday date ──
-function ymd(d){ const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+// (ymd() now lives with today()/parseDate up top — it's a core date primitive.)
 function paycheckAmounts(){ return (profile && profile.paycheck_amounts) || {}; }
 function getPaycheckAmount(dateKey){ const v=paycheckAmounts()[dateKey]; return v==null?null:parseFloat(v); }
 async function savePaycheckAmount(dateKey, amount){
@@ -7236,7 +7278,7 @@ let calCursor = (() => { const d = new Date(); d.setDate(1); return d; })();
 let calSelectedDate = null;
 
 function calNavMonth(delta) { calCursor.setMonth(calCursor.getMonth()+delta); calSelectedDate=null; renderCalendar(); }
-function calNavToday()     { const d=new Date(); calCursor=new Date(d.getFullYear(),d.getMonth(),1); calSelectedDate=d.toISOString().slice(0,10); renderCalendar(); }
+function calNavToday()     { const d=new Date(); calCursor=new Date(d.getFullYear(),d.getMonth(),1); calSelectedDate=ymd(d); renderCalendar(); }
 
 function calItemsByDate() {
   const out = {};
@@ -7305,10 +7347,10 @@ function renderCalendar() {
   const weekdays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let html = weekdays.map(d => `<div class="cal-weekday">${d}</div>`).join('');
 
+  const cap = (window.innerWidth<=768) ? 2 : 3;
   const cell = (day, ds, otherMonth) => {
     const items = byDate[ds] || [];
     const cls = 'cal-cell' + (otherMonth?' other-month':'') + (ds===todayStr?' today':'') + (ds===calSelectedDate?' selected':'');
-    const cap = (window.innerWidth<=768) ? 2 : 3;
     const chips = items.slice(0,cap).map(it =>
       `<div class="cal-cell-job ${it.kind} ${it.done?'done':''}" onclick="event.stopPropagation();${it.onclick}" title="${esc(it.label)}">${it.time?esc(fmtTime(it.time))+' ':''}${esc(it.label)}</div>`
     ).join('');
@@ -7316,22 +7358,24 @@ function renderCalendar() {
     return `<div class="${cls}" onclick="calPickDay('${ds}')"><span class="cal-cell-date">${day}</span>${chips}${more}</div>`;
   };
 
+  // Cell keys are LOCAL dates (ymd), matching every date string in the ledger.
   for (let i=0; i<firstDow; i++) {
     const d = new Date(y, m, -firstDow + i + 1);
-    html += cell(d.getDate(), d.toISOString().slice(0,10), true);
+    html += cell(d.getDate(), ymd(d), true);
   }
   for (let d=1; d<=daysInMonth; d++) {
-    const ds = new Date(y, m, d).toISOString().slice(0,10);
-    html += cell(d, ds, false);
+    html += cell(d, ymd(new Date(y, m, d)), false);
   }
   const used = firstDow + daysInMonth;
   const trailing = (7 - (used % 7)) % 7;
   for (let i=1; i<=trailing; i++) {
     const d = new Date(y, m+1, i);
-    html += cell(d.getDate(), d.toISOString().slice(0,10), true);
+    html += cell(d.getDate(), ymd(d), true);
   }
   grid.innerHTML = html;
-  renderCalDayList();
+  // Hand the day list the map we just built — recomputing it re-amortizes every
+  // loan and re-scans every ledger a second time for the same paint.
+  renderCalDayList(byDate);
 }
 
 function calPickDay(ds) {
@@ -7345,12 +7389,12 @@ function calPickDay(ds) {
   renderCalendar();
 }
 
-function renderCalDayList() {
+function renderCalDayList(byDateIn) {
   const el = document.getElementById('cal-day-jobs');
   if (!el) return;
   const canAddJob = !isModuleHidden('jobs');
   if (!calSelectedDate) { el.innerHTML = '<div style="font-size:11px;color:var(--text3);text-align:center;padding:.5rem">'+(canAddJob?'Tap a day to see/add events · tap it again to add a new event':'Tap a day to see what falls on it')+'</div>'; return; }
-  const byDate = calItemsByDate();
+  const byDate = byDateIn || calItemsByDate();
   const items = byDate[calSelectedDate] || [];
   const heading = new Date(calSelectedDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric'});
   const esc = escHtml;
@@ -8312,6 +8356,9 @@ function toggleDashCard(header){
   const card = header.closest('.card'); if (!card) return;
   const collapsed = card.classList.toggle('collapsed');
   try { const st = JSON.parse(lsGet('bk-dash-collapsed')||'{}'); if (card.id) st[card.id]=collapsed; lsSet('bk-dash-collapsed', JSON.stringify(st)); } catch(e){}
+  // Widgets are drawn lazily (see renderDashboard), so unfolding one is when it
+  // actually gets its content.
+  if (!collapsed) renderDashCard(card.id);
 }
 function applyDashCollapsed(){
   let st = {}; try { st = JSON.parse(lsGet('bk-dash-collapsed')||'{}'); } catch(e){}
@@ -8354,7 +8401,7 @@ function toggleReports() {
 function toggleCalendar() {
   const body = document.getElementById('calendar-body');
   const chev = document.getElementById('calendar-chevron');
-  const open = body.style.display !== 'none';
+  const open = calendarOpen();
   body.style.display = open ? 'none' : 'block';
   if (chev) chev.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
   if (!open) renderCalendar();
@@ -9482,7 +9529,7 @@ async function plaidCheckYear() {
     // The 12 full months ending LAST month — the current month is mostly pending.
     const months = [];
     const d = new Date(); d.setDate(1);
-    for (let k = 12; k >= 1; k--) { const x = new Date(d); x.setMonth(x.getMonth() - k); months.push(x.toISOString().slice(0, 7)); }
+    for (let k = 12; k >= 1; k--) { const x = new Date(d); x.setMonth(x.getMonth() - k); months.push(ymd(x).slice(0, 7)); }
     // Pull one month either side of the reported window as well: a record dated at
     // the very edge of the range clears on the neighbouring statement, and without
     // that month in hand its own month gets reported short (the July-30th /
