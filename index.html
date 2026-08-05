@@ -6241,7 +6241,7 @@ async function deleteTimeRow(id, ev) {        // from a list-row trash button
 let _selLoan = null;          // open loan id (null = list view)
 let _loanCalCursor = null;    // month shown in the detail calendar
 let _loanSelDay = null;       // tapped calendar day (YYYY-MM-DD) showing its amount
-function loanSelDay(ds) { _loanSelDay = (_loanSelDay === ds) ? null : ds; renderLoan(); }
+function loanSelDay(ds) { _loanSelDay = (_loanSelDay === ds) ? null : ds; if (!repaintLoanCal()) renderLoan(); }
 function loanNum(v){ const n = parseFloat(v); return isFinite(n) ? n : 0; }
 
 // Rate changes (adjustable-rate loans). Each step = {month, date, rate}. Kept as
@@ -6448,6 +6448,11 @@ function renderLoan() {
   const loan = _selLoan ? (cache.loans || []).find(l => l.id === _selLoan) : null;
   if (loan) renderLoanDetail(body, loan);
   else { _selLoan = null; renderLoanList(body); }
+  // The whole page is innerHTML, and it's re-rendered by its OWN actions (opening a
+  // loan, saving a payment, going back) — none of which go through
+  // rerenderCurrentView(), which is the only other thing that runs enhanceA11y. So
+  // every tappable row here lost its role the moment the user touched the tab.
+  enhanceA11y(body);
 }
 function openLoanDetail(id) { _selLoan = id; _loanCalCursor = null; _loanSelDay = null; try { window.scrollTo(0, 0); } catch(e){} renderLoan(); }
 function backToLoanList() { _selLoan = null; _loanSelDay = null; renderLoan(); }
@@ -6549,59 +6554,7 @@ function renderLoanDetail(body, loan) {
     const base = new Date();
     _loanCalCursor = new Date(base.getFullYear(), base.getMonth(), 1);
   }
-  const cy = _loanCalCursor.getFullYear(), cm = _loanCalCursor.getMonth();
-  const ymPref = cy + '-' + String(cm + 1).padStart(2, '0');
-  // Real recorded payments show as PAID (green); the forward projection fills in the
-  // UPCOMING dots — so the calendar never again dots a future month as already paid.
-  const byDay = {};
-  loanPays(loan).forEach(p => { if (p.date && p.date.slice(0, 7) === ymPref) byDay[parseInt(p.date.slice(8, 10), 10)] = { date: p.date, pay: loanNum(p.amount), paid: true }; });
-  fwd.rows.forEach(row => { if (row.date && row.date.slice(0, 7) === ymPref && !byDay[parseInt(row.date.slice(8, 10), 10)]) byDay[parseInt(row.date.slice(8, 10), 10)] = { date: row.date, pay: row.pay, paid: false, n: row.n }; });
-  const firstDow = new Date(cy, cm, 1).getDay();
-  const dim = new Date(cy, cm + 1, 0).getDate();
-  const todayStr = today();
-  let cal = '<div class="loan-cal-wdrow">' + ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => '<div class="loan-cal-wd">' + d + '</div>').join('') + '</div>';
-  cal += '<div class="loan-cal-grid">';
-  for (let i = 0; i < firstDow; i++) cal += '<div class="loan-cal-cell empty"></div>';
-  for (let d = 1; d <= dim; d++) {
-    const ds = ymPref + '-' + String(d).padStart(2, '0');
-    const row = byDay[d];
-    cal += '<div class="loan-cal-cell' + (ds === todayStr ? ' today' : '') + (row ? ' loan-cal-has' : '') + (row && ds === _loanSelDay ? ' sel' : '') + '"' +
-      (row ? ' onclick="loanSelDay(\'' + ds + '\')"' : '') + '>' +
-      '<span class="loan-cal-d">' + d + '</span>' +
-      (row ? '<span class="loan-cal-dot' + (row.paid ? ' done' : '') + '"></span>' : '') +
-    '</div>';
-  }
-  cal += '</div>';
-  // Tapped-day detail (hover tooltips are dead on touch, so surface the amount here)
-  const selRow = (_loanSelDay && _loanSelDay.slice(0, 7) === ymPref) ? byDay[parseInt(_loanSelDay.slice(8, 10), 10)] : null;
-  let selLine = '';
-  if (selRow) {
-    selLine = '<div style="margin-top:.7rem;text-align:center;font-size:12.5px;font-family:\'JetBrains Mono\',monospace">' +
-      '<span style="color:var(--text2)">' + fmtDate(selRow.date) + (selRow.paid ? '' : (selRow.n ? ' · payment ' + selRow.n : '')) + '</span>' +
-      '<span style="font-weight:700;margin-left:.5rem">' + fmt(selRow.pay) + '</span>' +
-      '<span style="margin-left:.5rem;color:' + (selRow.paid ? 'var(--green)' : 'var(--text3)') + '">' + (selRow.paid ? 'paid' : 'upcoming') + '</span>' +
-    '</div>';
-  }
-  const calOpen = lsGet('bk-loan-cal-open') === '1';   // collapsed by default
-  html += '<div class="card collapsible' + (calOpen ? '' : ' collapsed') + '" style="margin-top:1rem">' +
-    '<div class="card-header" onclick="toggleLoanCal(this)">' +
-      '<h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Payment Calendar</h3>' +
-      '<i class="ti ti-chevron-down dash-chev"></i>' +
-    '</div>' +
-    '<div style="padding:.25rem 1rem 1rem">' +
-      '<div style="display:flex;align-items:center;justify-content:center;gap:.5rem;margin-bottom:.6rem">' +
-        '<button class="btn btn-sm" aria-label="Previous month" onclick="loanCalNav(-1)"><i class="ti ti-chevron-left"></i></button>' +
-        '<span style="min-width:132px;text-align:center;font-weight:700;font-size:14px">' + _loanCalCursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + '</span>' +
-        '<button class="btn btn-sm" aria-label="Next month" onclick="loanCalNav(1)"><i class="ti ti-chevron-right"></i></button>' +
-      '</div>' +
-      cal + selLine +
-      '<div style="display:flex;gap:1rem;justify-content:center;margin-top:.7rem;font-size:10.5px;color:var(--text3);font-family:\'JetBrains Mono\',monospace">' +
-        '<span style="display:inline-flex;align-items:center;gap:.35rem"><span class="loan-cal-dot done"></span> paid</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:.35rem"><span class="loan-cal-dot"></span> upcoming</span>' +
-        (byDay && Object.keys(byDay).length ? '<span style="opacity:.7">tap a day for the amount</span>' : '') +
-      '</div>' +
-    '</div>' +
-  '</div>';
+  html += loanCalCard(loan, fwd);
 
   // ── Recorded payments (most recent first; older ones fold behind a toggle so a
   //    long history doesn't turn the page into an endless scroll) ──
@@ -6632,11 +6585,107 @@ function renderLoanDetail(body, loan) {
   html += loanScheduleHtml(comp, fwd);
   body.innerHTML = html;
 }
-function loanCalNav(delta) { if (!_loanCalCursor) return; _loanCalCursor = new Date(_loanCalCursor.getFullYear(), _loanCalCursor.getMonth() + delta, 1); _loanSelDay = null; renderLoan(); }
+function loanCalNav(delta) { if (!_loanCalCursor) return; _loanCalCursor = new Date(_loanCalCursor.getFullYear(), _loanCalCursor.getMonth() + delta, 1); _loanSelDay = null; if (!repaintLoanCal()) renderLoan(); }
 // Collapse/expand the loan's Payment Calendar card (state persists; re-applied on each
 // renderLoan via the calOpen read). Month-nav buttons live in the body, so tapping them
 // never toggles the card.
-function toggleLoanCal(header) { const card = header.closest('.card'); if (!card) return; const collapsed = card.classList.toggle('collapsed'); try { lsSet('bk-loan-cal-open', collapsed ? '0' : '1'); } catch (e) {} }
+function toggleLoanCal(header) {
+  const card = header.closest('.card'); if (!card) return;
+  const collapsed = card.classList.toggle('collapsed');
+  try { lsSet('bk-loan-cal-open', collapsed ? '0' : '1'); } catch (e) {}
+  header.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+
+// ── The loan's payment calendar, as its own card ──
+// Split out of renderLoanDetail so a day tap or a month change can repaint JUST this
+// card. Re-rendering the whole detail view for a highlight also rebuilt the payment
+// log and the schedule, which silently closed any <details> the user had opened
+// ("Show all 24 payments") — the same family as the rule that a tap-driven list must
+// not re-render the list.
+function loanCalCard(loan, fwd) {
+  const open = lsGet('bk-loan-cal-open') === '1';   // collapsed by default
+  return '<div class="card collapsible' + (open ? '' : ' collapsed') + '" id="loan-cal-card" style="margin-top:1rem">'
+    + loanCalInner(loan, fwd, open) + '</div>';
+}
+// Repaint the calendar card in place. Returns false when it isn't on screen, so the
+// caller can fall back to a full render.
+function repaintLoanCal() {
+  const card = document.getElementById('loan-cal-card'); if (!card) return false;
+  const loan = (cache.loans || []).find(l => l.id === _selLoan); if (!loan) return false;
+  const comp = computeLoan(loanToObj(loan));
+  const fwd = loanForwardSchedule(loan, comp, loanActual(loan, comp));
+  card.innerHTML = loanCalInner(loan, fwd, !card.classList.contains('collapsed'));
+  enhanceA11y(card);
+  return true;
+}
+function loanCalInner(loan, fwd, open) {
+  const cy = _loanCalCursor.getFullYear(), cm = _loanCalCursor.getMonth();
+  const ymPref = cy + '-' + String(cm + 1).padStart(2, '0');
+  const dayOf = ds => parseInt(ds.slice(8, 10), 10);
+  // Real recorded payments show as PAID (green); the forward projection fills in the
+  // UPCOMING dots — so the calendar never again dots a future month as already paid.
+  const byDay = {};
+  loanPays(loan).forEach(p => {
+    if (!p.date || p.date.slice(0, 7) !== ymPref) return;
+    const d = dayOf(p.date);
+    // Two payments on one day is a real thing (a catch-up alongside the regular one).
+    // Sum them — the second used to overwrite the first, so the calendar showed one
+    // dot worth the wrong amount.
+    if (byDay[d]) { byDay[d].pay += loanNum(p.amount); byDay[d].count++; }
+    else byDay[d] = { date: p.date, pay: loanNum(p.amount), paid: true, count: 1 };
+  });
+  fwd.rows.forEach(row => {
+    if (!row.date || row.date.slice(0, 7) !== ymPref) return;
+    const d = dayOf(row.date);
+    if (!byDay[d]) byDay[d] = { date: row.date, pay: row.pay, paid: false, n: row.n, count: 1 };
+  });
+  const firstDow = new Date(cy, cm, 1).getDay();
+  const dim = new Date(cy, cm + 1, 0).getDate();
+  const todayStr = today();
+  let cal = '<div class="loan-cal-wdrow">' + ['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(d => '<div class="loan-cal-wd">' + d + '</div>').join('') + '</div>';
+  cal += '<div class="loan-cal-grid">';
+  for (let i = 0; i < firstDow; i++) cal += '<div class="loan-cal-cell empty"></div>';
+  for (let d = 1; d <= dim; d++) {
+    const ds = ymPref + '-' + String(d).padStart(2, '0');
+    const row = byDay[d];
+    cal += '<div class="loan-cal-cell' + (ds === todayStr ? ' today' : '') + (row ? ' loan-cal-has' : '') + (row && ds === _loanSelDay ? ' sel' : '') + '"' +
+      (row ? ' onclick="loanSelDay(\'' + ds + '\')"' : '') + '>' +
+      '<span class="loan-cal-d">' + d + '</span>' +
+      (row ? '<span class="loan-cal-dot' + (row.paid ? ' done' : '') + '"></span>' : '') +
+    '</div>';
+  }
+  cal += '</div>';
+  // Tapped-day detail (hover tooltips are dead on touch, so surface the amount here)
+  const selRow = (_loanSelDay && _loanSelDay.slice(0, 7) === ymPref) ? byDay[dayOf(_loanSelDay)] : null;
+  let selLine = '';
+  if (selRow) {
+    const what = selRow.paid
+      ? (selRow.count > 1 ? ' · ' + selRow.count + ' payments' : '')
+      : (selRow.n ? ' · payment ' + selRow.n : '');
+    selLine = '<div style="margin-top:.7rem;text-align:center;font-size:12.5px;font-family:\'JetBrains Mono\',monospace">' +
+      '<span style="color:var(--text2)">' + fmtDate(selRow.date) + what + '</span>' +
+      '<span style="font-weight:700;margin-left:.5rem">' + fmt(selRow.pay) + '</span>' +
+      '<span style="margin-left:.5rem;color:' + (selRow.paid ? 'var(--green)' : 'var(--text3)') + '">' + (selRow.paid ? 'paid' : 'upcoming') + '</span>' +
+    '</div>';
+  }
+  return '<div class="card-header" onclick="toggleLoanCal(this)" aria-expanded="' + (open ? 'true' : 'false') + '">' +
+      '<h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Payment Calendar</h3>' +
+      '<i class="ti ti-chevron-down dash-chev"></i>' +
+    '</div>' +
+    '<div style="padding:.25rem 1rem 1rem">' +
+      '<div style="display:flex;align-items:center;justify-content:center;gap:.5rem;margin-bottom:.6rem">' +
+        '<button class="btn btn-sm" aria-label="Previous month" onclick="loanCalNav(-1)"><i class="ti ti-chevron-left"></i></button>' +
+        '<span style="min-width:132px;text-align:center;font-weight:700;font-size:14px">' + _loanCalCursor.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) + '</span>' +
+        '<button class="btn btn-sm" aria-label="Next month" onclick="loanCalNav(1)"><i class="ti ti-chevron-right"></i></button>' +
+      '</div>' +
+      cal + selLine +
+      '<div style="display:flex;gap:1rem;justify-content:center;margin-top:.7rem;font-size:10.5px;color:var(--text3);font-family:\'JetBrains Mono\',monospace">' +
+        '<span style="display:inline-flex;align-items:center;gap:.35rem"><span class="loan-cal-dot done"></span> paid</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:.35rem"><span class="loan-cal-dot"></span> upcoming</span>' +
+        (Object.keys(byDay).length ? '<span style="opacity:.7">tap a day for the amount</span>' : '') +
+      '</div>' +
+    '</div>';
+}
 
 // Renders the FORWARD-projected schedule (from loanForwardSchedule): only the
 // payments still to come, re-forecast from your real remaining balance, so the
@@ -6758,14 +6807,16 @@ async function deleteLoan() {
   const { error } = await sb.from('loans').delete().eq('id', id);
   if (error) { console.error('deleteLoan', error); showToast("Couldn't delete the loan — check your connection and try again", 'error'); return; }
   cache.loans = (cache.loans || []).filter(l => l.id !== id);
-  // Drop the loan's "Paid from" tag AND every per-payment override under it, in one write.
-  const rb = reconBankMap(), stale = Object.keys(rb).filter(k => k === 'l:'+id || k.startsWith('l:'+id+':'));
-  if (stale.length) {
-    const map = {...rb}; stale.forEach(k => delete map[k]);
-    profile.recon_bank = map;
-    if (currentUser) { const { error: e2 } = await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: map });
-      if (e2 && !/recon_bank/i.test(e2.message||'')) console.error('recon_bank cleanup', e2); }
-  }
+  // Drop the loan's "Paid from" tag AND every per-payment override under it, in one
+  // write — as a DELTA. This used to clone the in-memory recon_bank (fetched at login)
+  // and upsert the whole column back, which is exactly the pattern the collection-jsonb
+  // rule forbids: deleting a loan on a tab left open since morning silently reverted
+  // every "Paid from" tag the other device had set since. Recomputing the doomed keys
+  // inside apply() also catches per-payment tags this device has never seen.
+  const drop = map => { Object.keys(map).forEach(k => { if (k === 'l:'+id || k.startsWith('l:'+id+':')) delete map[k]; }); return map; };
+  profile.recon_bank = drop({ ...reconBankMap() });
+  const { error: e2 } = await updateProfileJson('recon_bank', drop);
+  if (e2 && !/recon_bank/i.test(e2.message||'')) console.error('recon_bank cleanup', e2);
   showToast('Deleted'); closeModal('modal-loan'); _selLoan = null; renderLoan();
 }
 

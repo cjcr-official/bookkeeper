@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **498** (see `version.json` — that file is the source of truth).
+Current version: **499** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -530,7 +530,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Eleven test suites run the SHIPPED code (they extract functions out of `index.html` by
+Twelve test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -545,6 +545,7 @@ node test/recurring.test.mjs   # unattended auto-posting: no silent skips, no du
 node test/forms.test.mjs       # a save must not blank a select value it didn't recognise
 node test/dates.test.mjs       # "what day is it" — local calendar dates, never UTC
 node test/home.test.mjs        # Home's refresh contract + its fold controls
+node test/loan.test.mjs        # the amortization engine, against closed-form annuities
 ```
 
 `retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
@@ -601,7 +602,13 @@ The two reconciliation columns were the last holdouts (v488): `savePlaidRecon`,
 `resetMonthMatches`, `recordAudit`/`persistAuditStamps`, `migratePlaidKeys` and
 `persistOrphanMerge` all write a **delta** now — one month, or one re-key applied
 inside `apply(current)` — so reconciling March on the phone can't roll back the months
-the laptop checked since login.
+the laptop checked since login. `deleteLoan` was the one that got missed (fixed v499):
+it cleaned up the deleted loan's `recon_bank` tags by cloning the in-memory map and
+upserting the whole column, so deleting a loan on a tab left open since morning
+silently reverted every "Paid from" tag the other device had set. Its delta now
+recomputes the doomed keys **inside** `apply(current)`, which also catches per-payment
+tags this device has never seen. **Every writer of a collection column goes through
+`updateProfileJson` — grep for `.upsert({ id: currentUser.id` before adding another.**
 
 Scalar settings (`notify_hour`, `logo`, `time_format`, `hourly_rate`,
 `push_subscription`, `hidden_modules`) are a different case: last-write-wins is the
@@ -931,6 +938,13 @@ alter table profiles add column if not exists hourly_rate numeric;
 -- save, same pattern as budget_bills). computeLoan() amortizes it; loanActual()
 -- applies the recorded payments to derive the true remaining balance. Loan payment
 -- due dates also surface on the Dashboard calendar + Upcoming card.
+-- The engine (computeLoan / loanActual / loanForwardSchedule / loanRateOn) is PURE
+-- and is the only compound arithmetic in the app — every figure the tab shows comes
+-- out of it, and a wrong one doesn't throw, it just misstates what is owed.
+-- `test/loan.test.mjs` checks it against closed-form annuities rather than against
+-- itself: the payment, per-row interest/principal splits, 0% and ARM cases, and the
+-- load-bearing claim that an on-time payer's forward projection reproduces the
+-- original remaining schedule exactly. Extend it when you touch the math.
 create table if not exists loans (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
