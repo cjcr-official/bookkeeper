@@ -1550,7 +1550,7 @@ tr.bulk-sel{background:var(--accent-bg)}
           <div id="upcoming-list"></div>
         </div>
         <div class="card" id="dash-card-cal" data-module-all="jobs invoicing expenses budget loan">
-          <div class="card-header" onclick="toggleCalendar()" style="cursor:pointer;user-select:none">
+          <div class="card-header" onclick="toggleCalendar()" aria-expanded="false" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Calendar</h3>
             <i class="ti ti-chevron-down dash-chev" id="calendar-chevron" style="transform:rotate(-90deg)"></i>
           </div>
@@ -1610,7 +1610,7 @@ tr.bulk-sel{background:var(--accent-bg)}
              shows while EITHER Invoices or Expenses is on; Expense Summary follows
              Expenses; Budget follows Budget. -->
         <div class="card" id="dash-card-reports" data-module-all="invoicing expenses budget loan">
-          <div class="card-header" onclick="toggleReports()" style="cursor:pointer;user-select:none">
+          <div class="card-header" onclick="toggleReports()" aria-expanded="false" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-chart-pie" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Reports</h3>
             <i class="ti ti-chevron-down dash-chev" id="reports-chevron" style="transform:rotate(-90deg)"></i>
           </div>
@@ -3359,7 +3359,10 @@ function mergeListEdit(base, next, fresh, key) {
 // Non-blocking banner: the app still opens with whatever loaded, but the user
 // gets a clear reason + a one-tap retry instead of a mystery blank screen.
 function showDataLoadError() {
-  const retry = async () => { showToast('Reconnecting…'); await loadAllData(); if (!_dataLoadFailed) { renderDashboard(); showToast('Loaded','success'); } };
+  // Re-draw the page the user is ACTUALLY on. This used to re-render the Dashboard
+  // unconditionally, so retrying from Invoices (or any other tab) reloaded the data
+  // and then left the empty list sitting there — the retry looked like it failed.
+  const retry = async () => { showToast('Reconnecting…'); await loadAllData(); if (!_dataLoadFailed) { rerenderCurrentView(); showToast('Loaded','success'); } };
   const t = document.getElementById('toast');
   if (t) { t.innerHTML = "Couldn't reach the server — check your connection. <a href=\"#\" id=\"reload-data-link\" style=\"color:#fff;text-decoration:underline\">Retry</a>"; t.className='toast show error';
     if (_toastTimer) clearTimeout(_toastTimer); _toastTimer = setTimeout(()=>{ t.className='toast'; _toastTimer=null; }, 8000);
@@ -3750,6 +3753,11 @@ function renderDashCard(id) {
   else if (id === 'dash-card-spend') renderSpendMonth();
   else if (id === 'dash-card-cat') renderCategoryBreakdown();
   else if (id === 'dash-card-up') renderUpcoming();
+  // Everything above is innerHTML, which wipes the role/tabindex enhanceA11y()
+  // retrofits onto tappable divs. Home is the landing page and is drawn straight
+  // from boot — it never went through rerenderCurrentView(), so its generated rows
+  // were the one screen in the app that never got them.
+  enhanceA11y(card);
 }
 function calendarOpen() { const b = document.getElementById('calendar-body'); return !!b && b.style.display !== 'none'; }
 
@@ -5864,7 +5872,7 @@ async function saveJob() {
   if (extra)   msg += ` · ${extra} more scheduled`;
   if (removed) msg += ` · ${removed} removed`;
   showToast(msg, 'success');
-  closeModal('modal-job'); renderUpcoming(); renderCalendar();
+  closeModal('modal-job'); refreshHomeAfterJobWrite();
 }
 
 // Add `count` more monthly instances of `baseRow` (same day of month, clamped
@@ -5907,7 +5915,16 @@ async function deleteJobFromModal() {
   const { error } = await sb.from('jobs').delete().eq('id',id);
   if (error) { showToast(error.message,'error'); return; }
   cache.jobs = (cache.jobs||[]).filter(j=>j.id!==id);
-  showToast('Job deleted'); closeModal('modal-job'); renderUpcoming(); renderCalendar();
+  showToast('Job deleted'); closeModal('modal-job'); refreshHomeAfterJobWrite();
+}
+// A job write is the one thing edited FROM Home, so Home has to answer for it: the
+// two cards it appears on, and the bell. The badge counts "missed event" rows, and
+// nothing here refreshed it — ticking tonight's job done left the red dot sitting
+// on the bell (and on the Home Screen app icon) until the user changed pages.
+function refreshHomeAfterJobWrite() {
+  renderDashCard('dash-card-up');
+  if (calendarOpen()) renderCalendar();
+  refreshNotifBadge();
 }
 
 // ====== TIME CLOCK ======
@@ -7376,6 +7393,9 @@ function renderCalendar() {
   // Hand the day list the map we just built — recomputing it re-amortizes every
   // loan and re-scans every ledger a second time for the same paint.
   renderCalDayList(byDate);
+  // Same reason as renderDashCard: every cell is a tappable div written by
+  // innerHTML, and month navigation redraws them all.
+  enhanceA11y(document.getElementById('calendar-body'));
 }
 
 function calPickDay(ds) {
@@ -8359,6 +8379,7 @@ function toggleDashCard(header){
   // Widgets are drawn lazily (see renderDashboard), so unfolding one is when it
   // actually gets its content.
   if (!collapsed) renderDashCard(card.id);
+  markFoldState(card);
 }
 function applyDashCollapsed(){
   let st = {}; try { st = JSON.parse(lsGet('bk-dash-collapsed')||'{}'); } catch(e){}
@@ -8366,7 +8387,27 @@ function applyDashCollapsed(){
     // Widgets start collapsed by default; a card is only open when the user has
     // explicitly expanded it (saved state === false).
     card.classList.toggle('collapsed', !(card.id && st[card.id] === false));
+    markFoldState(card);
   });
+}
+// Announce a fold widget's open/closed state on whichever element is its control.
+// Normally that's the header itself (enhanceA11y gives it role=button). The Upcoming
+// card is the exception: its header carries a real "Event" button, so the header
+// can't be a button too — there the chevron is wired as the control instead, with
+// its own click handler (the header's onclick would otherwise fire on the same tap
+// as it bubbles, toggling twice and landing back where it started).
+function markFoldState(card){
+  const header = card.querySelector('.card-header'); if (!header) return;
+  const nested = header.querySelector('button,a,input,select,textarea');
+  const ctrl = nested ? (header.querySelector('.dash-chev') || header) : header;
+  ctrl.setAttribute('role','button');
+  if (!ctrl.hasAttribute('tabindex')) ctrl.setAttribute('tabindex','0');
+  ctrl.setAttribute('aria-expanded', card.classList.contains('collapsed') ? 'false' : 'true');
+  if (ctrl !== header && !ctrl.dataset.foldWired){
+    ctrl.dataset.foldWired = '1';
+    ctrl.setAttribute('aria-label', (header.querySelector('h3')||{}).textContent || 'Expand or collapse');
+    ctrl.addEventListener('click', e => { e.stopPropagation(); toggleDashCard(ctrl); });
+  }
 }
 
 // A report tab follows the module(s) that feed it (mirrors the data-module attrs
@@ -8390,6 +8431,7 @@ function toggleReports() {
   const open = body.style.display !== 'none';
   body.style.display = open ? 'none' : 'block';
   if (chev) chev.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
+  setHeaderExpanded('reports-body', !open);
   if (!open) {
     // Don't render (or leave active) a report whose module is turned off.
     if (!reportAvailable(currentReport)) currentReport = firstVisibleReport() || currentReport;
@@ -8404,7 +8446,17 @@ function toggleCalendar() {
   const open = calendarOpen();
   body.style.display = open ? 'none' : 'block';
   if (chev) chev.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
+  setHeaderExpanded('calendar-body', !open);
   if (!open) renderCalendar();
+}
+// Calendar and Reports fold by inline display rather than the .collapsed class, so
+// they miss markFoldState — but their headers are still the control (enhanceA11y
+// wires them), and a toggle that never updates aria-expanded reads as permanently
+// closed to a screen reader.
+function setHeaderExpanded(bodyId, expanded) {
+  const body = document.getElementById(bodyId);
+  const header = body && body.parentElement && body.parentElement.querySelector('.card-header');
+  if (header) header.setAttribute('aria-expanded', expanded ? 'true' : 'false');
 }
 
 function showReport(r,el) { currentReport=r; document.querySelectorAll('#report-tabs .tab').forEach(t=>t.classList.remove('active')); if(el)el.classList.add('active'); renderReport(r); }
@@ -12243,7 +12295,14 @@ function enhanceA11y(root) {
   root.querySelectorAll('[onclick]').forEach(el => {
     if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA|LABEL)$/.test(el.tagName)) return;
     if (el.hasAttribute('role') || el.hasAttribute('tabindex')) return;
-    if (el.querySelector('button,a,input,select,textarea,[role="button"],h1,h2,h3,h4,h5,h6')) return;
+    // A nested REAL control means this is a container, not a control — wiring it
+    // would bury one button inside another. A heading does not mean that, and
+    // excluding headings disqualified exactly one kind of element: the fold header
+    // (`<div class="card-header" onclick="toggle…"><h3>…</h3><i class="dash-chev">`).
+    // That's the collapse toggle of every widget on Home plus the loan schedule —
+    // unreachable to the keyboard and unannounced to VoiceOver. The heading becomes
+    // the control's accessible name, which is exactly what it should be called.
+    if (el.querySelector('button,a,input,select,textarea,[role="button"]')) return;
     el.setAttribute('role', 'button');
     el.setAttribute('tabindex', '0');
   });
