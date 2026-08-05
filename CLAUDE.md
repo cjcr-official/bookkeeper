@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **499** (see `version.json` — that file is the source of truth).
+Current version: **500** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -938,6 +938,18 @@ alter table profiles add column if not exists hourly_rate numeric;
 -- save, same pattern as budget_bills). computeLoan() amortizes it; loanActual()
 -- applies the recorded payments to derive the true remaining balance. Loan payment
 -- due dates also surface on the Dashboard calendar + Upcoming card.
+-- PAYING IT OFF (v500): `remaining` is the balance as of the LAST PAYMENT, and paying
+-- exactly that figure later can NEVER clear the loan — the payment settles the month's
+-- interest first, so what's left is B - (B - B*r) = B*r, precisely one month's interest,
+-- every time. (Reported from the field: a $58,502.48 balance paid a month later left
+-- $195.01 owing at 4%.) So the Remaining Balance card is labelled "as of <date>", a
+-- "Pay off today" row quotes balance + accrued interest, and the payment sheet has a
+-- "Pay off in full" button that RE-QUOTES as the date field changes — one fixed number
+-- would recreate the same trap. loanAccruedSince() must charge interest exactly the way
+-- loanActual() does (whole months, rate in effect, keyed off the last DATED payment),
+-- because the figure it quotes is the figure the user then records: if they drifted by a
+-- cent the button would leave a residue, i.e. the same bug with a button on it.
+-- test/loan.test.mjs pins that recording the quote zeroes the balance on every date.
 -- The engine (computeLoan / loanActual / loanForwardSchedule / loanRateOn) is PURE
 -- and is the only compound arithmetic in the app — every figure the tab shows comes
 -- out of it, and a wrong one doesn't throw, it just misstates what is owed.

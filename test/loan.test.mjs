@@ -48,7 +48,11 @@ const L = new Function(`
   ${extract('loanRateOn')}
   ${extract('loanActual')}
   ${extract('loanForwardSchedule')}
-  return { computeLoan, loanToObj, loanPays, loanRateOn, loanActual, loanForwardSchedule, loanStepPaymentNo };
+  ${extract('loanAccruedSince')}
+  ${extract('loanPayoffOn')}
+  ${extract('loanBalanceAsOf')}
+  return { computeLoan, loanToObj, loanPays, loanRateOn, loanActual, loanForwardSchedule,
+           loanStepPaymentNo, loanAccruedSince, loanPayoffOn, loanBalanceAsOf };
 `)();
 
 // --- Tiny assert harness (matches the other suites' output style). -----------
@@ -254,6 +258,89 @@ test('a rate change between two payments is honored month by month', () => {
   const act = L.loanActual(loan, c);
   const flat6 = L.loanActual({ ...BASE, payments: loan.payments }, L.computeLoan(BASE));
   ok(act.remaining > flat6.remaining, 'the 18% months must cost more than 6% ones');
+});
+
+console.log('\n── paying it off ──\n');
+
+// The bug this answers, from a real report: the tab showed a Remaining Balance of
+// $58,502.48 (as of the Jul 23 payment). The owner paid exactly that on Aug 23 — and
+// was left owing $195.01, which is precisely one month's interest at 4%. Paying a
+// balance figure LATER than the date it was good for can never clear a loan.
+const HOUSE = { amount: 120000, rate: 4, term_num: 30, term_unit: 'years', extra: 0, start_date: '2020-05-23', rate_steps: [] };
+
+test('paying the stale balance leaves exactly one month of interest behind', () => {
+  const c = L.computeLoan(HOUSE);
+  const loan = { ...HOUSE, payments: [{ id: 'a', date: '2026-07-23', amount: 61497.52 }] };
+  const act = L.loanActual(loan, c);
+  const B = act.remaining;
+  // Pay exactly B, one month later.
+  const after = L.loanActual({ ...loan, payments: [...loan.payments, { id: 'b', date: '2026-08-23', amount: B }] }, c);
+  const monthly = 4 / 100 / 12;
+  near(after.remaining, B * monthly, 0.02, 'the leftover is B·r — one month on the old balance');
+  ok(after.remaining > 0.01, 'so the loan is NOT paid off');
+});
+
+test('the payoff quote is that balance PLUS the interest to the date you pay', () => {
+  const c = L.computeLoan(HOUSE);
+  const loan = { ...HOUSE, payments: [{ id: 'a', date: '2026-07-23', amount: 61497.52 }] };
+  const act = L.loanActual(loan, c);
+  near(L.loanPayoffOn(loan, c, act, '2026-08-23'), act.remaining * (1 + 4 / 100 / 12), 0.02, 'one month on');
+  near(L.loanAccruedSince(loan, c, act, '2026-08-23'), act.remaining * 4 / 100 / 12, 0.02, 'the interest line');
+  eq(L.loanBalanceAsOf(loan), '2026-07-23', 'and the balance is labelled with its own date');
+});
+
+test('recording the quote actually CLEARS the loan — for any date', () => {
+  // The whole point. If the quote and loanActual disagreed by a cent, "Pay off in
+  // full" would leave a residue behind: the same bug, with a button on it.
+  const c = L.computeLoan(HOUSE);
+  const base = [{ id: 'a', date: '2026-07-23', amount: 61497.52 }];
+  for (const when of ['2026-07-23', '2026-08-23', '2026-09-23', '2027-01-23']) {
+    const loan = { ...HOUSE, payments: base };
+    const quote = L.loanPayoffOn(loan, c, L.loanActual(loan, c), when);
+    const after = L.loanActual({ ...HOUSE, payments: [...base, { id: 'z', date: when, amount: quote }] }, c);
+    near(after.remaining, 0, 0.005, 'paying the quote on ' + when + ' must leave nothing');
+    ok(after.paidOff, 'and read as paid off on ' + when);
+  }
+});
+
+test('the quote grows the longer you leave it', () => {
+  const c = L.computeLoan(HOUSE);
+  const loan = { ...HOUSE, payments: [{ id: 'a', date: '2026-07-23', amount: 61497.52 }] };
+  const act = L.loanActual(loan, c);
+  const aug = L.loanPayoffOn(loan, c, act, '2026-08-23');
+  const oct = L.loanPayoffOn(loan, c, act, '2026-10-23');
+  ok(oct > aug, 'two more months of interest: ' + aug.toFixed(2) + ' → ' + oct.toFixed(2));
+  near(oct - aug, act.remaining * 2 * (4 / 100 / 12), 0.02, 'and it is exactly two months of it');
+});
+
+test('an ARM quote uses the rate in effect over the gap, not the opening rate', () => {
+  const armed = { ...HOUSE, rate_steps: [{ date: '2026-08-23', rate: 10 }] };
+  const c = L.computeLoan(armed);
+  const loan = { ...armed, payments: [{ id: 'a', date: '2026-07-23', amount: 61497.52 }] };
+  const act = L.loanActual(loan, c);
+  near(L.loanAccruedSince(loan, c, act, '2026-08-23'), act.remaining * 10 / 100 / 12, 0.02, 'the new rate');
+  // And it still clears.
+  const q = L.loanPayoffOn(loan, c, act, '2026-08-23');
+  ok(L.loanActual({ ...armed, payments: [...loan.payments, { id: 'z', date: '2026-08-23', amount: q }] }, c).paidOff);
+});
+
+test('there is nothing to quote on a loan that is already settled', () => {
+  const c = L.computeLoan(BASE);
+  const loan = { ...BASE, payments: [{ id: 'a', date: '2025-01-15', amount: 25000 }] };
+  const act = L.loanActual(loan, c);
+  eq(L.loanPayoffOn(loan, c, act, '2025-06-15'), 0, 'paid off → no payoff figure');
+  eq(L.loanAccruedSince(loan, c, act, '2025-06-15'), 0, 'and nothing accruing');
+  eq(L.loanPayoffOn({ payments: [] }, L.computeLoan({ ...BASE, amount: 0 }), { remaining: 0 }, '2025-06-15'), 0,
+    'an invalid loan quotes nothing');
+});
+
+test('with no payments yet the clock runs from origination', () => {
+  // loanActual starts the clock one month before the first scheduled payment, so a
+  // payoff before any payment is principal + that first month.
+  const c = L.computeLoan(BASE);
+  const act = L.loanActual({ ...BASE, payments: [] }, c);
+  near(L.loanAccruedSince({ payments: [] }, c, act, '2025-01-15'), 20000 * 6 / 100 / 12, 0.02, 'one month');
+  eq(L.loanBalanceAsOf({ payments: [] }), null, 'and no as-of date to show');
 });
 
 console.log('\n── the guards ──\n');

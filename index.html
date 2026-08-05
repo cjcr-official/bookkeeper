@@ -2496,8 +2496,14 @@ tr.bulk-sel{background:var(--accent-bg)}
       <input type="hidden" id="loan-pay-loan-id">
       <input type="hidden" id="loan-pay-id">
       <div class="form-row">
-        <div class="form-group"><label for="loan-pay-date">Date</label><input id="loan-pay-date" type="date"></div>
+        <div class="form-group"><label for="loan-pay-date">Date</label><input id="loan-pay-date" type="date" oninput="loanPayDateChanged()"></div>
         <div class="form-group"><label for="loan-pay-amount">Amount</label><input id="loan-pay-amount" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00" style="text-align:right"></div>
+      </div>
+      <!-- Paying off means the balance PLUS the interest since the last payment, and
+           that depends on the date above — so this button re-quotes when the date
+           changes rather than showing one stale figure. -->
+      <div id="loan-payoff-row" style="display:none;margin:-.5rem 0 .75rem">
+        <button class="btn btn-sm" id="loan-payoff-btn" onclick="loanPayFillPayoff()" style="width:100%"></button>
       </div>
       <div class="bud-hint" id="loan-pay-hint" style="margin-top:-.4rem"></div>
       <!-- Per-payment account. Blank = inherit whatever the loan is set to, so you
@@ -6241,6 +6247,7 @@ async function deleteTimeRow(id, ev) {        // from a list-row trash button
 let _selLoan = null;          // open loan id (null = list view)
 let _loanCalCursor = null;    // month shown in the detail calendar
 let _loanSelDay = null;       // tapped calendar day (YYYY-MM-DD) showing its amount
+let _loanPayoffFor = null;    // loan the open payment sheet may quote a payoff for
 function loanSelDay(ds) { _loanSelDay = (_loanSelDay === ds) ? null : ds; if (!repaintLoanCal()) renderLoan(); }
 function loanNum(v){ const n = parseFloat(v); return isFinite(n) ? n : 0; }
 
@@ -6367,6 +6374,43 @@ function loanActual(loan, comp) {
   let covered = 0;
   for (const r of comp.rows) { if (r.bal >= bal - 0.01) covered++; else break; }
   return { count: pays.length, covered, paidTotal, interestPaid, principalPaid, remaining: bal, paidOff: comp.valid && bal <= 0.01 };
+}
+// ── What it actually takes to CLOSE the loan on a given date ──
+// `remaining` is the balance as of the LAST PAYMENT. Paying exactly that figure a
+// month later can never clear the loan: the payment settles the month's interest
+// first, so what's left is B − (B − B·r) = B·r — precisely one month's interest,
+// every time. (A real payoff quote works the same way: "good through <date>",
+// per-diem after.) So the payoff is the balance PLUS the interest accrued since the
+// last payment.
+//
+// This MUST charge interest the same way loanActual does — whole months at the rate
+// in effect, keyed off the last DATED payment — because the number it quotes is the
+// number the user then records. If the two disagreed, "Pay off" would leave a
+// residue behind, which is the very bug it exists to prevent.
+function loanAccruedSince(loan, comp, act, onDate) {
+  if (!comp.valid || !onDate || act.remaining <= 0.01) return 0;
+  const dated = loanPays(loan).filter(p => p.date);
+  const prev = dated.length
+    ? new Date(dated[dated.length - 1].date + 'T12:00:00')
+    : (comp.startDate ? new Date(comp.startDate.getFullYear(), comp.startDate.getMonth() - 1, comp.startDate.getDate()) : null);
+  const on = new Date(onDate + 'T12:00:00');
+  if (!prev || isNaN(prev) || isNaN(on)) return 0;
+  const periods = Math.max(1, Math.min(600, (on.getFullYear() - prev.getFullYear()) * 12 + (on.getMonth() - prev.getMonth())));
+  let interest = 0;
+  for (let i = 1; i <= periods; i++) {
+    const md = new Date(prev.getFullYear(), prev.getMonth() + i, prev.getDate());
+    interest += Math.max(0, act.remaining * loanRateOn(comp, ymd(md)));
+  }
+  return interest;
+}
+function loanPayoffOn(loan, comp, act, onDate) {
+  if (!comp.valid || act.remaining <= 0.01) return 0;
+  return act.remaining + loanAccruedSince(loan, comp, act, onDate);
+}
+// The date the "Remaining Balance" figure is good as of — the last dated payment.
+function loanBalanceAsOf(loan) {
+  const dated = loanPays(loan).filter(p => p.date);
+  return dated.length ? dated[dated.length - 1].date : null;
 }
 // Re-project the loan FORWARD from where the borrower actually is: take the TRUE
 // remaining balance (from recorded payments) and amortize it at the scheduled
@@ -6530,9 +6574,17 @@ function renderLoanDetail(body, loan) {
   // Original (as-scheduled) payoff, so we can show how far the extra payments moved it in.
   const origPayoff = comp.rows.length ? comp.rows[comp.rows.length - 1].date : null;
   const totalPayments = fwd.made + fwd.count;   // real payments made + remaining projected
+  // The Remaining Balance is only true AS OF the last payment — say so on the card,
+  // and quote what it would actually take to close the loan today. Paying the balance
+  // figure itself always leaves one month's interest behind (see loanAccruedSince),
+  // which is exactly the trap this pair of lines exists to stop.
+  const balAsOf = loanBalanceAsOf(loan);
+  const payoffDay = today();
+  const payoffNow = paidOff ? 0 : loanPayoffOn(loan, comp, act, payoffDay);
+  const payoffInt = payoffNow - remaining;
   html += '<div class="stats-grid" style="grid-template-columns:repeat(2,1fr)">' +
     loanStatCard('Monthly Payment', comp.noAmortize ? '—' : fmt(comp.firstMonthly), comp.changeCount ? ('first payment · adjusts ' + comp.changeCount + '×') : (comp.extra > 0 ? 'incl. ' + fmt(comp.extra) + ' extra' : 'principal + interest')) +
-    loanStatCard('Remaining Balance', fmt(remaining), act.count ? (act.count + ' payment' + (act.count > 1 ? 's' : '') + ' made') : 'no payments yet', paidOff ? 'color:var(--green)' : '') +
+    loanStatCard('Remaining Balance', fmt(remaining), balAsOf ? ('as of ' + fmtDate(balAsOf)) : (act.count ? (act.count + ' payment' + (act.count > 1 ? 's' : '') + ' made') : 'no payments yet'), paidOff ? 'color:var(--green)' : '') +
     loanStatCard('Total Interest', comp.noAmortize ? '—' : fmt(comp.totalInterest), act.interestPaid > 0.005 ? (fmt(act.interestPaid) + ' paid so far') : 'projected over the loan', 'color:var(--red)') +
     (paidOff
       ? loanStatCard('Payoff', 'Paid off', act.count + ' payments', 'color:var(--green)')
@@ -6544,6 +6596,13 @@ function renderLoanDetail(body, loan) {
         (origPayoff && origPayoff.slice(0, 7) !== fwd.payoffDate.slice(0, 7)
           ? '<div style="font-size:10.5px;color:var(--text3);margin-top:.1rem">' + (origPayoff > fwd.payoffDate ? 'was ' : 'behind: was ') + fmtDate(origPayoff) + '</div>' : '') +
       '</div>' +
+    '</div>' : '') +
+  (payoffInt > 0.005 && act.count ? '<div class="card" style="margin-top:.75rem;padding:.7rem 1rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem">' +
+      '<div style="min-width:0">' +
+        '<div style="font-size:11px;color:var(--text3);font-family:\'JetBrains Mono\',monospace;text-transform:uppercase;letter-spacing:.5px">Pay off today</div>' +
+        '<div style="font-size:10.5px;color:var(--text3);margin-top:.15rem;line-height:1.35">balance + ' + fmt(payoffInt) + ' interest since ' + (balAsOf ? fmtDate(balAsOf) : 'the loan started') + '</div>' +
+      '</div>' +
+      '<div style="font-weight:800;font-size:15px;font-family:\'JetBrains Mono\',monospace;white-space:nowrap">' + fmt(payoffNow) + '</div>' +
     '</div>' : '');
 
   // ── Payment calendar for this loan (its own month cursor) ──
@@ -6847,7 +6906,41 @@ function openLoanPayment(loanId, payId) {
     { exact: true, anyLabel: loanTag ? ('— Same as the loan (' + bankDisplayName(loanTag) + ') —') : '— Same as the loan —' });
   const hint = document.getElementById('loan-pay-hint');
   if (hint) hint.textContent = (!pay && next) ? ('Next payment ' + next.n + (next.date ? ' · ' + fmtDate(next.date) : '') + ': ' + fmt(next.pay)) : '';
+  // Offer the payoff only on a NEW payment: on an existing one the balance already
+  // has that payment in it, so quoting a payoff against it would be nonsense.
+  _loanPayoffFor = pay ? null : loanId;
+  loanPayDateChanged();
   openModal('modal-loan-payment');
+}
+// Re-quote the payoff for the date currently in the sheet. The figure moves with the
+// date because interest keeps accruing — quoting one fixed number would recreate the
+// exact trap: an amount that was right last month and silently isn't any more.
+function loanPayoffQuote() {
+  if (!_loanPayoffFor) return null;
+  const loan = (cache.loans || []).find(l => l.id === _loanPayoffFor); if (!loan) return null;
+  const date = (document.getElementById('loan-pay-date') || {}).value;
+  if (!date) return null;
+  const comp = computeLoan(loanToObj(loan));
+  const act = loanActual(loan, comp);
+  const amt = loanPayoffOn(loan, comp, act, date);
+  if (!(amt > 0.01)) return null;
+  return { amt, interest: amt - act.remaining, asOf: loanBalanceAsOf(loan) };
+}
+function loanPayDateChanged() {
+  const row = document.getElementById('loan-payoff-row'), btn = document.getElementById('loan-payoff-btn');
+  if (!row || !btn) return;
+  const q = loanPayoffQuote();
+  if (!q) { row.style.display = 'none'; return; }
+  row.style.display = '';
+  btn.innerHTML = '<i class="ti ti-flag-check"></i> Pay off in full · ' + fmt(q.amt);
+  btn.title = 'Balance plus ' + fmt(q.interest) + ' interest'
+    + (q.asOf ? ' since ' + fmtDate(q.asOf) : '') + ' — the amount that actually clears this loan on this date.';
+}
+function loanPayFillPayoff() {
+  const q = loanPayoffQuote(); if (!q) return;
+  const el = document.getElementById('loan-pay-amount'); if (!el) return;
+  el.value = q.amt.toFixed(2);
+  showToast('Payoff for this date: ' + fmt(q.amt) + ' (incl. ' + fmt(q.interest) + ' interest)');
 }
 async function saveLoanPayment() {
   const loanId = document.getElementById('loan-pay-loan-id').value;
