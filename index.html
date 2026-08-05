@@ -3010,7 +3010,12 @@ function applyShortcutLink() {
 async function doLogout() {
   await sb.auth.signOut();
   setIconBadge(0);
-  currentUser = null; profile = {}; cache = {customers:[],invoices:[],expenses:[],accounts:[],trips:[],recurring:[],jobs:[],owner_transactions:[],store_credits:[],time_entries:[]};
+  currentUser = null; profile = {};
+  // Clear every cached table by KEY rather than retyping the list — this used to be
+  // a second literal, and it fell a table behind the real one (it never got `loans`,
+  // so a signed-out session had cache.loans === undefined). Same failure mode the
+  // retention test pins for deleteAccount: a hand-kept copy of the table list.
+  Object.keys(cache).forEach(k => { cache[k] = []; });
   document.getElementById('app').style.display = 'none';
   resetAuthView();
   document.getElementById('auth-wrap').style.display = 'flex';
@@ -6082,11 +6087,19 @@ async function saveHourlyRate() {
 // Optional From/To date filter, held in state (not the DOM) so the list can
 // redraw the inputs without losing the values.
 let _timeFrom = '', _timeTo = '';
+// The LOCAL calendar day a punch belongs to. clock_in is a full timestamp, and
+// slicing its ISO string took the UTC day — so an evening punch in Montana was
+// filed under TOMORROW by the filter while the row above it printed today's date
+// (fmtDayShort is local). Filtering Aug 4 → Aug 4 dropped the entry it was showing,
+// and the header's hours/amount — and any billing selection made from that view —
+// silently missed it. Same rule as ymd()/today(): truncating an instant to a day is
+// always a LOCAL read. See test/dates.test.mjs.
+function timeDay(t) { return ymd(new Date(t.clock_in)); }
 // Completed entries only (the active one lives in the punch card), newest first.
 function timeFiltered() {
   return (cache.time_entries||[])
     .filter(t => t.clock_out)
-    .filter(t => { const d = t.clock_in.slice(0,10); return (!_timeFrom || d >= _timeFrom) && (!_timeTo || d <= _timeTo); })
+    .filter(t => { const d = timeDay(t); return (!_timeFrom || d >= _timeFrom) && (!_timeTo || d <= _timeTo); })
     .sort((a,b) => b.clock_in.localeCompare(a.clock_in));
 }
 
@@ -7105,6 +7118,28 @@ function paydaysForMonth(y,m){
   const out=[]; let guard=0;
   while (d<=monthEnd && guard++<500){ if (d.getMonth()===m && d.getFullYear()===y) out.push(new Date(d)); d.setDate(d.getDate()+step); }
   return out;
+}
+// Which paydays could show up on the BANK STATEMENT for month (y,m)?
+// paydaysForMonth() answers a different question — which paydays does this BUDGET
+// month plan against — and on a fixed-day schedule the two disagree at the edges: a
+// payday landing on a weekend moves off it (the 1st on a Saturday is paid the Friday
+// BEFORE), so "August's paycheck" is a July 31st deposit. Reconciling July then had
+// no payday to file it under — the picker offered July 1st only, and every option was
+// wrong. Take this month's own list (a payday can also post a day or two late, so
+// keep it whole) plus any neighbouring month's payday whose DATE lands inside this
+// one. Weekly/biweekly schedules are unaffected: their paydays are already dated in
+// the month that lists them.
+function paydaysOnStatement(y,m){
+  const seen=new Set(), out=[];
+  const add=d=>{ const k=ymd(d); if(seen.has(k)) return; seen.add(k); out.push(d); };
+  paydaysForMonth(y,m).forEach(add);
+  [-1,1].forEach(off=>{
+    const r=new Date(y,m+off,1);
+    paydaysForMonth(r.getFullYear(), r.getMonth())
+      .filter(d=>d.getFullYear()===y && d.getMonth()===m)
+      .forEach(add);
+  });
+  return out.sort((a,b)=>a-b);
 }
 function payFmt(d){ return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); }
 function schedSummary(){
@@ -8682,8 +8717,8 @@ function renderReport(r) {
     el.innerHTML = reportScreen('Expense Summary — All Time');
   } else if (r==='budget') {
     // Monthly budget report — laid out like the other reports (paycheck sections
-    // + a "you pay" total). Built by the shared helper so the Budget page's own
-    // Print button can reuse it for the month being viewed.
+    // + a "you pay" total). The helper takes the month so a caller can print any
+    // one; this tab is the only caller today, and it prints the current month.
     const now=new Date();
     const monthLabel=buildBudgetReportDoc(now.getFullYear(), now.getMonth());
     el.innerHTML = reportScreen('Budget — '+monthLabel);
@@ -10622,7 +10657,7 @@ async function applyBillPayFromTxn(idx, billId) {
 
 // Record a payday deposit as a paycheck on the Budget tab. paycheck_amounts is keyed
 // by the PROJECTED payday date (that's what the Budget page and its report look up),
-// so the picker offers this month's paydays rather than a free date — an amount saved
+// so the picker offers projected paydays rather than a free date — an amount saved
 // under any other key would never show up there.
 function paycheckFromTxn(idx) {
   const s = _recState; if (!s) return;
@@ -10631,7 +10666,9 @@ function paycheckFromTxn(idx) {
   const mk = (s.monthKey||'').slice(0,7);
   if (!mk) { showToast('This statement has no month to file the paycheck under.', 'error'); return; }
   const by = +mk.split('-')[0], bm = +mk.split('-')[1];
-  const days = (typeof paydaysForMonth==='function') ? paydaysForMonth(by, bm-1) : [];
+  // Statement paydays, NOT the budget month's — a weekend-shifted payday clears on
+  // the neighbouring month's statement (see paydaysOnStatement).
+  const days = (typeof paydaysOnStatement==='function') ? paydaysOnStatement(by, bm-1) : [];
   // Titled by the DAY, not one line's amount — the amount is now whatever is ticked.
   document.getElementById('txn-menu-title').textContent = 'Paycheck · ' + (t.date ? fmtDate(t.date) : fmt(t.amount));
   const body = document.getElementById('txn-menu-body');
@@ -11013,8 +11050,15 @@ async function migrateReconTags(){
   const next = manualMatchTagMap(profile.plaid_recon, cur);
   const ck = Object.keys(cur), nk = Object.keys(next);
   if (nk.length === ck.length && nk.every(k => cur[k] === next[k])) return;   // nothing new
-  profile.recon_bank = next;
-  try { await sb.from('profiles').upsert({ id: currentUser.id, recon_bank: next }); } catch (e) { console.error('recon tag migration', e); }
+  // A DELTA, not a whole-column write. recon_bank is a collection two devices add to
+  // independently, and this ran at every login off the profile fetched moments
+  // earlier — long enough to roll back a "Paid from" tag the other device set in the
+  // meantime, with no error anywhere. manualMatchTagMap is pure and only ADDS tags an
+  // existing manual match already implies, so re-applying it to the FRESH map is
+  // exactly the right merge.
+  const { error } = await updateProfileJson('recon_bank',
+    fresh => manualMatchTagMap(profile.plaid_recon, fresh), {});
+  if (error) console.error('recon tag migration', error);
 }
 // Which bank account an expense is attributed to, for the Expenses-tab account
 // switcher. Explicit "Paid from" tag first, then where it was reconciled per the
