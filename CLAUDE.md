@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **496** (see `version.json` — that file is the source of truth).
+Current version: **497** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -530,7 +530,7 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Ten test suites run the SHIPPED code (they extract functions out of `index.html` by
+Eleven test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -544,6 +544,7 @@ node test/reminders.test.mjs   # the Worker's Denver wall-clock → UTC reminder
 node test/recurring.test.mjs   # unattended auto-posting: no silent skips, no duplicates
 node test/forms.test.mjs       # a save must not blank a select value it didn't recognise
 node test/dates.test.mjs       # "what day is it" — local calendar dates, never UTC
+node test/home.test.mjs        # Home's refresh contract + its fold controls
 ```
 
 `retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
@@ -1003,6 +1004,18 @@ minute until the cache refreshes.
   (it's opened by inline `display`, not the `.collapsed` class); it's refreshed by
   `renderDashboard` whenever `calendarOpen()`, since no write path redraws it and a
   paid invoice used to leave a stale chip on its old due date.
+  **Home answers for what it changes (v497).** It's the only page that edits its own
+  data in place — a job saved or deleted from the calendar re-draws two cards and
+  returns — so anything else fed by that data has to be refreshed by hand.
+  `refreshHomeAfterJobWrite()` is the single place: Upcoming, the calendar (only
+  while open), and **`refreshNotifBadge()`** — the bell counts missed/today events
+  out of `cache.jobs` and mirrors that count onto the Home Screen app icon, so
+  ticking tonight's job done used to leave a red dot on both until the user changed
+  pages. Route any new Home-local write through it. (`showDataLoadError`'s Retry had
+  the same shape of bug from the other end: it re-rendered the Dashboard whatever
+  page you were on, so retrying from Invoices reloaded the data and left the empty
+  list sitting there. It calls `rerenderCurrentView()` now.) `test/home.test.mjs`
+  pins this.
 - **Jobs / Calendar:** its own switchable section (`jobs`, no nav tab — see
   Sections). Add jobs (title + date + optional time + optional
   customer link + optional `remind_minutes` push reminder). The Calendar card
@@ -1332,6 +1345,28 @@ behaviors are easy to break without noticing. What exists and must keep working:
 
 ## Gotchas learned the hard way
 
+- **`innerHTML` wipes accessibility, and Home is where that showed (v497).**
+  `enhanceA11y()` retrofits `role="button"` + `tabindex` onto the app's tappable
+  DIVs (and the keydown handler turns Enter/Space into a click). It runs ONCE over
+  the static shell, then only via `rerenderCurrentView()` — so anything redrawn by
+  its own renderer keeps whatever the last sweep left. Home is the worst case: all
+  three login paths call `renderDashboard()` **directly**, never through
+  `rerenderCurrentView()`, so the landing page's generated rows had no roles at all
+  until the user navigated away and back; the same held for a lazily-expanded widget
+  and for every calendar month change. `renderDashCard()` and `renderCalendar()`
+  re-run it on what they just wrote — **do the same in any new render that emits
+  `[onclick]` markup.** Its nested-control guard skips an element containing a real
+  control (a button inside a `role=button` hides the inner one from assistive tech);
+  it used to skip headings too, which disqualified exactly one shape — the fold
+  header (`<div class="card-header" onclick="toggle…"><h3>…</h3>`) — i.e. the
+  collapse toggle of every widget on Home plus the loan schedule. Headings are fine
+  now (the `<h3>` becomes the control's accessible name). Two Home headers DO hold
+  real controls (Upcoming's "Event" button, the category card's Month/Year segment):
+  there `markFoldState()` wires the **chevron** as the control instead, with
+  `stopPropagation()` — without it the header's own onclick fires on the same tap and
+  the card toggles twice, back to where it started. `markFoldState` also carries
+  `aria-expanded`, and Calendar/Reports (which fold by inline `display`, not the
+  `.collapsed` class) get theirs from `setHeaderExpanded()`.
 - **A calendar date is read with `ymd()`/`today()`, NEVER `toISOString()` (v496).**
   Every date in this app is a bare `'YYYY-MM-DD'` string a human typed in Montana,
   but `today()` derived that string in UTC — so from 6pm MDT (5pm MST) until
