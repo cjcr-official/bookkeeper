@@ -27,9 +27,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(join(__dirname, '..', 'index.html'), 'utf8');
 
 // --- Extract a top-level `function name(...) {...}` by brace matching. --------
+// Keeps a leading `async` — everything that writes to the profile is async, and
+// dropping the keyword yields a plain function whose `await`s are a syntax error.
 function extract(name) {
-  const start = src.indexOf('function ' + name + '(');
+  let start = src.indexOf('function ' + name + '(');
   if (start < 0) throw new Error('cannot find function ' + name);
+  if (src.slice(start - 6, start) === 'async ') start -= 6;
   let i = src.indexOf('{', start), depth = 0, inStr = null;
   for (; i < src.length; i++) {
     const c = src[i], n = src[i + 1];
@@ -70,11 +73,20 @@ function sandbox(sched) {
   return api;
 }
 
+// Tests are QUEUED and run in order at the end, so an async case (the paid-flag
+// writers are async, like everything that touches the profile) is actually awaited.
+// Running them inline would print the summary before they settled and count a
+// rejected promise as a pass — a green suite that checks nothing.
 let pass = 0, fail = 0;
+const queue = [];
 function test(name, fn) {
-  try { fn(); console.log('• ' + name); pass++; }
-  catch (e) { console.log('✗ ' + name + '\n    ' + e.message); fail++; }
+  queue.push(async () => {
+    try { await fn(); console.log('• ' + name); pass++; }
+    catch (e) { console.log('✗ ' + name + '\n    ' + e.message); fail++; }
+  });
 }
+function head(title) { queue.push(() => console.log('\n── ' + title + ' ──\n')); }
+async function runAll() { for (const step of queue) await step(); }
 function eq(a, b, msg) {
   if (a !== b) throw new Error((msg ? msg + ': ' : '') + 'expected ' + JSON.stringify(b) + ', got ' + JSON.stringify(a));
 }
@@ -89,7 +101,7 @@ const denver = fn => withTZ('America/Denver', fn);
 // Paid on the 1st, weekends paid the Friday before (the app's default).
 const monthly1 = { freq: 'monthly', day: 1, weekend: 'before' };
 
-console.log('\n── projected paydays ──\n');
+head('projected paydays');
 
 test('a payday on a weekend moves to the Friday before', () => {
   denver(() => {
@@ -137,7 +149,7 @@ test('no schedule projects nothing (the page prompts to set one up)', () => {
   denver(() => eq(sandbox(null).paydays(2026, 8).length, 0));
 });
 
-console.log('\n── which paydays a statement can show ──\n');
+head('which paydays a statement can show');
 
 test("July's statement offers the payday that shifted back into July", () => {
   denver(() => {
@@ -183,7 +195,7 @@ test('the list is deduped and in date order', () => {
   });
 });
 
-console.log('\n── bills belong to a month ──\n');
+head('bills belong to a month');
 
 test('a recurring bill is due every month; a one-time bill only in its own', () => {
   denver(() => {
@@ -222,7 +234,7 @@ test('a bill due the 31st lands on the last day of a short month', () => {
   });
 });
 
-console.log('\n── reconciliation asks the statement, not the budget month ──\n');
+head('reconciliation asks the statement, not the budget month');
 
 test('the paycheck picker is built from paydaysOnStatement', () => {
   const body = extract('paycheckFromTxn');
@@ -238,5 +250,145 @@ test('the amount is still keyed by the projected payday the Budget page reads', 
      'paycheck_amounts stays keyed by the payday date — any other key is invisible on the Budget page');
 });
 
+head('a paid bill records what it actually cost');
+
+// bill_paid used to hold a bare `true`, so the only amount reconciliation could offer
+// for a paid occurrence was the bill's CURRENT planned figure. Two silent failures fell
+// out of that: a variable bill (planned $118.42, charged $143.10) could never match its
+// own bank line, and editing a recurring bill's amount restated every occurrence ever
+// paid — flipping months that had already reconciled and stamped ✅ back to amber.
+// The flag carries the real amount now, and must stay TRUTHY or the row un-ticks.
+
+// Run the shipped toggle against an in-memory profile, with the network stubbed.
+function paidFlagSandbox(initial) {
+  const profile = { bill_paid: initial || {} };
+  const factory = new Function('profile', 'updateProfileJson', 'renderBudget', 'showToast', `
+    ${extract('budMonthKey')}
+    ${extract('billPaidMap')}
+    ${extract('isBillPaid')}
+    ${extract('billPaidAmount')}
+    ${extract('billPaidFlagAmount')}
+    ${extract('toggleBillPaid')}
+    ${extract('forgetBillTraces')}
+    return { toggleBillPaid, isBillPaid, billPaidAmount, billPaidFlagAmount, forgetBillTraces };
+  `);
+  // Stand-in for the delta writer: apply() against the CURRENT server copy.
+  const server = { bill_paid: JSON.parse(JSON.stringify(profile.bill_paid)), recon_bank: {} };
+  const updateProfileJson = async (col, apply, empty) => {
+    const start = server[col] == null ? (empty === undefined ? {} : empty)
+                                      : JSON.parse(JSON.stringify(server[col]));
+    server[col] = apply(start);
+    profile[col] = server[col];
+    return { error: null };
+  };
+  const api = factory(profile, updateProfileJson, () => {}, () => {});
+  api.profile = profile; api.server = server;
+  return api;
+}
+
+test('ticking a bill paid stores what it cost, not just that it was paid', async () => {
+  const s = paidFlagSandbox();
+  await s.toggleBillPaid('b1', 2026, 6, 143.10);          // July 2026
+  eq(s.isBillPaid('b1', 2026, 6), true, 'the row shows paid');
+  eq(s.billPaidAmount('b1', 2026, 6), 143.10, 'and the occurrence carries its real amount');
+});
+
+test('a $0 or unknown amount still marks the bill paid', async () => {
+  const s = paidFlagSandbox();
+  await s.toggleBillPaid('b1', 2026, 6, 0);
+  eq(s.isBillPaid('b1', 2026, 6), true, '0 must not read as unpaid — the flag stays truthy');
+  eq(s.billPaidAmount('b1', 2026, 6), null, 'with no amount to report');
+  const s2 = paidFlagSandbox();
+  await s2.toggleBillPaid('b2', 2026, 6);                  // no amount passed at all
+  eq(s2.isBillPaid('b2', 2026, 6), true, 'an amount-less call still marks it paid');
+});
+
+test('un-ticking clears the occurrence entirely', async () => {
+  const s = paidFlagSandbox();
+  await s.toggleBillPaid('b1', 2026, 6, 143.10);
+  await s.toggleBillPaid('b1', 2026, 6, 143.10);
+  eq(s.isBillPaid('b1', 2026, 6), false, 'unpaid again');
+  eq(JSON.stringify(s.profile.bill_paid), '{}', 'and the empty month is pruned');
+});
+
+test('a legacy `true` flag reports no amount, so the planned one stays the fallback', () => {
+  const s = paidFlagSandbox({ '2026-07': { b1: true } });
+  eq(s.isBillPaid('b1', 2026, 6), true, 'still paid');
+  eq(s.billPaidAmount('b1', 2026, 6), null, 'no amount recorded → reconciliation falls back');
+  eq(s.billPaidFlagAmount(true), null);
+  eq(s.billPaidFlagAmount(undefined), null);
+  eq(s.billPaidFlagAmount('143.10'), 143.10, 'a jsonb round-trip may hand back a string');
+  eq(s.billPaidFlagAmount(-143.10), 143.10, 'stored positive either way');
+});
+
+test('reconciliation records the BANK line amount, not the planned one', () => {
+  const body = extract('applyBillPayFromTxn');
+  ok(/toggleBillPaid\([^)]*realAmt\)/.test(body),
+     'the one path that knows the true amount must pass it through');
+  ok(/s\.stmt\.transactions/.test(body), 'and it comes off the transaction being paired');
+});
+
+head('deleting a bill leaves nothing behind');
+
+test('deleting a bill drops its paid flags and its "Paid from" tag', async () => {
+  const s = paidFlagSandbox({ '2026-06': { b1: 90, b2: 45 }, '2026-07': { b1: 95 } });
+  s.server.bill_paid = JSON.parse(JSON.stringify(s.profile.bill_paid));
+  s.server.recon_bank = { 'b:b1': 'bankA', 'b:b1:2026-07': 'bankB', 'b:b2': 'bankA', 'e:e1': 'bankA' };
+  s.profile.recon_bank = { ...s.server.recon_bank };
+  // reconBankMap() is the app's reader; the extracted body closes over it.
+  globalThis.reconBankMap = () => s.profile.recon_bank;
+  globalThis.console = console;
+  await s.forgetBillTraces('b1');
+  eq(JSON.stringify(s.profile.bill_paid), JSON.stringify({ '2026-06': { b2: 45 } }),
+     "b1's flags are gone and the month it emptied is pruned");
+  eq(JSON.stringify(s.profile.recon_bank), JSON.stringify({ 'b:b2': 'bankA', 'e:e1': 'bankA' }),
+     'the folded tag AND the per-occurrence override go, nothing else does');
+  delete globalThis.reconBankMap;
+});
+
+test('deleteBill actually runs the cleanup', () => {
+  const body = extract('deleteBill');
+  ok(/forgetBillTraces\(/.test(body), 'deleteBill must clean up after itself');
+});
+
+test('the cleanup is a delta, never a whole-column write', () => {
+  const body = extract('forgetBillTraces');
+  ok(/updateProfileJson\('bill_paid'/.test(body) && /updateProfileJson\('recon_bank'/.test(body),
+     'both columns go through the delta writer');
+  ok(!/\.upsert\(/.test(body),
+     'a whole-column upsert would roll back what another device changed since login');
+});
+
+head('the Budget report prints the month you asked for');
+
+test('the Budget report is month-selectable, not pinned to today', () => {
+  const body = extract('renderReport');
+  const branch = body.slice(body.indexOf("r==='budget'"), body.indexOf("r==='loan'"));
+  ok(/_reportBudgetMonth/.test(branch),
+     'the printed month must be selectable — new Date() alone made every other month unreachable');
+  ok(/selectReportBudgetMonth\(/.test(branch), 'and the picker has to be wired up');
+  ok(!/buildBudgetReportDoc\(now\.getFullYear\(\)/.test(branch),
+     'the current month is a default, not the only option');
+});
+
+test('it defaults to the month the Budget page is showing', () => {
+  const body = extract('renderReport');
+  const branch = body.slice(body.indexOf("r==='budget'"), body.indexOf("r==='loan'"));
+  ok(/budgetCursor/.test(branch),
+     'opening the report after browsing to a month should print that month');
+});
+
+test('the month list always contains the selected month', () => {
+  const factory = new Function('budMonthKey', extract('budgetReportMonths') + '\nreturn budgetReportMonths;');
+  const budgetReportMonths = factory((y, m) => `${y}-${String(m + 1).padStart(2, '0')}`);
+  const near = budgetReportMonths(null);
+  eq(near.length, 13, 'six months either side of today');
+  const far = budgetReportMonths('2019-03');
+  ok(far.some(o => o.key === '2019-03'),
+     'a Budget page browsed far out of range must not silently print a different month');
+  eq(far[0].key, '2019-03', 'and the list stays in date order');
+});
+
+await runAll();
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

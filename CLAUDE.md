@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **502** (see `version.json` — that file is the source of truth).
+Current version: **503** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -91,8 +91,10 @@ Statements (Accounts) page — no modal, no PDF upload (the PDF/pdf.js/
 client pulls a month's transactions from the bank, matches them against recorded
 expenses + invoice payments + owner activity + gift cards + loan payments
 (recorded `loans.payments`, money out; fp `l:<loanId>:<payId>`) + paid budget
-bills (each `bill_paid[YYYY-MM]` occurrence at its due day for the FULL bill
-amount, money out; fp `b:<billId>:<YYYY-MM>`) + recorded paychecks (v479 —
+bills (each `bill_paid[YYYY-MM]` occurrence at its due day, money out, for the
+amount RECORDED on that flag — see the `bill_paid` note below — falling back to
+the bill's planned amount only for legacy `true` flags; fp
+`b:<billId>:<YYYY-MM>`) + recorded paychecks (v479 —
 each `paycheck_amounts[YYYY-MM-DD]` entry, money IN, at its payday; fp
 `pc:<YYYY-MM-DD>`) (amount ±$0.01, date
 window), and shows matched / in-records-only / on-statement-only buckets. Budget-tab
@@ -558,7 +560,7 @@ node test/forms.test.mjs       # a save must not blank a select value it didn't 
 node test/dates.test.mjs       # "what day is it" — local calendar dates, never UTC
 node test/home.test.mjs        # Home's refresh contract + its fold controls
 node test/loan.test.mjs        # the amortization engine, against closed-form annuities
-node test/budget.test.mjs      # payday projection + which paydays a statement can show
+node test/budget.test.mjs      # paydays, bill months, and what a paid bill actually cost
 node test/time.test.mjs        # Time Clock: a punch belongs to its LOCAL day
 node test/a11y.test.mjs        # tappable divs stay operable through every redraw
 ```
@@ -1024,9 +1026,31 @@ create policy "loans_own" on loans for all using (auth.uid() = user_id);
 --   paycheck_amounts  {"YYYY-MM-DD": amount} — what you were ACTUALLY paid on that
 --                     payday (keyed by the payday date). Drives the "$X left" after a
 --                     paycheck's bills on the Budget page.
---   bill_paid         {"YYYY-MM": {billId: true}} — per-month paid flags (a bill
---                     recurs monthly, so "paid" is per occurrence). Green check +
+--   bill_paid         {"YYYY-MM": {billId: <amount paid>}} — per-month paid flags (a
+--                     bill recurs monthly, so "paid" is per occurrence). Green check +
 --                     strikethrough on the row; also marks the calendar chip done.
+--                     THE VALUE IS THE AMOUNT, and it must stay TRUTHY (v503): a $0 or
+--                     unknown amount stores `true`, which is also what every row saved
+--                     before v503 holds. It used to ALWAYS be `true`, so the only
+--                     figure reconciliation could offer for a paid occurrence was the
+--                     bill's CURRENT planned amount — wrong twice, silently. A variable
+--                     bill (electric, water, gas) is planned at $118.42 and charged at
+--                     $143.10, so it could never match the line it is; and editing a
+--                     recurring bill's amount RETROACTIVELY restated every occurrence
+--                     ever paid, so months that had already reconciled and stamped ✅
+--                     flipped to ⚠️ on their next pull with nothing to point at.
+--                     `toggleBillPaid(id,y,m,amount)` freezes the real figure:
+--                     `applyBillPayFromTxn` passes the BANK LINE's amount (the one path
+--                     that knows for certain), the Budget row passes the bill's amount
+--                     as planned right now, and `billRow` shows "paid $X" when the two
+--                     differ. Readers go through `billPaidAmount(id,y,m)` /
+--                     `billPaidFlagAmount(flag)` (→ null for a legacy `true`);
+--                     `isBillPaid` stays a plain truthiness check. Deleting a bill runs
+--                     `forgetBillTraces(id)`, which drops its flags AND its `recon_bank`
+--                     tags (folded `b:<id>` plus every `b:<id>:<YYYY-MM>` override) as
+--                     DELTAS — the same orphan/clobber pair `deleteLoan` was fixed for
+--                     in v499. `test/budget.test.mjs` + `test/reconcile.test.mjs` pin
+--                     all of it.
 alter table profiles add column if not exists pay_schedule jsonb;
 alter table profiles add column if not exists budget_bills jsonb;
 alter table profiles add column if not exists reimburse_label text;
@@ -1227,8 +1251,18 @@ minute until the cache refreshes.
   and report header. Also rewrites `<link rel="icon">` and
   `<link rel="apple-touch-icon">` so it's the favicon + Home Screen icon
   (already-installed PWAs need remove + re-add — iOS caches Home Screen icons).
-- **Reports:** Profit & Loss and Expense Summary, same invoice-style PDF + print
-  pipeline.
+- **Reports:** Profit & Loss, Expense Summary, Budget and Loan, same invoice-style
+  PDF + print pipeline. **A scoped report needs a picker (v503).** The Budget report
+  hard-coded `new Date()`, so the current month was the only month that could ever
+  be printed — the wrong single choice for a forward planner twice over: printing
+  NEXT month's bills is the point of the tab, and in the first days of a month you
+  still want the one just closed. It now has a month `<select>` (mirroring the Loan
+  report's), defaulting to whatever month `budgetCursor` is showing so opening the
+  report straight after browsing prints what the user was just looking at, and
+  pinning to an explicit pick after that. `budgetReportMonths(sel)` offers ±6 months
+  around today and always folds `sel` in — a Budget page browsed outside that window
+  would otherwise render a picker with nothing selected and silently print a
+  different month than the one named in the dropdown.
 
 ---
 

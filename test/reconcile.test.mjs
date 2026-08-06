@@ -44,6 +44,7 @@ function extract(name) {
 }
 
 const NEEDED = ['fmt', 'parseDate', 'ymd', 'budDateAt', 'billRecurs', 'billDueDay',
+  'billPaidFlagAmount',
   'reconBankMap', 'reconBankKey', 'recBankFor', 'manualMatchTagMap', 'reconcileMatch',
   'shiftMonthKey', 'adjMonths', 'accountedFpsOf', 'clearedElsewhereMap',
   'applyClearedElsewhere', 'txnKey', 'makeTxnRefResolver'];
@@ -222,6 +223,45 @@ for (const recurring of [false, true]) {
     eq(r.passed, true, 'month balances');
   });
 }
+
+// 5b-ii. A paid occurrence reconciles against what it ACTUALLY cost, not against the
+//     bill's current planned amount. bill_paid used to hold a bare `true`, so the only
+//     figure available was b.amount — wrong for every variable bill (planned $118.42,
+//     charged $143.10, never matches), and worse, retroactive: editing a recurring
+//     bill's amount restated every occurrence ever paid, so months that had already
+//     reconciled and stamped ✅ flipped to "needs review" on their next pull.
+test('a paid bill matches the amount recorded for that month, not the planned one', ({ reconcileMatch }) => {
+  // The bill's plan says $118.42. July's charge was $143.10 and was recorded as such.
+  sandbox.profile.budget_bills = [{ id: 'b1', name: 'Electric', due: 12, recurring: true, amount: 118.42 }];
+  sandbox.profile.bill_paid = { '2026-07': { b1: 143.10 } };
+  const s = stmt('2026-07', [{ date: '2026-07-12', amount: -143.10, description: 'FLATHEAD ELECTRIC' }]);
+  const r = reconcileMatch(s, null);
+  eq(r.matched.length, 1, 'the real charge matches the occurrence');
+  eq(r.matched[0].rIdxs.map(i => r.recs[i].fp), ['b:b1:2026-07'], 'paired via the bill occurrence fp');
+  eq(r.recs[r.matched[0].rIdxs[0]].amount, -143.10, 'the record states what actually left the bank');
+  eq(r.passed, true, 'month balances');
+});
+
+test("editing a bill's amount cannot restate a month already reconciled", ({ reconcileMatch }) => {
+  // Same July as above; the bill has since been edited up to $155.00 for August.
+  sandbox.profile.budget_bills = [{ id: 'b1', name: 'Electric', due: 12, recurring: true, amount: 155.00 }];
+  sandbox.profile.bill_paid = { '2026-07': { b1: 143.10 } };
+  const s = stmt('2026-07', [{ date: '2026-07-12', amount: -143.10, description: 'FLATHEAD ELECTRIC' }]);
+  const r = reconcileMatch(s, null);
+  eq(r.passed, true, 'July still balances after the bill was edited');
+  eq(r.inRecordsOnly.length, 0, 'no phantom $155.00 record appears in July');
+});
+
+// The legacy flag carries no amount, so the planned figure stays the fallback —
+// every row saved before this behaves exactly as it did.
+test('a legacy `true` flag still falls back to the planned amount', ({ reconcileMatch }) => {
+  sandbox.profile.budget_bills = [{ id: 'b1', name: 'Rent', due: 1, recurring: true, amount: 900 }];
+  sandbox.profile.bill_paid = { '2026-07': { b1: true } };
+  const s = stmt('2026-07', [{ date: '2026-07-01', amount: -900, description: 'RENT' }]);
+  const r = reconcileMatch(s, null);
+  eq(r.matched.length, 1, 'still matches on the planned amount');
+  eq(r.passed, true, 'month balances');
+});
 
 // 5c. A paycheck recorded on the Budget tab must match its payday deposit — without
 //     this the deposit stays unmatched and the month can't balance.

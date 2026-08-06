@@ -2738,6 +2738,7 @@ let invSortDir = 'desc';   // invoices always sort by number; 'desc' = highest (
 let currentReport = 'pl';
 let _reportLoanId = null;   // which saved loan the Loan report prints
 let _reportLoanMonth = null; // which schedule month to print ('all' = whole schedule)
+let _reportBudgetMonth = null; // 'YYYY-MM' the Budget report prints; null = follow the Budget page
 let editingInvLines = [];
 let editingInvExpenses = [];
 
@@ -3401,7 +3402,7 @@ const MODULES = [
   // supported shape: hiddenPagesSet() just adds nothing, and every gate is a
   // data-module attribute or an isModuleHidden('jobs') check.
   { id:'jobs',       label:'Jobs & Calendar',      icon:'ti-calendar-event', desc:'Scheduled events, the month calendar, and event reminders.', pages:[] },
-  { id:'budget',     label:'Budget',               icon:'ti-pig-money',    desc:'Monthly spending budgets by category.',              pages:['budget'] },
+  { id:'budget',     label:'Budget',               icon:'ti-pig-money',    desc:'Bills, paydays, and what each paycheck covers.',     pages:['budget'] },
   { id:'statements', label:'Statements',           icon:'ti-file-dollar',  desc:'Bank statements and reconciliation.',                pages:['accounts'] },
   { id:'loan',       label:'Loan Calculator',      icon:'ti-calculator',   desc:'Estimate loan payments and interest.',               pages:['loan'] },
 ];
@@ -6994,9 +6995,11 @@ async function deleteLoanPayment() {
 // Model: a recurring list of bills (name, due day, amount, and how much gets
 // reimbursed by someone else) + a pay schedule. For the selected month the app
 // computes the actual paydays and drops each bill on the LAST payday on/before its
-// due date — so each paycheck shows exactly what to pay. Paycheck totals use the
-// FULL bill amount (the cash you need); the reimbursed part is tracked so the hero
-// can show your true net cost. All stored on profile (jsonb), loaded with the rest:
+// due date — so each paycheck shows exactly what to pay. Every total on the page —
+// the hero, each paycheck's "to pay", the progress bars — is YOUR share, the full
+// amount minus anything reimbursed back; the reimbursed part is shown beside it.
+// (Reconciliation is the one place the FULL amount is used, because that is what
+// actually leaves the bank.) All stored on profile (jsonb), loaded with the rest:
 //   profile.pay_schedule   {freq:'biweekly'|'semimonthly'|'weekly'|'monthly', anchor, days, day}
 //   profile.budget_bills   [{id,name,due,amount,reimbursed,notes}]
 //   profile.reimburse_label  generic label for the reimbursed portion (e.g. "Kids")
@@ -7060,16 +7063,43 @@ async function savePaycheckAmount(dateKey, amount){
   if (error && !/paycheck_amounts/i.test(error.message||'')) showToast(error.message,'error');
 }
 
-// ── Per-month "bill paid" flags, keyed {YYYY-MM: {billId: true}} ──
+// ── Per-month "bill paid" flags, keyed {YYYY-MM: {billId: <amount paid>}} ──
+// The value used to be a bare `true`, which meant the ONLY amount reconciliation
+// could offer for a paid occurrence was the bill's CURRENT planned figure. That is
+// wrong in both directions and neither one errors:
+//   · a variable bill (electric, water, gas) is planned at $118.42 and charged at
+//     $143.10, so it could never match the bank line it is;
+//   · editing a recurring bill's amount retroactively restated every occurrence ever
+//     paid, so months that had already reconciled and stamped ✅ flipped back to
+//     "needs review" on their next pull, with nothing to point at.
+// The flag now carries what actually left the bank for THAT month. It must stay
+// TRUTHY — a $0 or unknown amount falls back to `true`, which is also what every
+// row saved before this reads as (billPaidAmount → null → planned amount, as before).
 function budMonthKey(y,m){ return `${y}-${String(m+1).padStart(2,'0')}`; }
 function billPaidMap(){ return (profile && profile.bill_paid) || {}; }
 function isBillPaid(billId,y,m){ const mm=billPaidMap()[budMonthKey(y,m)]; return !!(mm && mm[billId]); }
-async function toggleBillPaid(billId,y,m){
+// The recorded amount for one occurrence, or null when it's a legacy/unknown flag.
+// reconcileMatch reads the same value straight off the map it already has in hand.
+function billPaidAmount(billId,y,m){
+  const mm=billPaidMap()[budMonthKey(y,m)];
+  return billPaidFlagAmount(mm && mm[billId]);
+}
+// One flag value → the amount it records, or null. `true` (legacy) has none.
+function billPaidFlagAmount(v){
+  if (v===true || v==null) return null;
+  const n=Math.abs(parseFloat(v));
+  return (isNaN(n) || !n) ? null : n;
+}
+async function toggleBillPaid(billId,y,m,amount){
   const k=budMonthKey(y,m);
   const turningOn = !isBillPaid(billId,y,m);     // read the intent BEFORE touching state
+  // Freeze what this occurrence actually cost, so a later edit to the bill can't
+  // restate history. Reconciliation passes the BANK LINE's amount (it knows the
+  // truth); the Budget page passes the bill's amount as planned right now.
+  const mark = billPaidFlagAmount(amount) || true;
   const optimistic=JSON.parse(JSON.stringify(billPaidMap()));
   optimistic[k]=optimistic[k]||{};
-  if (turningOn) optimistic[k][billId]=true; else delete optimistic[k][billId];
+  if (turningOn) optimistic[k][billId]=mark; else delete optimistic[k][billId];
   if (!Object.keys(optimistic[k]).length) delete optimistic[k];
   profile.bill_paid=optimistic;
   renderBudget();                                 // instant feedback on the row
@@ -7077,7 +7107,7 @@ async function toggleBillPaid(billId,y,m){
   // bill ticked on another device isn't wiped by this tap.
   const { error } = await updateProfileJson('bill_paid', map => {
     map[k]=map[k]||{};
-    if (turningOn) map[k][billId]=true; else delete map[k][billId];
+    if (turningOn) map[k][billId]=mark; else delete map[k][billId];
     if (!Object.keys(map[k]).length) delete map[k];
     return map;
   });
@@ -7332,9 +7362,14 @@ function billRow(b, early){
   let sub = dd!=null ? ('due '+ordinal(dd)+(billRecurs(b)?'':' · one-time')) : 'no due date';
   if (late) sub += ' · past due';
   else if (early) sub += ' · was due before this payday';
+  // What this occurrence really cost, when it differs from the planned amount (a
+  // variable bill, or one recorded from the bank line during reconciliation). Without
+  // this the recorded figure is invisible here and the row contradicts the statement.
+  const reallyPaid = paid ? billPaidAmount(b.id,y,m) : null;
+  if (reallyPaid!=null && Math.abs(reallyPaid-amt) > 0.01) sub += ' · paid '+fmt(reallyPaid);
   if (b.notes) sub += ' · '+escHtml(b.notes);
   return `<div class="bill-row${paid?' is-paid':''}${late?' is-late':''}">
-    <button class="bill-check" aria-pressed="${paid}" aria-label="${escHtml(name)} — ${paid?'paid, tap to undo':'mark paid'}" onclick="toggleBillPaid('${b.id}',${y},${m})"><i class="ti ti-check"></i></button>
+    <button class="bill-check" aria-pressed="${paid}" aria-label="${escHtml(name)} — ${paid?'paid, tap to undo':'mark paid'}" onclick="toggleBillPaid('${b.id}',${y},${m},${amt})"><i class="ti ti-check"></i></button>
     <button class="bill-main" onclick="openBillModal('${b.id}')">
       <span style="flex:1;min-width:0">
         <span class="bill-name">${escHtml(name)}</span>
@@ -7482,7 +7517,39 @@ async function deleteBill(){
   const id=document.getElementById('bill-id').value; if(!id) return;
   if(!confirm('Delete this bill?')) return;
   await saveBills(getBills().filter(b=>b.id!==id));
+  await forgetBillTraces(id);
   showToast('Deleted'); closeModal('modal-bill'); renderBudget();
+}
+// A deleted bill leaves its id behind in two OTHER collection columns: every month's
+// paid flag (bill_paid) and its "Paid from" bank tag (recon_bank — the folded
+// `b:<id>` plus any per-occurrence `b:<id>:<YYYY-MM>` override written by
+// reconciliation). Nothing reads them again, so they are dead weight that only grows
+// — and the tag is the same orphan deleteLoan used to leave. Same fix, same reason:
+// recompute the doomed keys INSIDE apply(current), never by cloning the in-memory
+// copy and writing the whole column back, or a tag set on another device since this
+// tab loaded is silently rolled back.
+async function forgetBillTraces(id){
+  const dropFlags = map => {
+    Object.keys(map).forEach(mk => {
+      const mm = map[mk];
+      if (!mm || typeof mm!=='object') return;
+      delete mm[id];
+      if (!Object.keys(mm).length) delete map[mk];
+    });
+    return map;
+  };
+  const dropTags = map => {
+    Object.keys(map).forEach(k => { if (k==='b:'+id || k.startsWith('b:'+id+':')) delete map[k]; });
+    return map;
+  };
+  profile.bill_paid = dropFlags(JSON.parse(JSON.stringify(billPaidMap())));
+  const { error:e1 } = await updateProfileJson('bill_paid', dropFlags);
+  if (e1 && !/bill_paid/i.test(e1.message||'')) console.error('bill_paid cleanup', e1);
+  if (typeof reconBankMap==='function'){
+    profile.recon_bank = dropTags({ ...reconBankMap() });
+    const { error:e2 } = await updateProfileJson('recon_bank', dropTags);
+    if (e2 && !/recon_bank/i.test(e2.message||'')) console.error('recon_bank cleanup', e2);
+  }
 }
 
 // ── Inline paycheck amount (typed right in the card) ──
@@ -8729,11 +8796,24 @@ function renderReport(r) {
     el.innerHTML = reportScreen('Expense Summary — All Time');
   } else if (r==='budget') {
     // Monthly budget report — laid out like the other reports (paycheck sections
-    // + a "you pay" total). The helper takes the month so a caller can print any
-    // one; this tab is the only caller today, and it prints the current month.
-    const now=new Date();
-    const monthLabel=buildBudgetReportDoc(now.getFullYear(), now.getMonth());
-    el.innerHTML = reportScreen('Budget — '+monthLabel);
+    // + a "you pay" total), with a month picker like the Loan report's.
+    // This used to hard-code new Date() with no picker, so the CURRENT month was the
+    // only month that could ever be printed. That is the wrong single month for a
+    // forward planner twice over: printing NEXT month's bills is the whole point of
+    // the tab, and in the first days of a month you still want the one just closed.
+    // Default to whatever month the Budget page is showing, so opening the report
+    // right after browsing there prints what the user was just looking at.
+    if (!_reportBudgetMonth) _reportBudgetMonth = budMonthKey(budgetCursor.getFullYear(), budgetCursor.getMonth());
+    const bMonths = budgetReportMonths(_reportBudgetMonth);
+    const [bmY, bmM] = _reportBudgetMonth.split('-').map(Number);
+    const monthLabel = buildBudgetReportDoc(bmY, bmM-1);
+    const bPicker = `<div style="max-width:840px;margin:0 auto;padding:.85rem 1rem 0;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <label style="font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);font-family:'JetBrains Mono',monospace">Month</label>
+        <select onchange="selectReportBudgetMonth(this.value)" style="flex:1;min-width:150px">
+          ${bMonths.map(o=>`<option value="${escHtml(o.key)}"${o.key===_reportBudgetMonth?' selected':''}>${escHtml(o.label)}</option>`).join('')}
+        </select>
+      </div>`;
+    el.innerHTML = bPicker + reportScreen('Budget — '+monthLabel);
   } else if (r==='loan') {
     // Loan report — the user picks which saved loan to print from a dropdown.
     const loans = cache.loans || [];
@@ -8773,6 +8853,22 @@ function renderReport(r) {
     el.innerHTML = picker + reportScreen('Loan — '+(loan.name||'Loan'));
   }
 }
+// Months the Budget report offers: half a year either side of today, so both the
+// month just closed and the ones being planned are reachable. `sel` is folded in
+// when it falls outside that window (the Budget page can be browsed anywhere), or
+// the picker would render with nothing selected and silently print another month.
+function budgetReportMonths(sel){
+  const seen=new Set(), out=[];
+  const add=(y,m)=>{ const k=budMonthKey(y,m); if(seen.has(k)) return; seen.add(k);
+    out.push({key:k, label:new Date(y,m,1).toLocaleDateString('en-US',{month:'long',year:'numeric'})}); };
+  const n=new Date();
+  for (let i=-6;i<=6;i++){ const d=new Date(n.getFullYear(), n.getMonth()+i, 1); add(d.getFullYear(), d.getMonth()); }
+  if (sel && !seen.has(sel)){ const [y,m]=sel.split('-').map(Number); if (y && m) add(y, m-1); }
+  return out.sort((a,b)=> a.key<b.key ? -1 : a.key>b.key ? 1 : 0);
+}
+// Switch which month the Budget report prints (pins it — browsing the Budget page
+// afterwards no longer moves it).
+function selectReportBudgetMonth(k) { _reportBudgetMonth = k; renderReport('budget'); }
 // Switch which loan the Loan report shows (reset the month to its next payment).
 function selectReportLoan(id) { _reportLoanId = id; _reportLoanMonth = null; renderReport('loan'); }
 // Switch which schedule month the Loan report prints.
@@ -10658,7 +10754,12 @@ async function applyBillPayFromTxn(idx, billId) {
   const s = _recState; if (!s) return;
   const mk = (s.monthKey||'').slice(0,7); if (!mk) return;
   const by = +mk.split('-')[0], bm = +mk.split('-')[1];
-  if (!isBillPaid(billId, by, bm-1)) await toggleBillPaid(billId, by, bm-1);   // marks paid + persists
+  // Record the BANK LINE's amount against this occurrence, not the bill's planned
+  // figure — this path is the one place the real number is known for certain, and a
+  // variable bill only reconciles on later pulls if we keep it.
+  const t = s.stmt.transactions && s.stmt.transactions[idx];
+  const realAmt = t ? Math.abs(parseFloat(t.amount)||0) : 0;
+  if (!isBillPaid(billId, by, bm-1)) await toggleBillPaid(billId, by, bm-1, realAmt);   // marks paid + persists
   s.stmt.manual_matches = (s.stmt.manual_matches||[]).concat([{ tIdxs:[idx], rFps:['b:'+billId+':'+mk] }]);
   await tagFromRecon('b:'+billId+':'+mk, true);   // this month's occurrence only
   await saveStmtSidecar(s.stmt, s.path);
@@ -11156,7 +11257,12 @@ function reconcileMatch(stmt, acctId) {
       Object.keys(paid).forEach(billId=>{
         if (!paid[billId]) return;
         const b = bills.find(x=>x.id===billId); if (!b) return;
-        const amt = -(parseFloat(b.amount)||0); if (!amt) return;
+        // What was RECORDED for this occurrence wins over the bill's current planned
+        // amount (see toggleBillPaid). The planned amount is only a fallback for flags
+        // saved as a bare `true`: it restates a variable bill as its budgeted figure,
+        // and it silently rewrote every past month whenever the bill was edited.
+        const rec = (typeof billPaidFlagAmount==='function') ? billPaidFlagAmount(paid[billId]) : null;
+        const amt = -(rec != null ? rec : (parseFloat(b.amount)||0)); if (!amt) return;
         const dd = billDueDay(b);
         const date = (dd && by && bm) ? ymd(budDateAt(by, bm-1, dd)) : (mk+'-01');
         recs.push({ kind:'Bill', date, amount:amt, label:'Bill — '+(b.name||'Bill'), fp:'b:'+billId+':'+mk });
