@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **503** (see `version.json` — that file is the source of truth).
+Current version: **504** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -192,6 +192,40 @@ Three constraints, all load-bearing:
 3. **Nothing is persisted.** It re-derives from the session's pulls on every render,
    exactly like the auto-matches it reads. This is NOT the retired `matched_fps`
    map — see the paragraph above; don't turn it into one.
+
+**Double-claim arbitration (v504) — the same neighbours, the dangerous direction.**
+Phase 2 above only ever *forgives*, so it could not catch the mirror-image failure:
+because an auto-match is never persisted, August's pass knows nothing about what July
+matched, while the ±18-day window makes every record dated in the last stretch of July
+a live candidate for August. Give August a $150 charge with no record of its own and it
+paired it with the $150 expense **July had already cleared** — one record explaining two
+different bank lines, *both months reporting PASSED*, and a genuinely unrecorded
+transaction absorbed with no mark anywhere. That is the one outcome this screen exists
+to prevent; a missed item has to be loud. (Reported from the field: an August deposit
+matched to book items July had already matched.)
+
+`resolveDoubleClaims(comp, nbComps)` is phase 2's other half, running BEFORE
+`applyClearedElsewhere`: when two months' AUTO matches claim the same record, exactly
+one keeps it and the loser's bank line goes back to `onBankOnly`. Ownership
+(`claimBeats`): an explicit pairing beats an auto one; else the closer record-date ↔
+bank-date wins; ties go to the month whose period the record is dated in, then to the
+earlier month key. Four constraints:
+1. **Deterministic and symmetric** — both months compute the same winner from the same
+   phase-1 results, so they can never both drop it. That mutual-withholding trap is why
+   this can't be a filter on the candidate pool (same reason phase 2 can't be).
+2. **Monotone the safe way** — it can only ever surface an unexplained bank line, never
+   hide one. Worst case is an amber month that deserved amber.
+3. **A combo loses whole** — the sum stops holding the moment one leg belongs to
+   another month.
+4. **Nothing persisted.** Re-derives from the session's pulls every render, exactly
+   like the auto-matches it reads. Do NOT turn it into a stored map (see `matched_fps`).
+It needs `matchedInfo` (fp → `{d, manual, inP}`) off `reconcileMatch`, records what it
+revoked in `comp.claimedElsewhere` so the freed line can say *why* it reappeared rather
+than looking like the matcher changed its mind, and is wired into all three month
+reconcilers: `renderReconcile` (open month + each neighbour stamp), `refreshLiveAudit`,
+`plaidCheckYear`. `test/reconcile.test.mjs` pins it, including that an uncontested
+cross-month settlement is untouched and that three contending months still leave exactly
+one owner in any processing order.
 
 Neighbours are only knowable if they're in the session cache, so `plaidPull` now
 fetches month−1…month+1 in **one** ranged call (`pullMonthSpan`, bucketed by month,

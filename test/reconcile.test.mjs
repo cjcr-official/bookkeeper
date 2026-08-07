@@ -47,7 +47,7 @@ const NEEDED = ['fmt', 'parseDate', 'ymd', 'budDateAt', 'billRecurs', 'billDueDa
   'billPaidFlagAmount',
   'reconBankMap', 'reconBankKey', 'recBankFor', 'manualMatchTagMap', 'reconcileMatch',
   'shiftMonthKey', 'adjMonths', 'accountedFpsOf', 'clearedElsewhereMap',
-  'applyClearedElsewhere', 'txnKey', 'makeTxnRefResolver'];
+  'applyClearedElsewhere', 'claimBeats', 'resolveDoubleClaims', 'txnKey', 'makeTxnRefResolver'];
 
 // --- Sandbox globals the extracted functions close over. ---------------------
 // Tests set `cache` / `profile` per scenario via the returned setters.
@@ -56,7 +56,7 @@ const bodies = NEEDED.map(extract).join('\n\n');
 const factory = new Function(
   'cache', 'profile', 'billPaidMap', 'getBills',
   bodies + '\n\nreturn { reconcileMatch, parseDate, manualMatchTagMap, shiftMonthKey, adjMonths,'
-         + ' accountedFpsOf, clearedElsewhereMap, applyClearedElsewhere, txnKey, makeTxnRefResolver };'
+         + ' accountedFpsOf, clearedElsewhereMap, applyClearedElsewhere, resolveDoubleClaims, txnKey, makeTxnRefResolver };'
 );
 function build() {
   return factory(
@@ -433,6 +433,128 @@ test('a record the EARLIER neighbour cleared is forgiven too', (api) => {
   applyClearedElsewhere(aug, clearedElsewhereMap(nb));
   eq(aug.passed, true, 'August passes once July is taken into account');
   eq(aug.clearedElsewhere.map(r => [r.fp, r.clearedIn]), [['e:e1', '2026-07']], 'reported as cleared in July');
+});
+
+// ============================================================================
+// 7e–7j. DOUBLE-CLAIM ARBITRATION (v504). Auto-matches are never persisted, so
+//     August's pass knows nothing about what July matched — and the ±18-day window
+//     makes late-July records live candidates in August. One record could therefore
+//     explain a bank line in TWO months, with both reporting PASSED: a transaction
+//     nobody recorded gets absorbed silently, which is the one outcome this screen
+//     exists to prevent. resolveDoubleClaims settles ownership between the months.
+// ============================================================================
+
+// 7e. The reported bug, end to end: one $150 expense, two $150 bank charges in
+//     two different months. August must NOT get to reuse July's record.
+test('a record another month already cleared cannot explain a line here', (api) => {
+  const { reconcileMatch, resolveDoubleClaims } = api;
+  sandbox.cache.expenses = [{ id: 'e1', date: '2026-07-20', amount: 150, vendor: 'Parts' }];
+  const july = reconcileMatch(stmt('2026-07', [{ date: '2026-07-20', amount: -150, description: 'PARTS' }], { period_end: '2026-07-31' }), null);
+  const aug = reconcileMatch(stmt('2026-08', [{ date: '2026-08-05', amount: -150, description: 'REGULAR' }], { period_end: '2026-08-31' }), null);
+  eq(aug.matchedFps, ['e:e1'], 'phase 1 alone double-claims it (why arbitration exists)');
+
+  resolveDoubleClaims(aug, { '2026-07': july });
+  eq(aug.matchedFps, [], 'August gives the record back');
+  eq(aug.matched.length, 0, 'and drops the match group');
+  eq(aug.onBankOnly.map(o => o.t.description), ['REGULAR'], 'the August charge is reported unexplained');
+  eq(aug.passed, false, 'so August needs review instead of passing on a phantom match');
+
+  // Symmetric: July, arbitrating against August, keeps what it legitimately owns.
+  resolveDoubleClaims(july, { '2026-08': aug });
+  eq(july.matchedFps, ['e:e1'], 'July keeps the record (closer date)');
+  eq(july.passed, true, 'and still passes — exactly one month owns it');
+});
+
+// 7f. Arbitration must not break genuine cross-month settlement: when the record's
+//     own month has NO line for it, nobody contests, and the neighbour keeps it.
+test('an uncontested cross-month settlement is left alone', (api) => {
+  const { reconcileMatch, resolveDoubleClaims, clearedElsewhereMap, applyClearedElsewhere } = api;
+  sandbox.cache.expenses = [{ id: 'e1', date: '2026-07-30', amount: 80, vendor: 'Month-end parts' }];
+  const july = reconcileMatch(stmt('2026-07', [], { period_end: '2026-07-31' }), null);
+  const aug = reconcileMatch(stmt('2026-08', [{ date: '2026-08-01', amount: -80, description: 'PARTS' }]), null);
+  resolveDoubleClaims(aug, { '2026-07': july });
+  eq(aug.matchedFps, ['e:e1'], 'August still matched the record that settled here');
+  eq(aug.passed, true, 'August still passes');
+  resolveDoubleClaims(july, { '2026-08': aug });
+  applyClearedElsewhere(july, clearedElsewhereMap({ '2026-08': aug }));
+  eq(july.passed, true, 'and July is still forgiven for it');
+});
+
+// 7g. The everyday case: each month has its own record for its own charge. Nothing
+//     is contested, so a recurring monthly expense must keep matching as before.
+test('each month keeps its own record when both have one', (api) => {
+  const { reconcileMatch, resolveDoubleClaims } = api;
+  sandbox.cache.expenses = [
+    { id: 'e1', date: '2026-07-20', amount: 150, vendor: 'Rent' },
+    { id: 'e2', date: '2026-08-20', amount: 150, vendor: 'Rent' },
+  ];
+  const july = reconcileMatch(stmt('2026-07', [{ date: '2026-07-20', amount: -150, description: 'RENT' }], { period_end: '2026-07-31' }), null);
+  const aug = reconcileMatch(stmt('2026-08', [{ date: '2026-08-20', amount: -150, description: 'RENT' }], { period_end: '2026-08-31' }), null);
+  eq([july.matchedFps, aug.matchedFps], [['e:e1'], ['e:e2']], 'each month matched its own');
+  resolveDoubleClaims(aug, { '2026-07': july });
+  resolveDoubleClaims(july, { '2026-08': aug });
+  eq([july.passed, aug.passed], [true, true], 'both still pass');
+});
+
+// 7h. A combo loses WHOLE — the sum stops holding the moment one leg belongs to
+//     another month, so the bank line is unexplained either way.
+test('a combo match is revoked entirely when one leg is claimed elsewhere', (api) => {
+  const { reconcileMatch, resolveDoubleClaims } = api;
+  sandbox.cache.expenses = [
+    { id: 'e1', date: '2026-07-25', amount: 100, vendor: 'A' },
+    { id: 'e2', date: '2026-08-02', amount: 50, vendor: 'B' },
+  ];
+  const july = reconcileMatch(stmt('2026-07', [{ date: '2026-07-25', amount: -100, description: 'A' }], { period_end: '2026-07-31' }), null);
+  const aug = reconcileMatch(stmt('2026-08', [{ date: '2026-08-03', amount: -150, description: 'COMBINED' }], { period_end: '2026-08-31' }), null);
+  eq(aug.matchedFps.sort(), ['e:e1', 'e:e2'], 'phase 1 built the combo from both');
+  resolveDoubleClaims(aug, { '2026-07': july });
+  eq(aug.matched.length, 0, 'the whole group goes');
+  eq(aug.inRecordsOnly.map(r => r.fp), ['e:e2'], 'the uncontested leg returns to this month’s list');
+  eq(aug.onBankOnly.length, 1, 'and the bank line is unexplained');
+});
+
+// 7i. An explicit pairing is the user's word and is never revoked — and it beats a
+//     neighbour's auto-match for the same record.
+test('a manual pairing here outranks a neighbour’s auto-match', (api) => {
+  const { reconcileMatch, resolveDoubleClaims } = api;
+  sandbox.cache.expenses = [{ id: 'e1', date: '2026-07-20', amount: 150, vendor: 'Parts' }];
+  const july = reconcileMatch(stmt('2026-07', [{ date: '2026-07-20', amount: -150, description: 'PARTS' }], { period_end: '2026-07-31' }), null);
+  const aug = reconcileMatch(stmt('2026-08', [{ date: '2026-08-05', amount: -150, description: 'REGULAR' }],
+    { period_end: '2026-08-31', manual_matches: [{ tIdxs: [0], rFps: ['e:e1'] }] }), null);
+  resolveDoubleClaims(aug, { '2026-07': july });
+  eq(aug.matchedFps, ['e:e1'], 'the explicit pairing stands');
+  eq(aug.passed, true, 'August passes on it');
+  // ...and July, seeing the stronger claim, is the side that gives way.
+  resolveDoubleClaims(july, { '2026-08': aug });
+  eq(july.onBankOnly.length, 1, 'July reports its own line as unexplained instead');
+  eq(july.passed, false, 'so the discrepancy surfaces on exactly one side');
+});
+
+// 7j. Order-independence: with three months in hand (the ±18-day window lets a
+//     mid-July record be reached from June AND August), whichever order the
+//     12-month check walks them in, exactly one month ends up owning the record.
+test('exactly one month owns a record contested by three', (api) => {
+  const { reconcileMatch, resolveDoubleClaims, adjMonths } = api;
+  sandbox.cache.expenses = [{ id: 'e1', date: '2026-07-16', amount: 90, vendor: 'Parts' }];
+  const mk = {
+    '2026-06': stmt('2026-06', [{ date: '2026-06-30', amount: -90, description: 'JUN' }], { period_end: '2026-06-30' }),
+    '2026-07': stmt('2026-07', [{ date: '2026-07-17', amount: -90, description: 'JUL' }], { period_end: '2026-07-31' }),
+    '2026-08': stmt('2026-08', [{ date: '2026-08-02', amount: -90, description: 'AUG' }], { period_end: '2026-08-31' }),
+  };
+  const order = ['2026-06', '2026-07', '2026-08'];
+  const run = seq => {
+    const comps = {};
+    order.forEach(m => { comps[m] = reconcileMatch(mk[m], null); });
+    eq(order.map(m => comps[m].matchedFps.length), [1, 1, 1], 'phase 1 lets all three claim it');
+    seq.forEach(m => {
+      const nb = {}; adjMonths(m).forEach(o => { if (comps[o]) nb[o] = comps[o]; });
+      resolveDoubleClaims(comps[m], nb);
+    });
+    return order.filter(m => comps[m].matchedFps.length);
+  };
+  eq(run(order), ['2026-07'], 'forwards: the month dated closest keeps it');
+  eq(run(order.slice().reverse()), ['2026-07'], 'backwards: same winner');
+  eq(run(['2026-08', '2026-06', '2026-07']), ['2026-07'], 'any order: same winner');
 });
 
 // 7d. Month-key arithmetic used to pick the neighbours (rolls over years).
