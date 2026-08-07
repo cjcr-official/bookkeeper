@@ -9615,6 +9615,7 @@ async function refreshLiveAudit() {
     [prev, m].forEach(k => {
       const c = comps[k]; if (!c) return;
       const others = {}; adjMonths(k).forEach(o => { if (comps[o]) others[o] = comps[o]; });
+      resolveDoubleClaims(c, others);
       applyClearedElsewhere(c, clearedElsewhereMap(others));
       if (compHasContent(c)) stamps.push(setAuditResult(_selBank, k, c.passed));
     });
@@ -9860,6 +9861,98 @@ function clearedElsewhereMap(comps) {
   });
   return map;
 }
+// ── DOUBLE-CLAIM ARBITRATION (v504) ─────────────────────────────────────────
+// The other half of cross-month settlement, and the dangerous one. An auto-match is
+// never persisted (deliberately — see the retired matched_fps note in CLAUDE.md), so
+// August's pass knows nothing about what July matched, while the ±18-day window makes
+// every record dated in the last stretch of July a live candidate for August. Give
+// August a $150 deposit with no record of its own and it happily pairs it with the
+// $150 expense JULY already cleared: one record explains two different bank lines,
+// both months report PASSED, and a genuinely unrecorded transaction is absorbed
+// without a mark anywhere. That is the one failure this screen exists to prevent —
+// a missed item must be loud, never quiet.
+//
+// Cross-month forgiveness (applyClearedElsewhere) only ever moves a record OUT of the
+// discrepancy list, so it can't catch this. Arbitration is its mirror: when two
+// months' AUTO matches claim the same record, exactly one keeps it and the loser's
+// bank line goes back to "on the bank · not in your books".
+//
+// Three properties it has to have:
+//   • DETERMINISTIC + SYMMETRIC — both months compute the same winner from the same
+//     two phase-1 results, so they can never both drop the record (the mutual-
+//     withholding trap that makes a filter-before-matching approach wrong).
+//   • MONOTONE THE SAFE WAY — it can only ever surface an unexplained bank line,
+//     never hide one. The worst case is an amber month that deserved amber.
+//   • NOTHING PERSISTED — like the auto-matches it reads, it re-derives from the
+//     session's pulls on every render. Do NOT turn this into a stored map.
+// Ownership: an explicit pairing beats an auto one; else the closer record-date ↔
+// bank-date wins; ties go to the month whose period the record is dated in, then to
+// the earlier month key so the two sides always agree.
+function claimBeats(a, b) {
+  if (!b) return true;
+  if (!a) return false;
+  if (a.manual !== b.manual) return !!a.manual;
+  if (a.d !== b.d) return a.d < b.d;
+  if (a.inP !== b.inP) return !!a.inP;
+  return (a.m || '') < (b.m || '');
+}
+// Revoke this month's auto-matches for any record a neighbouring month has the
+// stronger claim on. Mutates `comp` in place (phase 2, same contract as
+// applyClearedElsewhere) and returns it.
+function resolveDoubleClaims(comp, nbComps) {
+  if (!comp || !comp.matched || !comp.matched.length) return comp;
+  const rival = new Map();   // fp -> the strongest claim held by a neighbour
+  Object.keys(nbComps || {}).forEach(m => {
+    const c = nbComps[m]; if (!c || !c.matchedInfo) return;
+    Object.keys(c.matchedInfo).forEach(fp => {
+      const cl = { ...c.matchedInfo[fp], m };
+      if (claimBeats(cl, rival.get(fp))) rival.set(fp, cl);
+    });
+  });
+  if (!rival.size) return comp;
+  const mine = comp.monthKey || '';
+  // A group loses whole: a combo's sum stops holding the moment one of its records
+  // belongs to another month, so the bank line is unexplained either way.
+  const drop = new Set();
+  comp.matched.forEach(g => {
+    if (g.manualIdx != null) return;   // an explicit pairing here is the user's word
+    const lost = (g.rIdxs||[]).some(ri => {
+      const r = comp.recs[ri]; if (!r) return false;
+      const other = rival.get(r.fp); if (!other) return false;
+      return claimBeats(other, { ...(comp.matchedInfo[r.fp] || { d: Infinity, manual: false, inP: false }), m: mine });
+    });
+    if (lost) drop.add(g);
+  });
+  if (!drop.size) return comp;
+  // Put both sides back in the unmatched pools, rebuilt from txns/recs so the rows
+  // keep their original order instead of appearing at the bottom of the list.
+  const backR = new Set(), backT = new Set();
+  comp.claimedElsewhere = comp.claimedElsewhere || [];
+  drop.forEach(g => {
+    (g.rIdxs||[]).forEach(ri => {
+      const r = comp.recs[ri]; if (!r) return;
+      backR.add(r.fp); delete comp.matchedInfo[r.fp];
+      // Remember WHERE it went, so the freed bank line can say why it reappeared
+      // instead of looking like the matcher changed its mind for no reason.
+      const other = rival.get(r.fp);
+      if (other) comp.claimedElsewhere.push({ fp: r.fp, label: r.label, m: other.m });
+    });
+    (g.tIdxs||[]).forEach(ti => backT.add('t:' + ti));
+  });
+  comp.matched = comp.matched.filter(g => !drop.has(g));
+  comp.matchedFps = comp.matchedFps.filter(fp => !backR.has(fp));
+  const inP = d => (!comp.periodStart || d >= comp.periodStart) && (!comp.periodEnd || d <= comp.periodEnd);
+  const keepIn = new Set(comp.inRecordsOnly.map(r => r.fp));
+  const keepOther = new Set(comp.otherUnmatched.map(r => r.fp));
+  comp.inRecordsOnly = comp.recs.filter(r => keepIn.has(r.fp) || (backR.has(r.fp) && inP(r.date)));
+  comp.otherUnmatched = comp.recs.filter(r => keepOther.has(r.fp) || (backR.has(r.fp) && !inP(r.date)));
+  const keepT = new Set(comp.onBankOnly.map(o => o.fp));
+  comp.onBankOnly = comp.txns.map((t, i) => ({ t, fp: 't:' + i }))
+    .filter(x => (keepT.has(x.fp) || backT.has(x.fp)) && Math.abs(parseFloat(x.t.amount)||0) > 0.005);
+  comp.passed = comp.onBankOnly.length === 0 && comp.inRecordsOnly.length === 0 && comp.balanceOk !== false;
+  return comp;
+}
+
 // Does this month have anything to report at all? A month with no bank lines and
 // no records "passes" by definition, which is the right answer when the user opens
 // it — but it must not paint a green mark on months nobody asked about, so the
@@ -9920,6 +10013,7 @@ async function plaidCheckYear() {
     const asked = new Set(months);   // the 12 the user asked about are always stamped
     const stamps = span.map(m => {
       const nb = {}; adjMonths(m).forEach(x => { if (comps[x]) nb[x] = comps[x]; });
+      resolveDoubleClaims(comps[m], nb);
       applyClearedElsewhere(comps[m], clearedElsewhereMap(nb));
       if (!asked.has(m) && !compHasContent(comps[m])) return null;
       return setAuditResult(_selBank, m, comps[m].passed);
@@ -11499,9 +11593,23 @@ function reconcileMatch(stmt, acctId) {
   matched.sort((a,b) => (grpDate(b)||'').localeCompare(grpDate(a)||''));
   // Fingerprints of records that matched a bank line HERE (this pull only — never
   // persisted). Informational: the finder/tests use it to see what cleared.
+  // matchedInfo carries HOW GOOD the claim was, which is what lets two months that
+  // both auto-matched the same record settle which one really owns it — see
+  // resolveDoubleClaims. `d` is the closest record-date ↔ bank-date distance in the
+  // group, `manual` an explicit pairing, `inP` the record dated inside this period.
   const matchedFps = [];
-  matched.forEach(g => (g.rIdxs||[]).forEach(ri => { const r = recs[ri]; if (r) matchedFps.push(r.fp); }));
-  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceOk, balanceHtml, monthKey, monthLabel, passed, gManual, assignedAway, matchedFps };
+  const matchedInfo = {};
+  matched.forEach(g => (g.rIdxs||[]).forEach(ri => {
+    const r = recs[ri]; if (!r) return;
+    matchedFps.push(r.fp);
+    let d = Infinity;
+    (g.tIdxs||[]).forEach(ti => {
+      const t = txns[ti];
+      if (t && t.date && r.date) { const x = dayDiff(t.date, r.date); if (x < d) d = x; }
+    });
+    matchedInfo[r.fp] = { d, manual: g.manualIdx != null, inP: inPeriod(r.date) };
+  }));
+  return { txns, recs, matched, onBankOnly, inRecordsOnly, otherUnmatched, skippedRecs, balanceOk, balanceHtml, monthKey, monthLabel, passed, gManual, assignedAway, matchedFps, matchedInfo, periodStart, periodEnd };
 }
 
 // Reconcile VIEW: compute matches, stash view state, persist tight-match ownership,
@@ -11517,6 +11625,10 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   // they already cleared at the bank. Phase 2 only — see applyClearedElsewhere.
   const nbComps = {};
   if (comp.monthKey) adjMonths(comp.monthKey).forEach(m => { nbComps[m] = monthReconcile(m, aKey); });
+  // Arbitration FIRST: a record a neighbour already cleared at the bank can't also
+  // explain a line here, and letting that stand would hide a transaction nobody has
+  // recorded. Forgiveness runs after, on what's genuinely left over.
+  resolveDoubleClaims(comp, nbComps);
   applyClearedElsewhere(comp, clearedElsewhereMap(nbComps));
   // The same information settles the NEIGHBOURS' verdicts: the record that made last
   // month look short is visibly cleared here, so heal that month's mark now instead
@@ -11526,6 +11638,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   Object.keys(nbComps).forEach(m => {
     const c = nbComps[m]; if (!c) return;
     const one = {}; one[comp.monthKey] = comp;
+    resolveDoubleClaims(c, one);
     applyClearedElsewhere(c, clearedElsewhereMap(one));
     if (compHasContent(c)) nbStamps.push(setAuditResult(aKey, m, c.passed));
   });
@@ -11717,6 +11830,14 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
   // glance, not a scroll. Pending is display-only → it lives in the reference zone.
   const passedClean = onBankOnly.length===0 && inRecordsOnly.length===0;
   const bankRows = onBankOnly.map(x=>item(x.t.date, cleanDesc(x.t.description), x.t.amount, '', x.fp, txns.indexOf(x.t))).join('');
+  // A line that came back because the record behind it belongs to another month
+  // (resolveDoubleClaims). Without this it reads as the matcher changing its mind:
+  // say which record and which statement, so the next step is obvious — this line
+  // needs a record of its own.
+  const claimedNote = (comp.claimedElsewhere||[]).length
+    ? `<div style="font-size:11.5px;color:var(--text2);line-height:1.45;margin:-.15rem 0 .55rem">${(comp.claimedElsewhere||[]).slice(0,3).map(c =>
+        `${escHtml(c.label||'A record')} already cleared on the ${escHtml(monthName(c.m))} statement, so it can’t explain a charge here too.`).join(' ')}</div>`
+    : '';
   // Records dated in this month that the bank settled on a neighbouring statement
   // (the month-end purchase that posts a day or two later). Reassurance, not a task:
   // the month is clean, and the row says which statement to look at.
@@ -11728,7 +11849,7 @@ function renderReconcile(stmt, acctId, path, globalMatchedFps, monthMap) {
         <i class="ti ti-circle-check" style="font-size:22px;color:var(--green);flex-shrink:0"></i>
         <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14.5px;color:var(--text)">Everything’s matched</div><div style="font-size:12px;color:var(--text2);margin-top:1px">Nothing on ${escHtml(monthLabel||'this month')} needs your attention.${escHtml(clearedNote)}</div></div>
       </div>`
-    : (onBankOnly.length ? `<div class="card rec-action" style="padding:.9rem 1rem;margin-bottom:.85rem">${secHead('On the bank · not in your books', onBankOnly.length)}${bankRows}</div>` : '')
+    : (onBankOnly.length ? `<div class="card rec-action" style="padding:.9rem 1rem;margin-bottom:.85rem">${secHead('On the bank · not in your books', onBankOnly.length)}${claimedNote}${bankRows}</div>` : '')
       + (inRecordsOnly.length ? `<div class="card rec-action" style="padding:.9rem 1rem;margin-bottom:.85rem">${secHead('In your books · not on the bank', inRecordsOnly.length)}${list(inRecordsOnly.map(r=>item(r.date, r.label, r.amount, r.kind, r.fp, null, true)))}</div>` : '');
 
   // SECONDARY (reference): flat, collapsible, set off by space. The finder opens
