@@ -2045,6 +2045,7 @@ tr.bulk-sel{background:var(--accent-bg)}
       </div>
       <div id="inv-lines-wrap" style="margin-bottom:1rem"></div>
       <button class="btn btn-sm" onclick="addInvLine()"><i class="ti ti-plus"></i> Add Line</button>
+      <div style="font-size:11px;color:var(--text3);margin-top:.4rem">Leave a line's date blank to use the invoice date.</div>
       <div style="margin-top:1rem;text-align:right;font-size:13.5px">
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Subtotal:</span><span id="inv-subtotal">$0.00</span></div>
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Tax (<span id="inv-tax-pct">0</span>%):</span><span id="inv-tax-amt">$0.00</span></div>
@@ -4584,7 +4585,10 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-trips').value = (inv.trips!=null?inv.trips:0);
     calcInvMiles();
     editingInvLines = JSON.parse(JSON.stringify(inv.lines||[]));
-    editingInvExpenses = (cache.expenses||[]).filter(e=>e.invoice_id===inv.id).map(e=>({id:e.id,vendor:e.vendor||'',amount:parseFloat(e.amount||0),category:e.category||'Other'}));
+    // A blank row date means "follow the invoice date" (same rule as a line item), so a
+    // linked expense sitting on the invoice's own date loads blank — change the invoice
+    // date and it still follows. Only a date that genuinely differs is shown as set.
+    editingInvExpenses = (cache.expenses||[]).filter(e=>e.invoice_id===inv.id).map(e=>({id:e.id,vendor:e.vendor||'',amount:parseFloat(e.amount||0),category:e.category||'Other',date:(e.date&&e.date!==inv.date)?e.date:''}));
   } else {
     document.getElementById('inv-modal-title').textContent = 'New Invoice';
     document.getElementById('inv-id').value = '';
@@ -4600,7 +4604,7 @@ function openInvoiceModal(inv) {
     document.getElementById('inv-trips').value = 0;
     document.getElementById('inv-total-miles').value = '';
     calcInvMiles();
-    editingInvLines = [{desc:'',qty:1,rate:0,amount:0}];
+    editingInvLines = [{desc:'',qty:1,rate:0,amount:0,date:''}];
     editingInvExpenses = [];
   }
   renderReconBankPicker('inv-recon-bank', 'inv-recon-bank-group', inv ? 'p:'+inv.id : null);
@@ -4621,6 +4625,10 @@ function renderInvLines() {
           <input type="text" value="${escHtml(l.desc||'')}" oninput="editingInvLines[${i}].desc=this.value" style="flex:1;font-size:13.5px;padding:.4rem .55rem" placeholder="Service or item...">
           <button onclick="removeInvLine(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;flex-shrink:0;padding:.2rem"><i class="ti ti-x"></i></button>
         </div>
+        <div style="margin-bottom:.5rem">
+          <label style="font-size:9px;margin-bottom:.2rem">Date <span style="text-transform:none;letter-spacing:0">(blank = invoice date)</span></label>
+          <input type="date" value="${escHtml(l.date||'')}" onchange="editingInvLines[${i}].date=this.value" style="font-size:13.5px;padding:.4rem .55rem">
+        </div>
         <div style="display:flex;gap:.5rem;align-items:flex-end">
           <div style="flex:1"><label style="font-size:9px;margin-bottom:.2rem">Qty</label><input type="number" value="${l.qty}" min="0" inputmode="decimal" oninput="editingInvLines[${i}].qty=+this.value;calcLine(${i})" style="font-size:13.5px;padding:.4rem;text-align:center"></div>
           <div style="flex:1.3"><label style="font-size:9px;margin-bottom:.2rem">Rate</label><input type="number" value="${l.rate}" min="0" step="0.01" inputmode="decimal" oninput="editingInvLines[${i}].rate=+this.value;calcLine(${i})" style="font-size:13.5px;padding:.4rem;text-align:right"></div>
@@ -4631,6 +4639,7 @@ function renderInvLines() {
     wrap.innerHTML = `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
       <table style="width:100%;border-collapse:collapse;table-layout:fixed" id="line-items-table">
         <thead><tr>
+          <th style="background:var(--bg2);padding:.5rem .5rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;width:140px;text-align:left">Date</th>
           <th style="background:var(--bg2);padding:.5rem .75rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;text-align:left">Description</th>
           <th style="background:var(--bg2);padding:.5rem .5rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;width:60px;text-align:center">Qty</th>
           <th style="background:var(--bg2);padding:.5rem .5rem;font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;width:90px;text-align:right">Rate</th>
@@ -4638,6 +4647,7 @@ function renderInvLines() {
           <th style="background:var(--bg2);width:32px"></th>
         </tr></thead>
         <tbody>${editingInvLines.map((l,i)=>`<tr>
+          <td style="padding:4px 4px"><input type="date" value="${escHtml(l.date||'')}" onchange="editingInvLines[${i}].date=this.value" title="Blank = invoice date" style="font-size:13px;padding:.3rem;width:100%"></td>
           <td style="padding:4px 6px"><input type="text" value="${escHtml(l.desc||'')}" oninput="editingInvLines[${i}].desc=this.value" style="font-size:13px;padding:.3rem .5rem" placeholder="Service or item..."></td>
           <td style="padding:4px 4px"><input type="number" value="${l.qty}" min="0" oninput="editingInvLines[${i}].qty=+this.value;calcLine(${i})" style="font-size:13px;padding:.3rem;text-align:center;width:55px"></td>
           <td style="padding:4px 4px"><input type="number" value="${l.rate}" min="0" step="0.01" oninput="editingInvLines[${i}].rate=+this.value;calcLine(${i})" style="font-size:13px;padding:.3rem;text-align:right;width:80px"></td>
@@ -4663,16 +4673,17 @@ function renderInvExpenses() {
   editingInvExpenses = editingInvExpenses.filter(e=>!e.id || (cache.expenses||[]).some(x=>x.id===e.id));
   if (!editingInvExpenses.length) { wrap.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:.25rem 0 .6rem">None added.</div>'; return; }
   wrap.innerHTML = editingInvExpenses.map((e,i)=>`
-    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
-      <input type="text" value="${escHtml(e.vendor||'')}" oninput="editingInvExpenses[${i}].vendor=this.value" placeholder="Vendor / item" style="flex:1;font-size:13.5px;padding:.4rem .55rem">
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;flex-wrap:wrap">
+      <input type="text" value="${escHtml(e.vendor||'')}" oninput="editingInvExpenses[${i}].vendor=this.value" placeholder="Vendor / item" style="flex:1;min-width:120px;font-size:13.5px;padding:.4rem .55rem">
       <input type="number" value="${e.amount||''}" min="0" step="0.01" inputmode="decimal" oninput="editingInvExpenses[${i}].amount=+this.value;calcInvTotals()" placeholder="0.00" style="width:90px;font-size:13.5px;padding:.4rem;text-align:right">
       <button class="btn btn-sm btn-danger" onclick="removeInvExpense(${i})"><i class="ti ti-x"></i></button>
+      <input type="date" value="${escHtml(e.date||'')}" onchange="editingInvExpenses[${i}].date=this.value" title="Blank = invoice date" style="flex-basis:100%;font-size:13.5px;padding:.4rem .55rem">
     </div>`).join('');
 }
-function addInvExpense() { editingInvExpenses.push({vendor:'',amount:0,category:'Other'}); renderInvExpenses(); calcInvTotals(); }
+function addInvExpense() { editingInvExpenses.push({vendor:'',amount:0,category:'Other',date:''}); renderInvExpenses(); calcInvTotals(); }
 function removeInvExpense(i) { editingInvExpenses.splice(i,1); renderInvExpenses(); calcInvTotals(); }
 
-function addInvLine() { editingInvLines.push({desc:'',qty:1,rate:0,amount:0}); renderInvLines(); }
+function addInvLine() { editingInvLines.push({desc:'',qty:1,rate:0,amount:0,date:''}); renderInvLines(); }
 function removeInvLine(i) { editingInvLines.splice(i,1); renderInvLines(); }
 function invEditingSubtotal() {
   return editingInvLines.reduce((s,l)=>s+(l.amount||0),0)
@@ -4764,7 +4775,7 @@ async function syncInvoiceExpenses(invId, inv, cust) {
     if (!item.vendor && !amt) continue;
     const erow = {
       user_id: currentUser.id,
-      date: inv.date,
+      date: item.date || inv.date,
       vendor: item.vendor||'',
       category: item.category||'Other',
       amount: amt,
@@ -5105,7 +5116,7 @@ function viewInvoice(id) {
       </tr></thead>
       <tbody>
         ${lines.map((l,idx)=>`<tr>
-          <td style="padding:.7rem .5rem .7rem 0;border-bottom:1px solid #eee;white-space:nowrap;font-size:12px;color:#666;vertical-align:top">${fmtDate(inv.date)}</td>
+          <td style="padding:.7rem .5rem .7rem 0;border-bottom:1px solid #eee;white-space:nowrap;font-size:12px;color:#666;vertical-align:top">${fmtDate(l.date||inv.date)}</td>
           <td style="padding:.7rem .5rem;border-bottom:1px solid #eee;word-break:break-word;vertical-align:top">${esc(l.desc)||'—'}</td>
           <td style="padding:.7rem 0 .7rem .5rem;border-bottom:1px solid #eee;text-align:right;font-family:'JetBrains Mono',monospace;vertical-align:top">${fmt(l.amount)}</td>
         </tr>`).join('')}
@@ -6125,7 +6136,9 @@ function invoiceFromTime() {
   const sel = (cache.time_entries||[]).filter(t => ids.includes(t.id)).sort((a,b) => a.clock_in.localeCompare(b.clock_in));
   const lines = sel.map(t => {
     const hrs = Math.round(hoursBetween(t.clock_in, t.clock_out) * 100) / 100, rate = entryRate(t);
-    return { desc: (t.label || 'Labor') + ' — ' + fmtDayShort(t.clock_in), qty: hrs, rate, amount: Math.round(hrs*rate*100)/100 };
+    // The punch's own day goes in the line's DATE field now that lines carry one —
+    // appending it to the description too would print it twice on the invoice.
+    return { desc: t.label || 'Labor', date: timeDay(t), qty: hrs, rate, amount: Math.round(hrs*rate*100)/100 };
   });
   openInvoiceModal();                 // fresh New Invoice, then swap in the time lines
   editingInvLines = lines;
