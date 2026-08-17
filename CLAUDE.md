@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **505** (see `version.json` — that file is the source of truth).
+Current version: **506** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -1206,6 +1206,20 @@ minute until the cache refreshes.
   modeled on the business Word template; numbers auto-generate **YYNN** (2-digit
   year + sequence, editable). Share builds a real PDF via an off-screen 780px
   clone + native share sheet; Print uses a hidden iframe + native dialog.
+  **Per-item dates (v506):** the printed DATE column is per row, not per invoice —
+  a job spanning several days should print the day each item happened. Each line
+  in `invoices.lines` carries an optional `date`, and each customer-expense row
+  does too. **Blank means "follow the invoice date"** (`l.date || inv.date`), which
+  is what makes this a no-migration, no-behavior-change addition: every line ever
+  saved has no `date` and prints exactly as it did. Don't "helpfully" default a new
+  line to today or to the invoice date — a filled-in date stops following when the
+  user changes the invoice's own date, which is the wrong default for the common
+  case. Same rule on load: `openInvoiceModal` shows a linked expense's date as
+  blank when it equals `inv.date`, so it keeps following. A customer-expense row's
+  date is a REAL ledger date (`syncInvoiceExpenses` writes `item.date || inv.date`
+  onto the expense row); a line item's date is display-only — revenue is recognised
+  per invoice (`invoiceRevenue`), never per line. `invoiceFromTime` fills each
+  line's date from `timeDay(t)` instead of appending the day to the description.
 - **Payments:** `amount_paid`/`paid_date`/`payment_method`; partial payments;
   `balanceDue(inv)` and `effectiveStatus(inv)` (fully-paid → paid; past-due →
   overdue). Outstanding = sum of balances (excl. drafts). PDF shows Paid/Balance
