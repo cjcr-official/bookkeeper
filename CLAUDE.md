@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **506** (see `version.json` — that file is the source of truth).
+Current version: **507** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -1220,6 +1220,15 @@ minute until the cache refreshes.
   onto the expense row); a line item's date is display-only — revenue is recognised
   per invoice (`invoiceRevenue`), never per line. `invoiceFromTime` fills each
   line's date from `timeDay(t)` instead of appending the day to the description.
+  **The closing thank-you prints ONCE (v507):** the invoice footer always ends with
+  "THANK YOU FOR YOUR BUSINESS!", and Settings → Invoice Defaults suggested that same
+  sentence as the default notes (prefilled onto every new invoice) — so the courtesy
+  landed on the page twice, once under the total and once at the bottom.
+  `isJustThanks(notes)` gates the notes block: notes that are ENTIRELY a thank-you are
+  skipped, notes that say anything else (terms, a due date, a thank-you *with*
+  something after it) print in full. Suppress the notes, never the footer — the footer
+  is the designed closer and it's what a note-less invoice ends on. `money.test.mjs`
+  pins both directions, since too loose a match would swallow real payment terms.
 - **Payments:** `amount_paid`/`paid_date`/`payment_method`; partial payments;
   `balanceDue(inv)` and `effectiveStatus(inv)` (fully-paid → paid; past-due →
   overdue). Outstanding = sum of balances (excl. drafts). PDF shows Paid/Balance

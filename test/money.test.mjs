@@ -47,7 +47,8 @@ const factory = new Function('cache', 'today', `
   ${extract('reimbursedByInvoice')}
   ${extract('balanceDue')}
   ${extract('effectiveStatus')}
-  return { invoiceRevenue, reimbursedByInvoice, balanceDue, effectiveStatus };
+  ${extract('isJustThanks')}
+  return { invoiceRevenue, reimbursedByInvoice, balanceDue, effectiveStatus, isJustThanks };
 `);
 const M = factory(sandbox.cache, () => sandbox.todayStr);
 const setExpenses = (rows) => { sandbox.cache.expenses = rows; };
@@ -187,6 +188,42 @@ test('an empty index means zero reimbursed, not a fallback rescan', () => {
   // invoice has no entry, that means zero, not "go look again".
   setExpenses([{ id: 'e1', invoice_id: 'i1', reimbursed: true, amount: 120 }]);
   eq(M.invoiceRevenue({ id: 'i1', total: 500 }, new Map()), 500);
+});
+
+// ------------------------------------------- the printed thank-you, printed once
+// The invoice footer always closes with "THANK YOU FOR YOUR BUSINESS!", and the
+// Settings default-notes field suggested the same sentence — so the courtesy landed
+// on the page twice. isJustThanks() decides whether the notes block is redundant,
+// and the risk runs BOTH ways: too loose and it swallows a note carrying real terms.
+test('a notes block that is only a thank-you is redundant with the footer', () => {
+  for (const s of [
+    'Thank you for your business!', 'thank you for your business',
+    'THANK YOU FOR YOUR BUSINESS!!', 'Thanks for your business.',
+    'Thank you!', 'Thanks!', 'thanks', 'Thank you so much for your business!',
+    'Thanks again for your business', 'Thank you for your prompt payment!',
+    '  Thank you for your business!  ', 'Thank  you   for your business !',
+  ]) eq(M.isJustThanks(s), true, JSON.stringify(s) + ' should be dropped');
+});
+
+test('notes that say anything else always print', () => {
+  for (const s of [
+    'Payment due within 30 days.',
+    'Thank you for your business! Payment due within 30 days.',
+    'Thanks — please make checks payable to the shop.',
+    'Cameras installed at the pool park and lift station.',
+    'No thanks to the old vendor',
+    'Thank you for your business, Cathy!',
+  ]) eq(M.isJustThanks(s), false, JSON.stringify(s) + ' must be kept');
+});
+
+test('empty notes are not treated as a thank-you (the caller gates on them first)', () => {
+  // '' and null already fail the `inv.notes &&` guard; what matters here is that
+  // isJustThanks never reports true for them, or a future caller reading it alone
+  // would draw the wrong conclusion about what the invoice actually said.
+  eq(M.isJustThanks(''), false);
+  eq(M.isJustThanks(null), false);
+  eq(M.isJustThanks(undefined), false);
+  eq(M.isJustThanks('   '), false);
 });
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
