@@ -1800,7 +1800,7 @@ tr.bulk-sel{background:var(--accent-bg)}
               <div class="form-group"><label>Payment terms (days)</label><input id="s-inv-due-days" type="number" min="0" step="1" placeholder="30"></div>
               <div class="form-group"><label>Start invoice # at <span style="color:var(--text3);font-weight:400;font-size:11px">(full number, e.g. 2648)</span></label><input id="s-inv-start" type="number" min="1" step="1" placeholder="auto"></div>
             </div>
-            <div class="form-group"><label>Default notes / footer <span style="color:var(--text3);font-weight:400;font-size:11px">(prefilled on new invoices)</span></label><textarea id="s-inv-terms" rows="3" placeholder="Thank you for your business!"></textarea></div>
+            <div class="form-group"><label>Default notes / footer <span style="color:var(--text3);font-weight:400;font-size:11px">(prefilled on new invoices)</span></label><textarea id="s-inv-terms" rows="3" placeholder="e.g. Payment due within 30 days"></textarea><div style="font-size:11px;color:var(--text3);margin-top:.35rem">Every invoice already ends with &ldquo;Thank you for your business!&rdquo; &mdash; notes that only say that are skipped so it doesn&rsquo;t print twice.</div></div>
             <div class="form-group">
               <label>How to pay <span style="color:var(--text3);font-weight:400;font-size:11px">(prints on every invoice)</span></label>
               <div class="pm-list" id="pay-methods-editor"></div>
@@ -5061,6 +5061,20 @@ function printInvoice() {
 }
 function printInvoiceFallback() { return openPDFBlob(buildInvoicePDF, lastInvoiceTitle); }
 
+// The invoice footer ALWAYS closes with "THANK YOU FOR YOUR BUSINESS!", so an
+// invoice whose notes are nothing BUT that same courtesy printed it twice — once
+// under the total, once at the bottom of the page. That's the common case, not an
+// edge one: the Settings "default notes / footer" field suggests exactly that text,
+// and it prefills every new invoice. Only notes that are ENTIRELY a thank-you are
+// dropped — the moment they say anything else (terms, a due date, a job summary,
+// a thank-you WITH something after it) they print in full, because the note is the
+// user's and the footer is boilerplate. Never suppress the footer instead: it's the
+// designed closer and it's what a note-less invoice ends on.
+function isJustThanks(s){
+  const t = ('' + (s == null ? '' : s)).replace(/[!.,\s]+/g, ' ').trim().toLowerCase();
+  return /^thanks?(?: you)?(?: so much| very much| again)?(?: for (?:your|the) (?:business|patronage|payment|prompt payment|continued business|order))?$/.test(t);
+}
+
 function viewInvoice(id) {
   const inv = cache.invoices.find(i=>i.id===id); if(!inv) return;
   const p = profile || {};
@@ -5141,7 +5155,7 @@ function viewInvoice(id) {
       </div>
     </div>
 
-    ${inv.notes?`<div style="margin:1rem 0;font-size:12px;color:#444">${esc(inv.notes)}</div>`:''}
+    ${(inv.notes && !isJustThanks(inv.notes))?`<div style="margin:1rem 0;font-size:12px;color:#444">${esc(inv.notes)}</div>`:''}
 
     ${payHowToHTML(p, bizName)}
 
