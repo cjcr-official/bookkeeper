@@ -1342,6 +1342,32 @@ input,select,textarea{border-radius:var(--radius-sm)}
 tr.bulk-sel{background:var(--accent-bg)}
 /* Keep the last rows reachable above the floating bar while selecting. */
 .bulk-active #expenses-table, .bulk-active #invoices-table{padding-bottom:56px}
+
+/* ── Form folds (long modals) ──
+   A form only has to show what the common case needs. Everything optional lives in
+   a fold whose HEADER carries a live summary of what's inside, so a collapsed
+   section still states its contents instead of hiding them — and a section that
+   HAS content opens itself when the record loads. The body is display:none, not
+   removed, so every field keeps its value and the save paths are untouched. */
+/* A .form-row normally stacks on a phone (see the >768px breakpoint block), which is
+   right for full-width fields — but an invoice number and two dates are 4–10
+   characters each, and stacking them pushed the line items a full screen down. .tight
+   keeps a row 2-up on mobile; .lead widens the first column for a name-length field
+   sitting beside a short one. Opt-in per row: most rows in the app still stack. */
+@media(max-width:768px){
+  .form-row.tight{grid-template-columns:1fr 1fr;gap:.65rem}
+  .form-row.tight.lead{grid-template-columns:1.4fr .8fr}
+}
+.form-fold{border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg2);margin-top:.6rem;overflow:hidden}
+.form-fold-head{display:flex;align-items:center;gap:.5rem;width:100%;padding:.7rem .75rem;background:none;border:0;color:var(--text);font-family:inherit;font-size:13.5px;font-weight:600;text-align:left;cursor:pointer}
+.form-fold-head:active{transform:scale(.995)}
+.form-fold-chev{flex-shrink:0;color:var(--text3);font-size:16px;line-height:1;transition:transform .15s}
+.form-fold.open .form-fold-chev{transform:rotate(90deg)}
+.form-fold-sum{margin-left:auto;min-width:0;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500;color:var(--text3);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.form-fold.open .form-fold-sum{opacity:.55}
+.form-fold-body{display:none;padding:.15rem .75rem .85rem}
+.form-fold.open .form-fold-body{display:block}
+.form-fold-body>.form-group:last-child,.form-fold-body>.form-row:last-child{margin-bottom:0}
 </style>
 </head>
 <body>
@@ -2015,52 +2041,98 @@ tr.bulk-sel{background:var(--accent-bg)}
     <div class="modal-header"><h2 id="inv-modal-title">New Invoice</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-invoice')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
       <input type="hidden" id="inv-id">
-      <div class="form-row">
+      <!-- The top of the form is the whole common case: who it's for, when, and what
+           you did. Payment, customer expenses, mileage and notes are folds below the
+           total — see the .form-fold CSS note and updateInvFolds(). -->
+      <div class="form-row tight lead">
         <div class="form-group"><label>Customer</label><select id="inv-customer" onchange="calcInvMiles()"><option value="">Select customer...</option></select></div>
         <div class="form-group"><label>Invoice #</label><input id="inv-number" type="text"></div>
       </div>
-      <div class="form-row">
+      <div class="form-row tight">
         <div class="form-group"><label>Invoice Date</label><input id="inv-date" type="date"></div>
         <div class="form-group"><label>Due Date</label><input id="inv-due" type="date"></div>
-      </div>
-      <div class="form-group"><label>Status</label>
-        <select id="inv-status"><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select>
-      </div>
-      <div class="form-group" style="margin-bottom:.35rem"><label>Payment <span style="color:var(--text3);font-weight:400;font-size:11px">(amount paid in full marks it Paid)</span></label></div>
-      <div class="form-row">
-        <div class="form-group"><label>Method</label><select id="inv-pay-method"><option value="">—</option><option>Check</option><option>Card</option><option>Bank Transfer</option><option>Zelle</option><option>Venmo</option><option>Cash</option><option>Other</option></select></div>
-        <div class="form-group"><label>Amount Paid</label><input id="inv-amount-paid" type="number" min="0" step="0.01" placeholder="0.00"></div>
-        <div class="form-group"><label>Paid Date</label><input id="inv-paid-date" type="date"></div>
-      </div>
-      <button class="btn btn-sm" type="button" onclick="markInvoicePaidFull()" style="margin-bottom:.25rem"><i class="ti ti-cash"></i> Mark Paid in Full</button>
-      <div class="form-group" id="inv-recon-bank-group" style="display:none;margin-top:.35rem"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(which account the payment clears — for reconciliation)</span></label>
-        <select id="inv-recon-bank"></select>
-      </div>
-      <!-- Mileage on an invoice belongs to the Mileage section — hidden with it. -->
-      <div class="form-group" style="margin-bottom:.35rem" data-module="mileage"><label>Mileage <span style="color:var(--text3);font-weight:400;font-size:11px">(round trip = customer one-way × 2)</span></label></div>
-      <div class="form-row" data-module="mileage">
-        <div class="form-group"><label>Trips Made</label><input id="inv-trips" type="number" inputmode="numeric" min="0" step="1" value="0" oninput="calcInvMiles()"></div>
-        <div class="form-group"><label>Per Trip</label><input id="inv-miles" type="number" readonly style="background:var(--bg2)" placeholder="—"></div>
-        <div class="form-group"><label>Total Miles</label><input id="inv-total-miles" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
       </div>
       <div id="inv-lines-wrap" style="margin-bottom:1rem"></div>
       <button class="btn btn-sm" onclick="addInvLine()"><i class="ti ti-plus"></i> Add Line</button>
       <div style="font-size:11px;color:var(--text3);margin-top:.4rem">Leave a line's date blank to use the invoice date.</div>
+
+      <!-- Customer expenses add to the total, so the fold sits ABOVE it — everything
+           that makes the number is on the same side of it. Written into the EXPENSES
+           ledger, so the whole fold follows that section. Hidden only: openInvoiceModal
+           still fills it and saveInvoice still writes it, so an existing invoice never
+           loses its linked expenses. -->
+      <div class="form-fold" id="invfold-expenses" data-module="expenses">
+        <button type="button" class="form-fold-head" aria-expanded="false" onclick="toggleInvFold('expenses')">
+          <i class="ti ti-chevron-right form-fold-chev"></i>
+          <span>Customer expenses</span>
+          <span class="form-fold-sum" id="invfold-sum-expenses"></span>
+        </button>
+        <div class="form-fold-body">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:.6rem">Parts/items the customer reimburses. Added to the invoice and logged as reimbursed expenses (excluded from profit).</div>
+          <div id="inv-exp-wrap"></div>
+          <button class="btn btn-sm" onclick="addInvExpense()"><i class="ti ti-plus"></i> Add Customer Expense</button>
+        </div>
+      </div>
+
       <div style="margin-top:1rem;text-align:right;font-size:13.5px">
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Subtotal:</span><span id="inv-subtotal">$0.00</span></div>
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.25rem 0;color:var(--text2)"><span>Tax (<span id="inv-tax-pct">0</span>%):</span><span id="inv-tax-amt">$0.00</span></div>
         <div style="display:flex;justify-content:flex-end;gap:1.5rem;padding:.4rem 0;font-weight:600;font-size:15px;border-top:1px solid var(--border);margin-top:.25rem"><span>Total:</span><span id="inv-total">$0.00</span></div>
       </div>
-      <!-- Customer expenses are written into the EXPENSES ledger, so the block follows
-           that section. Hidden only — openInvoiceModal still fills it and saveInvoice
-           still writes it, so an existing invoice never loses its linked expenses. -->
-      <div style="margin-top:1.25rem;border-top:1px solid var(--border);padding-top:1rem" data-module="expenses">
-        <label style="display:block;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--text3);text-transform:uppercase;margin-bottom:.15rem">Customer Expenses</label>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:.6rem">Parts/items the customer reimburses. Added to the invoice and logged as reimbursed expenses (excluded from profit).</div>
-        <div id="inv-exp-wrap"></div>
-        <button class="btn btn-sm" onclick="addInvExpense()"><i class="ti ti-plus"></i> Add Customer Expense</button>
+
+      <!-- Status and payment are ONE decision (recording the money is what makes an
+           invoice Paid), so they share a fold instead of sitting in two places. -->
+      <div class="form-fold" id="invfold-payment">
+        <button type="button" class="form-fold-head" aria-expanded="false" onclick="toggleInvFold('payment')">
+          <i class="ti ti-chevron-right form-fold-chev"></i>
+          <span>Status &amp; payment</span>
+          <span class="form-fold-sum" id="invfold-sum-payment"></span>
+        </button>
+        <div class="form-fold-body">
+          <div class="form-group"><label>Status</label>
+            <select id="inv-status" onchange="updateInvFolds()"><option value="draft">Draft</option><option value="sent">Sent</option><option value="paid">Paid</option><option value="overdue">Overdue</option></select>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin:-.35rem 0 .6rem">Recording the full amount below marks it Paid.</div>
+          <div class="form-row tight">
+            <div class="form-group"><label>Method</label><select id="inv-pay-method" onchange="updateInvFolds()"><option value="">—</option><option>Check</option><option>Card</option><option>Bank Transfer</option><option>Zelle</option><option>Venmo</option><option>Cash</option><option>Other</option></select></div>
+            <div class="form-group"><label>Amount Paid</label><input id="inv-amount-paid" type="number" min="0" step="0.01" placeholder="0.00" oninput="updateInvFolds()"></div>
+            <div class="form-group"><label>Paid Date</label><input id="inv-paid-date" type="date"></div>
+          </div>
+          <button class="btn btn-sm" type="button" onclick="markInvoicePaidFull()"><i class="ti ti-cash"></i> Mark Paid in Full</button>
+          <div class="form-group" id="inv-recon-bank-group" style="display:none;margin-top:.6rem"><label>Bank account <span style="color:var(--text3);font-weight:400;font-size:11px">(which account the payment clears — for reconciliation)</span></label>
+            <select id="inv-recon-bank"></select>
+          </div>
+        </div>
       </div>
-      <div class="form-group" style="margin-top:.75rem"><label>Notes</label><textarea id="inv-notes" rows="2"></textarea></div>
+
+      <!-- Mileage on an invoice belongs to the Mileage section — hidden with it. -->
+      <div class="form-fold" id="invfold-mileage" data-module="mileage">
+        <button type="button" class="form-fold-head" aria-expanded="false" onclick="toggleInvFold('mileage')">
+          <i class="ti ti-chevron-right form-fold-chev"></i>
+          <span>Mileage</span>
+          <span class="form-fold-sum" id="invfold-sum-mileage"></span>
+        </button>
+        <div class="form-fold-body">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:.6rem">Round trip = the customer's one-way miles × 2.</div>
+          <div class="form-row tight">
+            <div class="form-group"><label>Trips Made</label><input id="inv-trips" type="number" inputmode="numeric" min="0" step="1" value="0" oninput="calcInvMiles()"></div>
+            <div class="form-group"><label>Per Trip</label><input id="inv-miles" type="number" readonly style="background:var(--bg2)" placeholder="—"></div>
+            <div class="form-group"><label>Total Miles</label><input id="inv-total-miles" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-fold" id="invfold-notes">
+        <button type="button" class="form-fold-head" aria-expanded="false" onclick="toggleInvFold('notes')">
+          <i class="ti ti-chevron-right form-fold-chev"></i>
+          <span>Notes</span>
+          <span class="form-fold-sum" id="invfold-sum-notes"></span>
+        </button>
+        <div class="form-fold-body">
+          <textarea id="inv-notes" rows="2" oninput="updateInvFolds()"></textarea>
+          <div style="font-size:11px;color:var(--text3);margin-top:.4rem">Prints under the total. The invoice already ends with &ldquo;Thank you for your business!&rdquo;, so notes that only say that are skipped.</div>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal('modal-invoice')">Cancel</button>
@@ -4563,6 +4635,47 @@ async function migrateInvoiceNumbers() {
   }
 }
 
+// ── Invoice form folds ───────────────────────────────────────────────────────
+// The invoice form used to show everything at once — status, payment, a bank
+// picker, three mileage boxes, customer expenses and notes — for what is usually
+// "pick a customer, type a line, save". The optional blocks are folds now, and two
+// rules keep that from HIDING anything: a collapsed header states its own contents
+// (updateInvFolds), and a section that already HAS content opens itself when the
+// invoice loads (openInvoiceModal). Nothing is removed from the DOM, so every field
+// keeps its value and saveInvoice reads exactly what it always did.
+function toggleInvFold(key, force) {
+  const el = document.getElementById('invfold-' + key); if (!el) return;
+  const open = force == null ? !el.classList.contains('open') : !!force;
+  el.classList.toggle('open', open);
+  const head = el.querySelector('.form-fold-head');
+  if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+// What each collapsed fold says about itself. Called from every path that can change
+// one of those figures — the payment fields, calcInvMiles, renderInvExpenses,
+// markInvoicePaidFull — so a summary can never describe a stale form.
+function updateInvFolds() {
+  const set = (key, txt) => { const el = document.getElementById('invfold-sum-' + key); if (el) el.textContent = txt; };
+  const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+
+  const paid = parseFloat(val('inv-amount-paid') || 0) || 0;
+  const stSel = document.getElementById('inv-status');
+  const stTxt = stSel && stSel.selectedIndex >= 0 ? stSel.options[stSel.selectedIndex].text : 'Draft';
+  const method = val('inv-pay-method');
+  set('payment', paid > 0 ? stTxt + ' · ' + fmt(paid) + (method ? ' ' + method : '') : stTxt + ' · nothing recorded');
+
+  const trips = parseFloat(val('inv-trips') || 0) || 0;
+  const miles = val('inv-total-miles');
+  set('mileage', trips > 0 ? trips + (trips === 1 ? ' trip' : ' trips') + (miles ? ' · ' + miles + ' mi' : '') : 'None');
+
+  const rows = (typeof editingInvExpenses !== 'undefined' && editingInvExpenses) ? editingInvExpenses : [];
+  const expTotal = rows.reduce((t, e) => t + (parseFloat(e.amount) || 0), 0);
+  set('expenses', rows.length ? rows.length + (rows.length === 1 ? ' item · ' : ' items · ') + fmt(expTotal) : 'None');
+
+  const notes = (val('inv-notes') || '').trim();
+  set('notes', notes ? (notes.length > 34 ? notes.slice(0, 33) + '…' : notes) : 'None');
+}
+
 function openInvoiceModal(inv) {
   const sel = document.getElementById('inv-customer');
   sel.innerHTML = '<option value="">Select customer...</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
@@ -4609,6 +4722,21 @@ function openInvoiceModal(inv) {
   }
   renderReconBankPicker('inv-recon-bank', 'inv-recon-bank-group', inv ? 'p:'+inv.id : null);
   renderInvLines();
+  // Nothing drew the billed-parts rows on open — the block was rendered only by
+  // addInvExpense/removeInvExpense, so reopening an invoice with customer expenses
+  // showed an empty list (and the totals above it counted rows you couldn't see).
+  renderInvExpenses();
+  // A fold opens itself when it already holds something, so editing an existing
+  // invoice still shows what's on it — a NEW one opens with just the essentials.
+  // The notes fold is the one exception: the default terms prefill every invoice,
+  // so opening it for them would defeat the fold; only notes the user actually
+  // changed count as content.
+  const notesNow = (document.getElementById('inv-notes').value||'').trim();
+  toggleInvFold('payment',  !!(inv && (parseFloat(inv.amount_paid||0) > 0 || inv.payment_method || inv.paid_date)));
+  toggleInvFold('mileage',  !!(inv && parseFloat(inv.trips||0) > 0));
+  toggleInvFold('expenses', editingInvExpenses.length > 0);
+  toggleInvFold('notes',    !!notesNow && notesNow !== (profile.terms||'').trim());
+  updateInvFolds();
   openModal('modal-invoice');
 }
 
@@ -4625,9 +4753,9 @@ function renderInvLines() {
           <input type="text" value="${escHtml(l.desc||'')}" oninput="editingInvLines[${i}].desc=this.value" style="flex:1;font-size:13.5px;padding:.4rem .55rem" placeholder="Service or item...">
           <button onclick="removeInvLine(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;flex-shrink:0;padding:.2rem"><i class="ti ti-x"></i></button>
         </div>
-        <div style="margin-bottom:.5rem">
-          <label style="font-size:9px;margin-bottom:.2rem">Date <span style="text-transform:none;letter-spacing:0">(blank = invoice date)</span></label>
-          <input type="date" value="${escHtml(l.date||'')}" onchange="editingInvLines[${i}].date=this.value" style="font-size:13.5px;padding:.4rem .55rem">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
+          <label style="font-size:9px;margin:0;flex-shrink:0">Date</label>
+          <input type="date" value="${escHtml(l.date||'')}" onchange="editingInvLines[${i}].date=this.value" title="Blank = invoice date" style="font-size:13.5px;padding:.4rem .55rem">
         </div>
         <div style="display:flex;gap:.5rem;align-items:flex-end">
           <div style="flex:1"><label style="font-size:9px;margin-bottom:.2rem">Qty</label><input type="number" value="${l.qty}" min="0" inputmode="decimal" oninput="editingInvLines[${i}].qty=+this.value;calcLine(${i})" style="font-size:13.5px;padding:.4rem;text-align:center"></div>
@@ -4671,6 +4799,7 @@ function renderInvExpenses() {
   if (!wrap) return;
   // drop any rows that reference an expense deleted from the log (keep unsaved rows with no id)
   editingInvExpenses = editingInvExpenses.filter(e=>!e.id || (cache.expenses||[]).some(x=>x.id===e.id));
+  updateInvFolds();   // after the filter — the fold must count the rows that SURVIVED
   if (!editingInvExpenses.length) { wrap.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:.25rem 0 .6rem">None added.</div>'; return; }
   wrap.innerHTML = editingInvExpenses.map((e,i)=>`
     <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;flex-wrap:wrap">
@@ -4702,6 +4831,7 @@ function markInvoicePaidFull() {
   document.getElementById('inv-amount-paid').value = total.toFixed(2);
   if (!document.getElementById('inv-paid-date').value) document.getElementById('inv-paid-date').value = today();
   document.getElementById('inv-status').value = 'paid';
+  updateInvFolds();
   showToast('Marked paid in full — save to record','success');
 }
 
@@ -5765,6 +5895,7 @@ function calcInvMiles() {
   const count = parseInt(document.getElementById('inv-trips').value)||0;
   document.getElementById('inv-miles').value = perTrip ? perTrip : '';
   document.getElementById('inv-total-miles').value = (perTrip*count).toFixed(2);
+  updateInvFolds();
 }
 
 async function saveTrip() {
