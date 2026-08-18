@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **507** (see `version.json` — that file is the source of truth).
+Current version: **508** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -1229,6 +1229,32 @@ minute until the cache refreshes.
   something after it) print in full. Suppress the notes, never the footer — the footer
   is the designed closer and it's what a note-less invoice ends on. `money.test.mjs`
   pins both directions, since too loose a match would swallow real payment terms.
+  **The form is folded, not flat (v508).** The invoice editor asked for everything at
+  once — status, payment, a bank picker, three mileage boxes, customer expenses and
+  notes — for what is nearly always "pick a customer, type a line, Save". The top of
+  the form is now just the invoice header (customer + number + both dates, two-across
+  on a phone via `.form-row.tight`/`.tight.lead`) and the line items; **Status &
+  payment** (status lives WITH the payment that sets it), **Customer expenses**,
+  **Mileage** and **Notes** are `.form-fold` sections. Three rules make folding safe,
+  and all three are pinned by `test/forms.test.mjs`:
+  1. **Nothing is unmounted.** A fold body is `display:none`, so every field keeps its
+     value and `saveInvoice()` reads exactly what it always did — the same "a hidden
+     field keeps its value" rule the Sections work follows.
+  2. **A collapsed fold states its contents.** `updateInvFolds()` writes a live summary
+     into each header (`Paid · $300.00 Check`, `2 items · $75.00`, `2 trips · 48.00 mi`),
+     so folding hides controls, never facts. It is called from EVERY path that can move
+     one of those figures — the payment fields' own handlers, `calcInvMiles`,
+     `renderInvExpenses`, `markInvoicePaidFull` — because a stale summary would tell the
+     owner an invoice is unpaid while it holds a payment.
+  3. **A fold that holds something opens itself** when the invoice loads
+     (`openInvoiceModal`), so editing a paid invoice still shows the payment. Notes are
+     the exception: `profile.terms` prefills every invoice, so only notes the user
+     actually changed count as content.
+  Customer expenses sit ABOVE the totals — everything that makes the number is on the
+  same side of it — and `openInvoiceModal` now calls `renderInvExpenses()`, which
+  nothing did before: the block was drawn only by add/remove, so reopening an invoice
+  with billed parts showed an empty list while the total above counted rows the owner
+  couldn't see.
 - **Payments:** `amount_paid`/`paid_date`/`payment_method`; partial payments;
   `balanceDue(inv)` and `effectiveStatus(inv)` (fully-paid → paid; past-due →
   overdue). Outstanding = sum of balances (excl. drafts). PDF shows Paid/Balance

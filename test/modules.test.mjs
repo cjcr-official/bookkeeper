@@ -387,8 +387,18 @@ test('Settings panels that configure one section follow it', () => {
 test('customer expenses on an invoice follow the Expenses section', () => {
   // They are written into the expenses ledger — but hidden only, so an existing
   // invoice keeps its links (openInvoiceModal fills it, saveInvoice writes it).
-  ok(/data-module="expenses">\s*<label[^>]*>Customer Expenses/.test(src),
+  // Checked structurally rather than by the exact markup around the heading: the
+  // block became a collapsible fold in v508 and the old string test broke on a
+  // pure re-layout, which is noise. What must hold is that the container holding
+  // the rows carries the gate.
+  const openTag = src.match(/<div[^>]*id="invfold-expenses"[^>]*>/);
+  ok(openTag, 'no container around the invoice editor\'s customer-expense rows');
+  ok(/data-module="expenses"/.test(openTag[0]),
     'the invoice editor\'s Customer Expenses block is not gated on the expenses module');
+  const from = src.indexOf(openTag[0]);
+  const next = src.indexOf('class="form-fold"', from + openTag[0].length);
+  ok(src.slice(from, next < 0 ? undefined : next).includes('id="inv-exp-wrap"'),
+    'the customer-expense rows sit outside the gated container');
   ok(/id="inv-exp-wrap"/.test(src) && /function saveInvoice/.test(src));
 });
 

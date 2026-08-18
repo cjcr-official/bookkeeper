@@ -156,6 +156,146 @@ test('a category containing markup cannot break out of the option', () => {
   ok(!/<img/.test(sel.innerHTML), 'the raw tag must not reach innerHTML');
 });
 
+
+// ============================================================================
+// The invoice form's FOLDS.
+//
+// The invoice editor asks for a lot, and almost none of it is the common case
+// (a customer, a line, Save). Payment/status, customer expenses, mileage and
+// notes are collapsed sections now — which is only safe under two rules:
+//   1. Nothing is removed from the DOM. Every field keeps its value and
+//      saveInvoice() reads exactly what it always did.
+//   2. A collapsed fold STATES its contents in its header, so folding hides the
+//      controls, never the facts. A summary that goes stale is the whole risk:
+//      it would tell the owner an invoice is unpaid while it holds a payment.
+// ============================================================================
+
+// A fake element store keyed by id — enough for updateInvFolds(), which only
+// reads .value / a select's selected option text and writes .textContent.
+function foldDoc(fields) {
+  const els = new Map();
+  const mk = id => {
+    const f = fields[id];
+    if (f && f.options) {
+      return { options: f.options.map(t => ({ text: t })), selectedIndex: f.selectedIndex, value: f.value || '' };
+    }
+    return { value: f == null ? '' : String(f), textContent: '' };
+  };
+  return {
+    getElementById(id) {
+      if (!els.has(id)) els.set(id, mk(id));
+      return els.get(id);
+    },
+    _sum(key) { return this.getElementById('invfold-sum-' + key).textContent; },
+  };
+}
+function runFolds(fields, expenses = []) {
+  const doc = foldDoc(fields);
+  new Function('document', 'fmt', 'editingInvExpenses', `
+    ${extract('updateInvFolds')}
+    updateInvFolds();
+  `)(doc, v => '$' + Number(v).toFixed(2), expenses);
+  return doc;
+}
+const paidFields = (over = {}) => Object.assign({
+  'inv-status': { options: ['Draft', 'Sent', 'Paid', 'Overdue'], selectedIndex: 0 },
+  'inv-amount-paid': '', 'inv-pay-method': '', 'inv-trips': '0',
+  'inv-total-miles': '', 'inv-notes': '',
+}, over);
+
+test('a collapsed payment fold still says what was recorded', () => {
+  const d = runFolds(paidFields({
+    'inv-status': { options: ['Draft', 'Sent', 'Paid', 'Overdue'], selectedIndex: 2 },
+    'inv-amount-paid': '300', 'inv-pay-method': 'Check',
+  }));
+  eq(d._sum('payment'), 'Paid · $300.00 Check');
+});
+
+test('an unpaid invoice says so rather than showing a blank fold', () => {
+  const d = runFolds(paidFields());
+  eq(d._sum('payment'), 'Draft · nothing recorded');
+});
+
+test('mileage and customer expenses summarise their own contents', () => {
+  const d = runFolds(paidFields({ 'inv-trips': '2', 'inv-total-miles': '48.00' }),
+    [{ amount: 40 }, { amount: 35 }]);
+  eq(d._sum('mileage'), '2 trips · 48.00 mi');
+  eq(d._sum('expenses'), '2 items · $75.00');
+});
+
+test('one trip and one item are not pluralised', () => {
+  const d = runFolds(paidFields({ 'inv-trips': '1', 'inv-total-miles': '24.00' }), [{ amount: 40 }]);
+  eq(d._sum('mileage'), '1 trip · 24.00 mi');
+  eq(d._sum('expenses'), '1 item · $40.00');
+});
+
+test('empty sections read as None, never as an empty header', () => {
+  const d = runFolds(paidFields());
+  eq(d._sum('mileage'), 'None');
+  eq(d._sum('expenses'), 'None');
+  eq(d._sum('notes'), 'None');
+});
+
+test('a long note is previewed, not dumped into the header', () => {
+  const long = 'Replaced the cameras at the pool park and re-ran the cable to the lift station';
+  const d = runFolds(paidFields({ 'inv-notes': long }));
+  ok(d._sum('notes').length <= 35, 'summary must stay on one line: ' + d._sum('notes'));
+  ok(d._sum('notes').endsWith('…'), 'a truncated note should show it was truncated');
+  ok(long.startsWith(d._sum('notes').slice(0, -1)), 'the preview must be the note itself');
+});
+
+test('folding moved the fields, it did not drop them', () => {
+  // saveInvoice() reads each of these by id. A re-layout that loses one writes a
+  // blank over real data with no error anywhere.
+  const modal = src.slice(src.indexOf('id="modal-invoice"'), src.indexOf('id="save-inv-btn"'));
+  for (const id of ['inv-id', 'inv-customer', 'inv-number', 'inv-date', 'inv-due', 'inv-status',
+                    'inv-pay-method', 'inv-amount-paid', 'inv-paid-date', 'inv-recon-bank',
+                    'inv-trips', 'inv-miles', 'inv-total-miles', 'inv-lines-wrap',
+                    'inv-exp-wrap', 'inv-notes'])
+    ok(modal.includes('id="' + id + '"'), 'the invoice form lost #' + id);
+});
+
+test('a fold body is hidden by CSS, so the values survive being collapsed', () => {
+  ok(/\.form-fold-body\{display:none/.test(src), 'fold bodies must hide, not unmount');
+  ok(/\.form-fold\.open .form-fold-body\{display:block/.test(src));
+  ok(!/removeChild|innerHTML\s*=\s*''/.test(extract('toggleInvFold')),
+    'toggleInvFold must not tear the fields out of the DOM');
+});
+
+test('every fold header has a summary slot and an aria-expanded state', () => {
+  const modal = src.slice(src.indexOf('id="modal-invoice"'), src.indexOf('id="save-inv-btn"'));
+  for (const key of ['payment', 'expenses', 'mileage', 'notes']) {
+    ok(modal.includes('id="invfold-' + key + '"'), 'no fold container for ' + key);
+    ok(modal.includes('id="invfold-sum-' + key + '"'), 'no summary slot for ' + key);
+  }
+  const heads = [...modal.matchAll(/class="form-fold-head"[^>]*/g)];
+  eq(heads.length, 4, 'expected one header per fold');
+  ok(heads.every(h => h[0].includes('aria-expanded')), 'a fold header must report its state');
+  ok(/aria-expanded/.test(extract('toggleInvFold')), 'toggling must update aria-expanded');
+});
+
+test('openInvoiceModal opens a fold that already holds something', () => {
+  // Otherwise editing a paid invoice would hide the payment behind a tap the user
+  // has no reason to make.
+  const fn = extract('openInvoiceModal');
+  for (const key of ['payment', 'mileage', 'expenses', 'notes'])
+    ok(fn.includes("toggleInvFold('" + key + "'"), 'openInvoiceModal never decides the ' + key + ' fold');
+  ok(fn.includes('renderInvExpenses()'),
+    'the billed-parts rows must be drawn on open, or an auto-opened fold shows an empty list');
+  ok(fn.includes('updateInvFolds()'), 'the summaries must be painted before the modal shows');
+});
+
+test('every path that changes a summarised figure repaints the summaries', () => {
+  for (const fn of ['calcInvMiles', 'markInvoicePaidFull', 'renderInvExpenses'])
+    ok(extract(fn).includes('updateInvFolds()'), fn + ' can leave a fold summary stale');
+  // The payment fields are plain inputs — they repaint from the markup.
+  const modal = src.slice(src.indexOf('id="modal-invoice"'), src.indexOf('id="save-inv-btn"'));
+  for (const id of ['inv-amount-paid', 'inv-status', 'inv-pay-method', 'inv-notes']) {
+    const tag = modal.match(new RegExp('<(?:input|select|textarea)[^>]*id="' + id + '"[^>]*>'));
+    ok(tag && /updateInvFolds\(\)/.test(tag[0]), id + ' can change a summary without repainting it');
+  }
+});
+
 console.log('');
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
