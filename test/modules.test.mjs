@@ -317,7 +317,7 @@ test('a folded Home widget is not drawn, and unfolding it draws it', () => {
   const firstDraw = body.indexOf('renderDashCard(');
   ok(applyAt > -1 && firstDraw > -1, 'renderDashboard should apply fold state, then draw');
   ok(applyAt < firstDraw, 'applyDashCollapsed() must run BEFORE the widgets are drawn');
-  for (const id of ['dash-card-flow', 'dash-card-spend', 'dash-card-cat', 'dash-card-up'])
+  for (const id of ['dash-card-flow', 'dash-card-cat', 'dash-card-up'])
     ok(body.includes("renderDashCard('" + id + "')"), id + ' should be drawn lazily');
 
   const gate = extract('renderDashCard');

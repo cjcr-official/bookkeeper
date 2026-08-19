@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **508** (see `version.json` — that file is the source of truth).
+Current version: **509** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -1111,10 +1111,15 @@ minute until the cache refreshes.
   Income-vs-Expenses bar chart + collapsible Reports. (The Recent
   Invoices/Expenses cards were removed in v452 — the Invoices/Expenses tabs
   hold the full lists.)
-  **The collapsible widgets are drawn LAZILY (v496)** — each one (cash flow, spend
-  heat grid, category donut, Upcoming) is a full pass over the ledgers, they all
+  **The collapsible widgets are drawn LAZILY (v496)** — each one (cash flow,
+  category donut, Upcoming) is a full pass over the ledgers, they all
   default to *collapsed*, and a collapsed card's body is `display:none`, so every
-  `renderDashboard()` was building four things nobody could see. `renderDashboard`
+  `renderDashboard()` was building all of them whether or not anyone could see them.
+  (A fourth, the "Spend This Month" red heat calendar, was **removed in v509** at the
+  owner's request — it duplicated Spending by Category on the same page and made an
+  already-long Home longer. `renderSpendMonth`, the `.sc-*` / `.spend-*` CSS and the
+  desktop grid's `spend` area went with it; don't add a second month grid back to
+  Home.) `renderDashboard`
   now calls `applyDashCollapsed()` **first** and then `renderDashCard(id)` per card,
   which no-ops on a folded one; `toggleDashCard()` draws a card the moment it's
   unfolded. **Order is load-bearing** — draw before the saved fold state is applied

@@ -143,8 +143,8 @@ test('every fold header is reachable — by itself or through its chevron', () =
   ok(seen >= 5, 'expected to find the dashboard fold headers, saw ' + seen);
   // ...and a toggleDashCard header only reaches markFoldState if its card is
   // .collapsible, which is what applyDashCollapsed() walks.
-  const cards = markup.match(/<div class="card[^"]*" id="dash-card-(?:up|flow|spend|cat)"[^>]*>/g) || [];
-  eq(cards.length, 4, 'the four lazily-drawn widgets');
+  const cards = markup.match(/<div class="card[^"]*" id="dash-card-(?:up|flow|cat)"[^>]*>/g) || [];
+  eq(cards.length, 3, 'the three lazily-drawn widgets');
   cards.forEach(c => ok(/collapsible/.test(c), 'should be collapsible: ' + c.slice(0, 80)));
 });
 
