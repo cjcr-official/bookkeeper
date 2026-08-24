@@ -273,8 +273,19 @@ section it files into (v483)** — expense/reimbursement/prior-year-refund need
 `expenses`, invoice-payment/income/prior-year-payment need `invoicing`, bill and
 paycheck need `budget`, loan payment needs `loan` (and at least one saved loan);
 owner draw/contribution and the gift-card split have no module of their own and
-always show. The "From a previous year" group header only renders when at least one
-of its two actions does. The actions: Add as expense
+always show. **The menu is one screen, not a wall (v510).** Nine actions, each under
+a two-sentence explanation and three group headers, meant the owner read the whole
+thing every time to reach the one he uses every time. Now: ONE header ("Record this
+charge/deposit as"), a single clause of hint per row, and everything unusual folded
+behind one **"Something else"** row (`txnMenuMore()`, a one-way reveal — the sheet is
+transient, so re-collapsing is noise). What folds is a RULE, not taste: an action goes
+behind it when it's about a PREVIOUS YEAR, a mechanical fix to the bank line
+(split/rejoin/fix amount), or a special vehicle (gift-card store credit); anything
+that classifies ordinary current-year money stays on top. Follow that rule when you
+add an action, and keep the hint to ~46 characters — longer wraps to a second line on
+a phone and the row grows back. That row also NAMES what it holds ("Last year · Split
+or fix the line"), built from the extras actually present, because a menu that hides
+the answer someone needs is worse than the wall it replaced. The actions: Add as expense
 (pre-fills the expense modal; `_recPairTxn` makes `saveExpense` pair it), Payment
 on an invoice (picker over `balanceDue > 0`, exact-balance match first), income
 without an invoice (creates a paid invoice dated the deposit day), owner
