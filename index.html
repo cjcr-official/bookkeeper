@@ -4607,6 +4607,7 @@ function updateInvFolds() {
 }
 
 function openInvoiceModal(inv) {
+  _recPairInv = null;      // only buildInvoiceFromTxn re-arms this after opening
   const sel = document.getElementById('inv-customer');
   sel.innerHTML = '<option value="">Select customer...</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
   document.getElementById('inv-tax-pct').textContent = profile.tax||0;
@@ -4803,6 +4804,14 @@ async function saveInvoice() {
   if (err) { showToast(err.message,'error'); return; }
   // Tag which bank account this invoice's payment reconciles with (multi-bank only).
   if (invId) await applyReconBankPicker('inv-recon-bank', 'p:'+invId);
+  // Built from a reconcile bank line ("Build an invoice") → explicit-pair the payment
+  // to that line, exactly as saveExpense does. Only a NEW invoice pairs: editing an
+  // existing one must never silently claim whatever line is on screen.
+  if (!id && invId && _recPairInv != null && _recState) {
+    _recState.stmt.manual_matches = (_recState.stmt.manual_matches||[]).concat([{ tIdxs:[_recPairInv], rFps:['p:'+invId] }]);
+    await saveStmtSidecar(_recState.stmt, _recState.path);
+  }
+  _recPairInv = null;
   showToast('Invoice saved','success'); closeModal('modal-invoice'); renderInvoices(); refreshReconcileIfOpen();
 }
 
@@ -10608,10 +10617,10 @@ function cleanBankDesc(s) {
 //
 // v510 cut the two-sentence explanations to one clause each; keep hints to ~46
 // characters or they wrap to a second line on a phone and the row grows back.
-// v511 also REMOVED "Payment on an invoice" and "Income without an invoice" at the
-// owner's request — an invoice payment is recorded on the Invoices tab, where the
-// invoice already is, and the matcher picks the deposit up on the next pull. Don't
-// add a second path to it here.
+// v511 REMOVED "Payment on an invoice" and "Income without an invoice" (both wrote an
+// invoice FOR you, neither let you say what the work was); v512 replaced them with
+// "Build an invoice", which opens the real form pre-filled — the deposit-side mirror
+// of "Build an expense". Don't add another shortcut that authors a record silently.
 function openTxnMenu(idx) {
   const s = _recState; if (!s) return;
   const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
@@ -10633,7 +10642,7 @@ function openTxnMenu(idx) {
   const add = (list, ...a) => list.push(act(...a));
   if (amt < 0) {
     if (canExp)
-      add(biz, `addExpenseFromTxn(${idx})`, 'receipt', 'Add as expense', 'Opens the expense form, pre-filled.');
+      add(biz, `addExpenseFromTxn(${idx})`, 'receipt', 'Build an expense', 'Opens the expense form, pre-filled.');
     if (canLoan)
       add(biz, `loanPayFromTxn(${idx})`, 'building-bank', 'Loan payment', 'Toward a loan you track on the Loan tab.');
     add(biz, `recordOwnerFromTxn(${idx})`, 'wallet', 'Owner draw', 'You paid yourself. Equity, not an expense.');
@@ -10644,6 +10653,8 @@ function openTxnMenu(idx) {
     if (canBudget)
       add(bud, `billPayFromTxn(${idx})`, 'pig-money', 'Bill payment', 'Mark a budgeted bill paid, or add a new one.');
   } else {
+    if (canInv)
+      add(biz, `buildInvoiceFromTxn(${idx})`, 'file-dollar', 'Build an invoice', 'Opens the invoice form, paid, pre-filled.');
     if (canExp)
       add(biz, `reimburseFromTxn(${idx})`, 'arrow-back-up', 'Reimbursement of an expense', 'Cancels a cost you recorded. Not income.');
     add(biz, `recordOwnerFromTxn(${idx})`, 'wallet', 'Owner contribution', 'Personal money in. Equity, not income.');
@@ -10718,6 +10729,49 @@ function addExpenseFromTxn(idx) {
   renderReconBankPicker('exp-recon-bank', 'exp-recon-bank-group', null, { defaultBank: activeReconBank() });
   onExpBankChange();
   _recPairTxn = idx;
+}
+
+// "Build an invoice": the deposit-side mirror of "Build an expense" above — open the
+// REAL invoice form pre-filled from the bank line, so the record is built the way it
+// would be on the Invoices tab and reconciliation is just where it started.
+//
+// This replaced the pair of shortcuts v511 removed. Both wrote an invoice for you:
+// one applied a payment to an invoice picked off a list, the other invented a paid
+// invoice with a single "Service" line from one prompt. Neither let you say what the
+// work actually was, and the invented one prints "Service" to the customer forever.
+//
+// Deliberately blank: the LINE DESCRIPTION. The bank knows the money and the day, not
+// the story ("REGULAR DEPOSIT" is not a line item anyone should print). Everything the
+// bank does know is filled in, including the payment — the money is in the account, so
+// the invoice is paid, dated the day it landed. It's the ordinary form from there: add
+// lines, pick the customer, change any of it. A bigger total just leaves a balance due.
+let _recPairInv = null;   // bank txn index awaiting the next saved invoice
+function buildInvoiceFromTxn(idx) {
+  const s = _recState; if (!s) return;
+  const t = s.stmt.transactions && s.stmt.transactions[idx]; if (!t) return;
+  const amt = parseFloat(t.amount)||0;
+  if (!(amt > 0)) { showToast('Use this on a deposit (money in).', 'error'); return; }
+  const when = t.date || today();
+  openInvoiceModal();
+  document.getElementById('inv-date').value = when;
+  document.getElementById('inv-due').value = when;          // already paid; nothing is owed
+  document.getElementById('inv-status').value = 'paid';
+  document.getElementById('inv-amount-paid').value = amt.toFixed(2);
+  document.getElementById('inv-paid-date').value = when;
+  // 'bank' isn't in the method list, and a bare .value= would blank the field and save
+  // the blank back over it — the v495 select trap, one form over.
+  selectValuePreserving(document.getElementById('inv-pay-method'), 'bank');
+  editingInvLines = [{desc:'', qty:1, rate:amt, amount:amt, date:''}];
+  renderInvLines();
+  // This deposit landed in the account being reconciled, so pre-select it. Re-rendered
+  // because openInvoiceModal already drew the picker with no default, and passed as an
+  // argument — never parked in a global (see the defaultBank note on renderReconBankPicker).
+  renderReconBankPicker('inv-recon-bank', 'inv-recon-bank-group', null, { defaultBank: activeReconBank() });
+  // The payment fold holds something now, so it has to be open — a folded summary
+  // reading "Paid · $35.00" on a form the user never filled in is not enough.
+  toggleInvFold('payment', true);
+  updateInvFolds();
+  _recPairInv = idx;
 }
 
 // "Loan payment": pick which tracked loan this bank charge pays. Records it as an
