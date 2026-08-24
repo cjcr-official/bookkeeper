@@ -282,7 +282,7 @@ which is the question the user is actually answering:
 
 | Section | Holds | Why |
 |---|---|---|
-| **Business** | expense, loan payment, owner draw/contribution, reimbursement, gift-card credit, prior-year payment/refund | hits the ledgers and the P&L |
+| **Business** | build an invoice, build an expense, loan payment, owner draw/contribution, reimbursement, gift-card credit, prior-year payment/refund | hits the ledgers and the P&L |
 | **Budget** | bill payment, paycheck | Budget-tab records that NEVER touch the P&L — a bill isn't a business expense, a paycheck isn't revenue; they exist so the account still reconciles |
 | **Tools** | split / rejoin / fix amount | records NOTHING — edits the bank line itself, so it isn't an answer to "what is this?" at all |
 
@@ -293,11 +293,25 @@ header**, so a switched-off section never leaves a heading over nothing. Tools i
 only folded one (`txnMenuMore()`, ruled off, a one-way reveal — the sheet is transient,
 so re-collapsing is noise) and its row NAMES what it holds, built from the tools
 actually present: a menu that hides the answer someone needs is worse than the wall it
-replaced. **"Payment on an invoice" and "Income without an invoice" were REMOVED in
-v511** at the owner's request ("this makes no sense to have") — an invoice payment is
-recorded on the Invoices tab, where the invoice already is, and the matcher picks the
-deposit up on the next pull; `payInvoiceFromTxn`/`applyPaymentFromTxn`/
-`recordIncomeFromTxn` went with them. Don't add a second path to it back here. The actions: Add as expense
+replaced. **Build the record, never author it silently (v511 → v512).** v511 removed
+"Payment on an invoice" and "Income without an invoice" (with
+`payInvoiceFromTxn`/`applyPaymentFromTxn`/`recordIncomeFromTxn`): both wrote an invoice
+FOR the user — one applied a payment to an invoice picked off a list, the other invented
+a paid invoice with a single line reading "Service", which is what then prints to the
+customer. Neither let you say what the work actually was. v512 replaced them with
+**"Build an invoice"** (`buildInvoiceFromTxn`), the deposit-side mirror of **"Build an
+expense"** (`addExpenseFromTxn`, renamed from "Add as expense"): it opens the REAL
+invoice form pre-filled from the line — date, amount as the first line's rate, the
+payment (paid, dated the day the money landed, method `bank` via
+`selectValuePreserving`), and the reconciled account pre-selected — then
+`saveInvoice()` explicit-pairs the new invoice's payment via `_recPairInv`, exactly as
+`saveExpense` does with `_recPairTxn`. Both globals are cleared by `open<Thing>Modal()`
+and re-armed only by the build action, so an ordinary edit can never claim whatever
+bank line happens to be on screen; `saveInvoice` additionally pairs only when the save
+was an INSERT. **The line description is deliberately left blank** — the bank knows the
+money and the day, not the story, and "REGULAR DEPOSIT" is not a line item anyone
+should print. If you add another way in from here, open the form; don't write the
+record for them. The actions: Add as expense
 (pre-fills the expense modal; `_recPairTxn` makes `saveExpense` pair it), owner
 draw/contribution, gift-card split, prior-year income/refund, **Loan payment**
 (`loanPayFromTxn` → pick a loan; records a `loans.payments` row and pairs it),
