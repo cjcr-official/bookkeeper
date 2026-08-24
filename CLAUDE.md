@@ -270,25 +270,35 @@ month's stamped audit); such records render as
 unmatched bank line has a labeled ⋯ menu (`openTxnMenu`) that records the line
 into the books and explicit-pairs it via `manual_matches`. **Every action follows the
 section it files into (v483)** — expense/reimbursement/prior-year-refund need
-`expenses`, invoice-payment/income/prior-year-payment need `invoicing`, bill and
+`expenses`, prior-year-payment needs `invoicing`, bill and
 paycheck need `budget`, loan payment needs `loan` (and at least one saved loan);
 owner draw/contribution and the gift-card split have no module of their own and
-always show. **The menu is one screen, not a wall (v510).** Nine actions, each under
-a two-sentence explanation and three group headers, meant the owner read the whole
-thing every time to reach the one he uses every time. Now: ONE header ("Record this
-charge/deposit as"), a single clause of hint per row, and everything unusual folded
-behind one **"Something else"** row (`txnMenuMore()`, a one-way reveal — the sheet is
-transient, so re-collapsing is noise). What folds is a RULE, not taste: an action goes
-behind it when it's about a PREVIOUS YEAR, a mechanical fix to the bank line
-(split/rejoin/fix amount), or a special vehicle (gift-card store credit); anything
-that classifies ordinary current-year money stays on top. Follow that rule when you
-add an action, and keep the hint to ~46 characters — longer wraps to a second line on
-a phone and the row grows back. That row also NAMES what it holds ("Last year · Split
-or fix the line"), built from the extras actually present, because a menu that hides
-the answer someone needs is worse than the wall it replaced. The actions: Add as expense
-(pre-fills the expense modal; `_recPairTxn` makes `saveExpense` pair it), Payment
-on an invoice (picker over `balanceDue > 0`, exact-balance match first), income
-without an invoice (creates a paid invoice dated the deposit day), owner
+always show. **The menu is one screen in three sections (v510–511).** Nine actions, each under a
+two-sentence explanation, spread over three headers, meant the owner read the whole
+thing every time to reach the one he uses every time. v510 cut the hints to a single
+clause — **keep them to ~46 characters**, or they wrap to a second line on a phone and
+the row grows back. v511 grouped what's left by **which books the record lands in**,
+which is the question the user is actually answering:
+
+| Section | Holds | Why |
+|---|---|---|
+| **Business** | expense, loan payment, owner draw/contribution, reimbursement, gift-card credit, prior-year payment/refund | hits the ledgers and the P&L |
+| **Budget** | bill payment, paycheck | Budget-tab records that NEVER touch the P&L — a bill isn't a business expense, a paycheck isn't revenue; they exist so the account still reconciles |
+| **Tools** | split / rejoin / fix amount | records NOTHING — edits the bank line itself, so it isn't an answer to "what is this?" at all |
+
+Put a new action in the group whose books it writes to; that's the rule, not taste.
+The likeliest section leads and it differs by direction — a charge is nearly always a
+business cost, a deposit is nearly always the paycheck. **An empty group prints no
+header**, so a switched-off section never leaves a heading over nothing. Tools is the
+only folded one (`txnMenuMore()`, ruled off, a one-way reveal — the sheet is transient,
+so re-collapsing is noise) and its row NAMES what it holds, built from the tools
+actually present: a menu that hides the answer someone needs is worse than the wall it
+replaced. **"Payment on an invoice" and "Income without an invoice" were REMOVED in
+v511** at the owner's request ("this makes no sense to have") — an invoice payment is
+recorded on the Invoices tab, where the invoice already is, and the matcher picks the
+deposit up on the next pull; `payInvoiceFromTxn`/`applyPaymentFromTxn`/
+`recordIncomeFromTxn` went with them. Don't add a second path to it back here. The actions: Add as expense
+(pre-fills the expense modal; `_recPairTxn` makes `saveExpense` pair it), owner
 draw/contribution, gift-card split, prior-year income/refund, **Loan payment**
 (`loanPayFromTxn` → pick a loan; records a `loans.payments` row and pairs it),
 **Bill payment** (`billPayFromTxn` → pick one of the statement month's unpaid
