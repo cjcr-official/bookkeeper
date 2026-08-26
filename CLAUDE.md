@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **509** (see `version.json` — that file is the source of truth).
+Current version: **513** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -80,6 +80,8 @@ Worker secrets (Cloudflare dashboard → Workers & Pages → `bookkeeper` → Se
 | `VAPID_PRIVATE_KEY` | secret | Web Push signing |
 | `VAPID_SUBJECT` | plaintext (in wrangler.toml) | Web Push contact `mailto:` |
 | `MANUAL_KEY` | secret | gates the `/run` test endpoint |
+| `SIGNUP_CODE` | secret (optional) | the invite code `/signup` demands. **Unset = nobody can register** |
+| `SIGNUP_ALLOWED_EMAILS` | secret (optional) | comma-separated allowlist — even with the code, only these addresses |
 | `ANTHROPIC_API_KEY` | secret | no longer used (PDF statement parsing was removed); safe to drop |
 | `PLAID_CLIENT_ID` | secret | Plaid bank sync (`/plaid/*` endpoints) — optional |
 | `PLAID_SECRET` | secret | Plaid bank sync — the secret for the chosen `PLAID_ENV` |
@@ -613,7 +615,17 @@ There are multiple `</style>` tags — the **first** (~line 540) closes the main
 style block; the others are inside JS report/print HTML templates. Target the
 right one.
 
-Fifteen test suites run the SHIPPED code (they extract functions out of `index.html` by
+**`node --check worker/push-cron.js` is a NO-OP — do not trust it.** The Worker is
+an ES module (`export default`), and on Node 22 `--check` against such a `.js` file
+exits 0 on source with a real syntax error in it (caught while writing v513: a
+stray `}` inside a call passed cleanly). A broken Worker deploys and every endpoint
+500s. Check it as a module instead:
+
+```bash
+node --input-type=module --check < worker/push-cron.js
+```
+
+Sixteen test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -632,6 +644,7 @@ node test/loan.test.mjs        # the amortization engine, against closed-form an
 node test/budget.test.mjs      # paydays, bill months, and what a paid bill actually cost
 node test/time.test.mjs        # Time Clock: a punch belongs to its LOCAL day
 node test/a11y.test.mjs        # tappable divs stay operable through every redraw
+node test/signup.test.mjs      # nobody registers without an invite — and it fails CLOSED
 ```
 
 `retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
@@ -656,6 +669,59 @@ the `cache` declaration stays the single source the retention check reads.
 `data-module-all` / `isModuleHidden('…')` id must exist in `MODULES`, and every module
 page must have a `#page-<id>` element and a `NAV_ORDER` entry. A typo in any of those
 silently does nothing at runtime, which is exactly what code review misses.
+
+---
+
+## Sign-ups are invite-only, and the gate FAILS CLOSED (v513)
+
+This is a personal app for one business, so the resting state is: **nobody can
+create an account.**
+
+`index.html` no longer calls `sb.auth.signUp()` at all — that call goes to
+Supabase's public signup endpoint with the anon key that is **hard-coded in this
+very page**, so it was an open registration form for anyone who loaded the URL.
+`doSignup()` POSTs to the Worker's **`/signup`** instead, which checks an invite
+code against the `SIGNUP_CODE` secret (constant-time, via `timingSafeEqual`) and
+creates the login on the GoTrue **admin** API with the service key. Don't add a
+client-side `signUp()` fallback: a fallback for "the Worker said no" is a way
+around the Worker saying no. `signInWithOtp` is banned for the same reason — a
+magic link creates the user unless `shouldCreateUser:false`.
+
+**Unset `SIGNUP_CODE` means closed, never open.** `/signup` refuses before it
+reads the body or touches Supabase; `/signup-status` reports `open:false`, which
+hides the Create Account tab entirely. To invite someone: set the secret, hand
+over the code, unset it again. `SIGNUP_ALLOWED_EMAILS` (optional, comma-separated)
+is a second gate so a leaked code still can't mint an account for a stranger — and
+a bad code and an uninvited address return through **one** branch with **one**
+message after the same delay, or the response becomes an oracle for "is this
+address invited".
+
+**THE OTHER DOOR — this is the one that matters.** Everything above is decoration
+until public sign-ups are turned off in the **Supabase dashboard → Authentication
+→ Sign In / Providers → "Allow new users to sign up"**. The anon key is public, so
+while that toggle is on, anyone can register by posting straight to Supabase and
+never opening the app. Turning it off does NOT lock the owner out: the Worker
+creates users on the service key, which bypasses the setting — that is the whole
+reason signup moved server-side. `signupStatus()` reads GoTrue's public
+`/auth/v1/settings` for `disable_signup` and reports `open`/`closed`/`unknown`, and
+**an unreadable check stays `unknown`** — reporting "closed" without having looked
+is a false all-clear on the only door that counts. Settings → Security shows both
+rows and re-checks on open.
+
+**The client gate is convenience, not the lock, and every failure path leaves it
+closed** — a Worker that's down, an old Worker that falls through to the SPA asset
+handler (which answers **200 with `index.html`**, so check the JSON *shape*, not
+the status), a malformed body. `_signupOpen` starts `false` and only an explicit
+`open === true` opens it. Two ordering traps, both pinned by
+`test/signup.test.mjs`: `resetAuthView()` un-hides the whole `.auth-tabs` strip, so
+it must call `applySignupGate()` afterwards or signing out hands back a Create
+Account tab; and `applySignupGate` must skip the strip by testing **the 2FA form**,
+not the strip's own `display` — "leave it alone if it's already hidden" reads as
+the same thing and isn't, because the gate's own closed first paint hid it, so a
+later `open:true` could never put it back.
+
+The Worker writes the new user's `profiles` row itself. The client isn't signed in
+yet, so its own upsert is refused by RLS and the company name silently vanishes.
 
 ---
 

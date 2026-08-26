@@ -3,12 +3,17 @@
 //   /plaid/* — bank reconciliation via Plaid: status (GET), link-token, exchange,
 //              transactions, disconnect (all POST, auth'd by Supabase token).
 //              The Plaid access_token is stored server-side only (plaid_items).
+//   /signup, /signup-status — the invite-only sign-up gate. This app is private;
+//              the client no longer calls Supabase's public signup endpoint at
+//              all. See the SIGN-UP GATE section below.
 //   anything else → static assets (index.html, sw.js, manifest.json, version.json, icons)
 //
 // Required Worker secrets: SUPABASE_URL, SUPABASE_SERVICE_KEY,
 // VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT, MANUAL_KEY.
 // Bank reconciliation (Plaid): PLAID_CLIENT_ID, PLAID_SECRET secrets + PLAID_ENV var
 // ('sandbox' | 'production', defaults to sandbox).
+// Sign-ups: SIGNUP_CODE (optional secret — UNSET MEANS NOBODY CAN REGISTER) and
+// SIGNUP_ALLOWED_EMAILS (optional secret, comma-separated allowlist).
 
 const TZ = 'America/Denver';
 const FIRE_WINDOW_MS = 30 * 60 * 1000;
@@ -33,6 +38,8 @@ export default {
     if (url.pathname === '/plaid/transactions' && req.method === 'POST') return plaidTransactions(req, env);
     if (url.pathname === '/plaid/refresh' && req.method === 'POST') return plaidRefresh(req, env);
     if (url.pathname === '/plaid/disconnect' && req.method === 'POST') return plaidDisconnect(req, env);
+    if (url.pathname === '/signup-status' && req.method === 'GET') return signupStatus(req, env);
+    if (url.pathname === '/signup' && req.method === 'POST') return signupCreate(req, env);
     if (url.pathname === '/tax-estimate' && req.method === 'POST') return taxEstimate(req, env);
     if (url.pathname === '/delete-account' && req.method === 'POST') return deleteAccount(req, env);
     if (env.ASSETS) return withSecurityHeaders(await env.ASSETS.fetch(req), env);
@@ -418,6 +425,110 @@ async function plaidDisconnect(req, env) {
     } catch (e) { console.error('plaid_items delete', e); }
   }
   await plaidRefreshMirror(env, user.id);
+  return jsonResp({ ok: true });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// SIGN-UP GATE. This is a personal app: nobody gets an account without the
+// owner's say-so. The client no longer calls Supabase's public signup endpoint
+// at all — it posts here, and this is the ONLY route that can create a login.
+//
+// It FAILS CLOSED. With no SIGNUP_CODE secret set, /signup refuses everything
+// and /signup-status reports closed, which hides the Create Account tab. That is
+// the resting state: to let someone in, set the secret, hand them the code, then
+// unset it again. An unset secret can never mean "open" — that is the mistake
+// that leaves a door propped for months without anyone noticing.
+//
+// THE OTHER DOOR — and it is the important one. Supabase's own
+// POST /auth/v1/signup accepts the anon key, which is hard-coded in index.html
+// and therefore public. Everything here is decoration until public sign-ups are
+// turned OFF in the Supabase dashboard (Authentication → Sign In / Providers →
+// "Allow new users to sign up"). Doing that does NOT lock the owner out of this
+// route: the admin API below runs on the SERVICE key, which bypasses that
+// setting — which is the whole reason signup moved server-side. signupStatus()
+// reads GoTrue's public settings endpoint and reports whether that toggle is
+// still open, so Settings → Security can say so plainly instead of the owner
+// having to take it on trust.
+const SIGNUP_SLOW_MS = 1000;   // deliberate delay on a wrong code — see below
+
+// Whether a code was configured at all. Anything falsy or blank is "closed".
+function signupOpen(env) { return !!(env.SIGNUP_CODE && String(env.SIGNUP_CODE).trim()); }
+
+// Optional second gate: SIGNUP_ALLOWED_EMAILS, a comma-separated allowlist. Unset
+// means "any address, as long as the code is right". Set, it means a leaked code
+// still can't mint an account for a stranger.
+function signupEmailAllowed(env, email) {
+  const raw = String(env.SIGNUP_ALLOWED_EMAILS || '').trim();
+  if (!raw) return true;
+  const want = email.trim().toLowerCase();
+  return raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).includes(want);
+}
+
+// GET /signup-status — public (the sign-in screen has to ask it before anyone is
+// signed in). It reveals only whether the door is open, never the code itself.
+async function signupStatus(req, env) {
+  let direct = 'unknown';
+  try {
+    const r = await fetch(`${env.SUPABASE_URL}/auth/v1/settings`, {
+      headers: { apikey: env.SUPABASE_SERVICE_KEY }
+    });
+    if (r.ok) {
+      const s = await r.json();
+      if (typeof s.disable_signup === 'boolean') direct = s.disable_signup ? 'closed' : 'open';
+    }
+  } catch (e) { /* unknown is the honest answer — don't claim it's locked */ }
+  return jsonResp({ open: signupOpen(env), direct });
+}
+
+// POST /signup {email, password, company, code} — the only way to a new login.
+// Creates the user through the GoTrue ADMIN API on the service key, pre-confirmed
+// (the owner already vouched for them by handing over the code, so bouncing them
+// through a confirmation email buys nothing).
+async function signupCreate(req, env) {
+  if (!signupOpen(env)) {
+    return jsonResp({ error: 'Sign-ups are closed. This app is private — ask the owner for an invitation.' }, 403);
+  }
+  let b; try { b = await req.json(); } catch { b = {}; }
+  const email = String(b.email || '').trim();
+  const password = String(b.password || '');
+  const company = String(b.company || '').trim().slice(0, 200);
+  // Trim both sides: a code that arrives from a text message or a notes app
+  // routinely carries a leading space, and "the code is right but the app says
+  // no" is indistinguishable from a real refusal.
+  const code = String(b.code || '').trim();
+  if (!email || !password) return jsonResp({ error: 'Enter your email and a password.' }, 400);
+  if (password.length < 8) return jsonResp({ error: 'Password must be at least 8 characters.' }, 400);
+
+  // A wrong code (or an address that isn't invited) answers slowly and with ONE
+  // message, so the response can't be used to tell "bad code" from "not on the
+  // list" — and so an online guessing run is measured in years, not minutes. The
+  // comparison itself is constant-time, so the code can't be recovered a
+  // character at a time either.
+  if (!timingSafeEqual(code, String(env.SIGNUP_CODE).trim()) || !signupEmailAllowed(env, email)) {
+    await new Promise(r => setTimeout(r, SIGNUP_SLOW_MS));
+    return jsonResp({ error: 'That invite code isn\'t valid for this address.' }, 403);
+  }
+
+  const r = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, email_confirm: true, user_metadata: company ? { company } : {} })
+  });
+  const out = await r.json().catch(() => ({}));
+  if (!r.ok || !out.id) {
+    const msg = out.msg || out.message || out.error_description || out.error || ('Could not create the account (' + r.status + ').');
+    return jsonResp({ error: String(msg) }, r.status === 422 ? 400 : 500);
+  }
+  // The profile row has to be written HERE. The client isn't signed in yet, so its
+  // own upsert would be refused by RLS — the company name would silently vanish.
+  if (company) {
+    try {
+      await fetch(`${env.SUPABASE_URL}/rest/v1/profiles`, {
+        method: 'POST', headers: svcHeaders(env, 'resolution=merge-duplicates,return=minimal'),
+        body: JSON.stringify({ id: out.id, company })
+      });
+    } catch (e) { console.error('signup profile', e); }
+  }
   return jsonResp({ ok: true });
 }
 
