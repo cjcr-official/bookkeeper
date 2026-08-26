@@ -1,7 +1,8 @@
 // Recurring auto-posting — the one path that writes financial records unattended.
 //
 // WHY THIS EXISTS: processRecurring() runs on every launch and catches up every
-// missed period, inserting real expenses and draft invoices. genOneRecurring() used
+// missed period, inserting real expenses, draft invoices and (v514) mileage-log
+// trips. genOneRecurring() used
 // to swallow a failed insert and return normally, and the caller advanced next_date
 // regardless — so a failed insert skipped that occurrence PERMANENTLY. The expense
 // never existed, the schedule had moved past it, and the toast counted it as
@@ -39,17 +40,25 @@ function extract(name) {
   return src.slice(start, i);
 }
 
+// The kind → section table, lifted whole so the gates below are the shipped ones.
+function extractConst(name) {
+  const start = src.indexOf('const ' + name + ' = ');
+  if (start < 0) throw new Error('cannot find const ' + name);
+  return src.slice(start, src.indexOf(';\n', start) + 1);
+}
+
 // Build a sandbox around the SHIPPED functions. `failOn` makes the Nth insert fail,
-// the way a dropped connection mid-catch-up does.
-function build({ recurring, failOn = 0, todayStr = '2026-04-15' }) {
+// the way a dropped connection mid-catch-up does. `hidden` is the Sections set — a
+// switched-off section must not keep generating records behind the user's back.
+function build({ recurring, failOn = 0, todayStr = '2026-04-15', hidden = [], customers = [] }) {
   const inserted = [], updates = [], toasts = [];
   let inserts = 0;
   const sb = {
-    from: () => ({
+    from: table => ({
       insert: row => ({ select: () => ({ single: async () => {
         inserts++;
         if (inserts === failOn) return { error: { message: 'network' }, data: null };
-        inserted.push(row);
+        inserted.push({ ...row, _table: table });
         return { error: null, data: { ...row, id: 'row' + inserts } };
       } }) }),
       update: patch => ({ eq: async (_c, id) => { updates.push({ id, ...patch }); return { error: null }; } })
@@ -59,15 +68,18 @@ function build({ recurring, failOn = 0, todayStr = '2026-04-15' }) {
   const factory = new Function(
     'sb', 'cache', 'profile', 'currentUser', 'today', 'isModuleHidden', 'showToast', 'console', 'parseDate',
     `const nextInvoiceNumber = () => '2601';
+     ${extractConst('RECUR_KINDS')}
+     ${extract('recurMeta')}
+     ${extract('recurHidden')}
      ${extract('advanceDate')}
      ${'async ' + extract('genOneRecurring')}
      ${'async ' + extract('processRecurring')}
      return { processRecurring };`
   );
-  const cache = { recurring, expenses: [], invoices: [], customers: [] };
+  const cache = { recurring, expenses: [], invoices: [], customers, trips: [] };
   const api = factory(
     sb, cache, { tax: 0 }, { id: 'u1' },
-    () => todayStr, () => false,
+    () => todayStr, id => hidden.includes(id),
     (m, k) => toasts.push({ m, k }),
     { error: (...a) => logged.push(a.join(' ')) },   // keep the suite's output readable
     d => (d ? new Date(d + 'T12:00:00') : new Date(NaN))
@@ -156,6 +168,94 @@ await atest('one broken template does not block the others', async () => {
   await h.processRecurring();
   eq(h.inserted.map(r => r.vendor), ['B'], 'the second template still ran');
   eq(h.updates.map(u => u.id), ['good'], 'the failed template is not stamped past its occurrence');
+});
+
+// ---------------------------------------------------------------- trips (v514)
+// A trip made on a schedule rides the SAME table and the same catch-up engine, so
+// everything above already covers its failure modes. What is new — and what a
+// two-way `kind==='invoice' ? … : …` ternary gets wrong in a way nothing surfaces —
+// is that it must write a TRIP, into the Mileage section's books, and stop when
+// Mileage is switched off.
+const weeklyRun = () => ([{
+  id: 't1', active: true, kind: 'trip', frequency: 'weekly',
+  next_date: '2026-04-01', data: { customer_id: 'c1', miles: 12.5, trips: 2, purpose: 'Bank run' }
+}]);
+
+await atest('a recurring trip logs real trips, not expenses', async () => {
+  const h = build({ recurring: weeklyRun(), customers: [{ id: 'c1', name: 'Acme' }] });
+  const n = await h.processRecurring();
+  eq(n, 3, 'Apr 1, 8 and 15 are all on or before 2026-04-15');
+  eq(h.inserted.map(r => r._table), ['trips', 'trips', 'trips'], 'a trip must not post as an expense');
+  eq(h.inserted.map(r => r.date), ['2026-04-01', '2026-04-08', '2026-04-15'], 'one trip per period');
+  eq(h.updates[0].next_date, '2026-04-22', 'stamped past everything generated');
+});
+
+await atest('the generated row is the one saveTrip() writes', async () => {
+  // Anything else and the mileage log, the year total and the reports each read a
+  // hand-logged trip and a generated one differently.
+  const h = build({ recurring: weeklyRun(), customers: [{ id: 'c1', name: 'Acme' }] });
+  await h.processRecurring();
+  const t = h.inserted[0];
+  eq(t.miles, 12.5, 'miles per round trip');
+  eq(t.trips, 2, 'round trips');
+  eq(t.total_miles, 25, 'total_miles = miles × trips — this is the figure every total sums');
+  eq(t.customer_id, 'c1');
+  eq(t.client_name, 'Acme', 'the client name is denormalised onto the row, as saveTrip does');
+  eq(t.purpose, 'Bank run');
+  eq(h.cache.trips.length, 3, 'the new trips land in the cache, so the log shows them without a reload');
+});
+
+await atest('a trip with no client is still a complete record', async () => {
+  // Mileage stands alone: a bank run needs no customer, and Invoices may be off.
+  const h = build({ recurring: [{ ...weeklyRun()[0], data: { miles: 8, trips: 1, purpose: 'Parts pickup' } }] });
+  await h.processRecurring();
+  eq(h.inserted[0].customer_id, null);
+  eq(h.inserted[0].client_name, '');
+  eq(h.inserted[0].total_miles, 8);
+});
+
+await atest('a customer deleted since the schedule was made does not strand it', async () => {
+  // The client link is the optional half; the miles are the record the deduction
+  // rests on. A dangling customer_id would throw on the insert (FK) and, because
+  // next_date never advances past a failure, retry forever — a schedule permanently
+  // stuck on a customer who no longer exists.
+  const h = build({ recurring: weeklyRun(), customers: [{ id: 'c2', name: 'Someone else' }] });
+  await h.processRecurring();
+  eq(h.inserted[0].customer_id, null, 'the dead link should be dropped');
+  eq(h.inserted[0].total_miles, 25, 'the miles are still logged');
+});
+
+await atest('an empty customer list does not unlink a live customer', async () => {
+  // safe() hands out [] when a table will not load. "Not in the list" then means
+  // "the list is missing", not "the customer was deleted" — unlinking there would
+  // silently drop a real link on every trip generated during the outage.
+  const h = build({ recurring: weeklyRun(), customers: [] });
+  await h.processRecurring();
+  eq(h.inserted[0].customer_id, 'c1', 'the link should be passed through untouched');
+});
+
+await atest('switching Mileage off stops recurring trips — and never skips them', async () => {
+  const h = build({ recurring: weeklyRun(), hidden: ['mileage'] });
+  eq(await h.processRecurring(), 0, 'nothing may be generated into a hidden section');
+  eq(h.inserted, [], 'no trip was written');
+  eq(h.updates, [], 'next_date must NOT advance — turning Mileage back on catches up');
+});
+
+await atest('a recurring trip is not gated by Expenses or Invoices', async () => {
+  // The old two-way ternary filed every non-invoice kind under Expenses, so a trip
+  // would have stopped generating for a section it has nothing to do with — and gone
+  // on generating with its own section switched off.
+  const h = build({ recurring: weeklyRun(), hidden: ['expenses', 'invoicing'] });
+  ok(await h.processRecurring() > 0, 'trips stopped because a different section is off');
+});
+
+await atest('one hidden section does not stop the kinds that are still on', async () => {
+  const h = build({ recurring: [
+    { id: 'e1', active: true, kind: 'expense', frequency: 'monthly', next_date: '2026-04-10', data: { vendor: 'Rent', amount: 900 } },
+    weeklyRun()[0]
+  ], hidden: ['mileage'] });
+  await h.processRecurring();
+  eq(h.inserted.map(r => r._table), ['expenses'], 'the expense should still post');
 });
 
 console.log('');

@@ -1559,12 +1559,12 @@ tr.bulk-sel{background:var(--accent-bg)}
              the sections it actually draws from — Upcoming has no budget-bill rows,
              so `budget` is on the group + calendar only, and turning Budget on by
              itself can't leave an always-empty Upcoming card on Home. -->
-        <div class="dash-group" id="dash-grp-cal" data-module-all="jobs invoicing expenses budget loan">Calendar</div>
-        <div class="card collapsible collapsed" id="dash-card-up" data-module-all="jobs invoicing expenses loan">
+        <div class="dash-group" id="dash-grp-cal" data-module-all="jobs invoicing expenses mileage budget loan">Calendar</div>
+        <div class="card collapsible collapsed" id="dash-card-up" data-module-all="jobs invoicing expenses mileage loan">
           <div class="card-header" onclick="toggleDashCard(this)"><h3><i class="ti ti-clock-hour-4" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Upcoming · Next 30 Days</h3><button class="btn btn-sm btn-primary" data-module="jobs" aria-label="New event" onclick="event.stopPropagation();openJobModal()"><i class="ti ti-plus"></i> <span>Event</span></button><i class="ti ti-chevron-down dash-chev"></i></div>
           <div id="upcoming-list"></div>
         </div>
-        <div class="card" id="dash-card-cal" data-module-all="jobs invoicing expenses budget loan">
+        <div class="card" id="dash-card-cal" data-module-all="jobs invoicing expenses mileage budget loan">
           <div class="card-header" onclick="toggleCalendar()" aria-expanded="false" style="cursor:pointer;user-select:none">
             <h3><i class="ti ti-calendar" style="vertical-align:-2px;margin-right:6px;color:var(--accent)"></i>Calendar</h3>
             <i class="ti ti-chevron-down dash-chev" id="calendar-chevron" style="transform:rotate(-90deg)"></i>
@@ -2174,6 +2174,25 @@ tr.bulk-sel{background:var(--accent-bg)}
         <div class="form-group"><label>Description</label><input id="recur-exp-desc" type="text"></div>
         <div style="font-size:11px;color:var(--text3)">Posts an expense automatically each period.</div>
       </div>
+      <!-- A trip made on a schedule (weekly bank run, monthly parts pickup) logs
+           itself in the mileage log each period. Client is the SAME optional
+           convenience it is on the Log Trip form, and follows Invoices & Customers
+           the same way — a recurring bank run needs no customer at all. The
+           container's own display is JS-managed by openRecurEdit, so it carries no
+           data-module of its own (see CLAUDE.md → Sections). -->
+      <div id="recur-trip-fields">
+        <div class="form-group" data-module="invoicing"><label>Client <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="recur-trip-client" onchange="onRecurTripClientChange()"><option value="">— none —</option></select></div>
+        <div class="form-row">
+          <div class="form-group"><label>Miles (per round trip)</label><input id="recur-trip-miles" type="number" min="0" step="0.01" inputmode="decimal" oninput="calcRecurTripMiles()"></div>
+          <div class="form-group"><label>Round Trips</label><input id="recur-trip-count" type="number" min="1" step="1" value="1" oninput="calcRecurTripMiles()"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Total Miles</label><input id="recur-trip-total" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
+          <div class="form-group"><label>Purpose</label><input id="recur-trip-purpose" type="text" placeholder="e.g. Weekly bank run"></div>
+        </div>
+        <div id="recur-trip-hint" style="font-size:11px;color:var(--text3);margin-top:-.25rem"></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Logs this trip in your mileage log automatically each period, starting on the <b>Next Date</b> above.</div>
+      </div>
       <label style="display:flex;align-items:center;gap:.5rem;margin-top:.6rem;font-size:13px"><input type="checkbox" id="recur-active" checked style="width:auto"> Active</label>
       <label style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;font-size:13px"><input type="checkbox" id="recur-notify" checked style="width:auto"> Push reminder on the due date</label>
     </div>
@@ -2247,6 +2266,10 @@ tr.bulk-sel{background:var(--accent-bg)}
       <div id="trip-maps-link" style="font-size:12px"></div>
     </div>
     <div class="modal-footer">
+      <!-- "I make this trip every month" → a schedule, instead of logging it by hand
+           forever. Edit-only: a template is built out of a trip that already exists,
+           and the Recurring button on the Mileage tab is the from-scratch way in. -->
+      <button class="btn" id="trip-repeat-btn" style="display:none;margin-right:auto" onclick="repeatTrip()" title="Set this trip up to repeat on a schedule"><i class="ti ti-repeat"></i> Repeat</button>
       <button class="btn" onclick="closeModal('modal-trip')">Cancel</button>
       <button class="btn btn-primary" onclick="withBusy(this,saveTrip)"><i class="ti ti-check"></i> Save</button>
     </div>
@@ -3787,7 +3810,7 @@ function showPage(page, el, fromBack) {
     // only belongs here while Invoices is on — otherwise the Mileage tab offers a
     // destructive bulk write into a section the user switched off. Logging a trip
     // needs nothing but the Mileage section itself.
-    mileage:(isModuleHidden('invoicing')?'':`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> `)+`<button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
+    mileage:(isModuleHidden('invoicing')?'':`<button class="btn" aria-label="Rebuild mileage on every invoice" onclick="rebuildAllMileage()" title="Rebuild mileage on every invoice from each customer's one-way miles × 2 × trips"><i class="ti ti-refresh"></i> <span>Rebuild</span></button> `)+`<button class="btn" aria-label="Recurring trips" onclick="openRecurringManager('trip')"><i class="ti ti-repeat"></i> <span>Recurring</span></button> <button class="btn btn-primary" aria-label="Log trip" onclick="openTripModal()"><i class="ti ti-plus"></i> <span>Log Trip</span></button>`,
     time:`<button class="btn btn-primary" aria-label="Add time entry" onclick="openTimeEntry(null)"><i class="ti ti-plus"></i> <span>Add Entry</span></button>`,
     budget:`<button class="btn" aria-label="Pay schedule" onclick="openPayScheduleModal()"><i class="ti ti-calendar"></i> <span>Paydays</span></button> <button class="btn btn-primary" aria-label="Add bill" onclick="openBillModal(null)"><i class="ti ti-plus"></i> <span>Add Bill</span></button>`,
     loan:`<button class="btn btn-primary" aria-label="New loan" onclick="openLoanModal(null)"><i class="ti ti-plus"></i> <span>New Loan</span></button>`,
@@ -4313,21 +4336,24 @@ function renderUpcoming() {
   const h = new Date(); h.setDate(h.getDate()+30);
   const horizon = ymd(h);
   const items = [];
-  const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses');
+  const hidInv = isModuleHidden('invoicing');
   (cache.recurring||[]).forEach(r => {
     if (!r.active || !r.next_date || r.next_date > horizon) return;
-    if (r.kind==='invoice' ? hidInv : hidExp) return;   // hidden section → keep it off Home
+    if (recurHidden(r.kind)) return;   // hidden section → keep it off Home
     const d = r.data || {};
-    const who = r.kind==='invoice'
-      ? ((cache.customers.find(c=>c.id===d.customer_id)||{}).name||'')
-      : (d.vendor||'');
+    const cust = (cache.customers.find(c=>c.id===d.customer_id)||{}).name||'';
+    const who = r.kind==='invoice' ? cust : r.kind==='trip' ? (cust || d.purpose || '') : (d.vendor||'');
     items.push({
       date: r.next_date,
-      type: r.kind==='invoice' ? 'Recurring invoice' : 'Recurring expense',
+      type: recurMeta(r.kind).type,
       label: r.label || who || '—',
-      icon: 'ti-repeat',
+      icon: r.kind==='trip' ? 'ti-car' : 'ti-repeat',
       onclick: `openRecurringManager('${r.kind}')`,
-      amount: parseFloat(d.amount||0),
+      amount: r.kind==='trip' ? 0 : parseFloat(d.amount||0),
+      // A trip's worth is MILES, and the right-hand column is money. `note` carries
+      // it instead, so a scheduled drive shows "24.5 mi" rather than a silent blank
+      // (amount 0 prints nothing) or a nonsense "$0.00".
+      note: r.kind==='trip' ? recurDetail('trip', d) : '',
       overdue: false,
     });
   });
@@ -4388,7 +4414,7 @@ function renderUpcoming() {
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-size:12.5px;font-weight:600;${it.overdue?'color:var(--red)':''};font-family:'JetBrains Mono',monospace">${fmtDate(it.date)}</div>
-        ${it.amount>0?`<div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:.1rem">${fmt(it.amount)}</div>`:''}
+        ${it.note?`<div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:.1rem">${esc(it.note)}</div>`:(it.amount>0?`<div style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;margin-top:.1rem">${fmt(it.amount)}</div>`:'')}
       </div>
     </div>`).join('');
 }
@@ -4412,7 +4438,7 @@ function buildNotifications() {
   // A notification for a switched-off section is a dead end: the badge counts it,
   // and tapping the row lands on a page that no longer exists. Each source follows
   // the section that owns it.
-  const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses'), hidJobs = isModuleHidden('jobs');
+  const hidInv = isModuleHidden('invoicing'), hidJobs = isModuleHidden('jobs');
   if (!hidInv) (cache.invoices||[]).forEach(i => {
     if (i.status==='draft' || !i.due || effectiveStatus(i)==='paid') return;
     const bal = balanceDue(i);
@@ -4448,14 +4474,14 @@ function buildNotifications() {
   });
   (cache.recurring||[]).forEach(r => {
     if (!r.active || !r.next_date || r.next_date > soon) return;
-    if (r.kind==='invoice' ? hidInv : hidExp) return;
+    if (recurHidden(r.kind)) return;
     const d = r.data||{};
-    const who = r.kind==='invoice'
-      ? ((cache.customers.find(c=>c.id===d.customer_id)||{}).name||'')
-      : (d.vendor||'');
-    out.push({ id:'rec-'+r.id+'-'+r.next_date, date:r.next_date, tone:'accent', icon:'ti-repeat',
-      title:(r.kind==='invoice'?'Recurring invoice':'Recurring expense')+(r.next_date<=t?' due':' due '+fmtDate(r.next_date)),
-      body:(r.label||who||'—')+(d.amount?' · '+fmt(d.amount):''),
+    const cust = (cache.customers.find(c=>c.id===d.customer_id)||{}).name||'';
+    const who = r.kind==='invoice' ? cust : r.kind==='trip' ? (cust || d.purpose || '') : (d.vendor||'');
+    const detail = recurDetail(r.kind, d);
+    out.push({ id:'rec-'+r.id+'-'+r.next_date, date:r.next_date, tone:'accent', icon:r.kind==='trip'?'ti-car':'ti-repeat',
+      title:recurMeta(r.kind).type+(r.next_date<=t?' due':' due '+fmtDate(r.next_date)),
+      body:(r.label||who||'—')+(detail?' · '+detail:''),
       target:{action:'recurring', ref:r.kind} });
   });
   // Newest / most-urgent first.
@@ -5915,6 +5941,9 @@ function openTripModal(trip) {
   const expSel = document.getElementById('trip-expense');
   expSel.innerHTML = '<option value="">— none —</option>' + (cache.expenses||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(e=>`<option value="${e.id}">${fmtDate(e.date)} · ${escHtml(e.vendor||e.category||'Expense')} · $${parseFloat(e.amount||0).toFixed(2)}</option>`).join('');
   document.getElementById('trip-maps-link').innerHTML = '';
+  // Repeat builds a schedule out of a trip that already exists, so it is edit-only.
+  const repBtn = document.getElementById('trip-repeat-btn');
+  if (repBtn) repBtn.style.display = trip ? '' : 'none';
   if (trip) {
     document.getElementById('trip-title').textContent = 'Edit Trip';
     document.getElementById('trip-id').value = trip.id;
@@ -5963,6 +5992,70 @@ function calcTripMiles() {
   const miles = parseFloat(document.getElementById('trip-miles').value)||0;
   const count = parseInt(document.getElementById('trip-count').value)||1;
   document.getElementById('trip-total').value = (miles*count).toFixed(2);
+}
+
+// ── Recurring trips ─────────────────────────────────────────────────────────
+// A trip that gets made on a schedule (weekly bank run, monthly parts pickup) is
+// the same kind of thing as a recurring expense, so it rides the SAME `recurring`
+// table and the same catch-up engine — kind 'trip', data {customer_id, miles,
+// trips, purpose}. No new table, no migration.
+function calcRecurTripMiles() {
+  const miles = parseFloat(document.getElementById('recur-trip-miles').value)||0;
+  const count = parseInt(document.getElementById('recur-trip-count').value)||1;
+  document.getElementById('recur-trip-total').value = (miles*count).toFixed(2);
+}
+// Name the customer's SAVED one-way figure and its round trip, in that order. The
+// miles field prefills from the raw one-way value (identical to the Log Trip form,
+// which is the point — the same customer must not produce two different numbers
+// depending on which form you opened), and this schedule then repeats whatever is
+// in it, unattended, for as long as it's active. Spelling both figures out is how
+// the owner catches a half-length trip BEFORE it becomes twelve of them.
+function paintRecurTripHint() {
+  const el = document.getElementById('recur-trip-hint'); if (!el) return;
+  // The picker it explains is data-module="invoicing" and sits hidden right above,
+  // so with that section off this hint would be the one thing still naming a
+  // customer on the form. A hidden field keeps its VALUE, not its voice.
+  if (isModuleHidden('invoicing')) { el.innerHTML = ''; return; }
+  const c = cache.customers.find(x=>x.id===document.getElementById('recur-trip-client').value);
+  const one = c ? (parseFloat(c.miles)||0) : 0;
+  el.innerHTML = one
+    ? `Saved one-way for ${escHtml(c.name)}: <b>${one.toLocaleString(undefined,{maximumFractionDigits:2})} mi</b> · round trip <b>${(one*2).toLocaleString(undefined,{maximumFractionDigits:2})} mi</b>`
+    : (c ? `No saved miles for ${escHtml(c.name)} — type them above.` : '');
+}
+function onRecurTripClientChange() {
+  const c = cache.customers.find(x=>x.id===document.getElementById('recur-trip-client').value);
+  const mi = document.getElementById('recur-trip-miles');
+  // Only ever fill an EMPTY field — never clobber a figure the user typed.
+  if (c && c.miles && !mi.value) mi.value = c.miles;
+  paintRecurTripHint();
+  calcRecurTripMiles();
+}
+// "I make this trip every month." Builds a recurring template out of the trip on
+// screen instead of making the owner retype it in the Recurring editor.
+//
+// It reads the FORM, not the stored row, so an in-progress edit carries over — and
+// it deliberately does NOT save the trip itself. Two records written from one button
+// is how you get a duplicate nobody asked for; the trip is already in the log, and
+// the schedule is a separate thing that starts at the NEXT occurrence.
+function repeatTrip() {
+  const dstr = document.getElementById('trip-date').value || today();
+  const cid = document.getElementById('trip-client').value || '';
+  const cust = cache.customers.find(c=>c.id===cid);
+  const purpose = document.getElementById('trip-purpose').value || '';
+  closeModal('modal-trip');
+  openRecurEdit('trip', {
+    kind:'trip',
+    label: purpose || (cust?cust.name:'') || 'Trip',
+    frequency:'monthly',
+    next_date: advanceDate(dstr, 'monthly'),
+    active:true, notify:true,
+    data:{
+      customer_id: cid || null,
+      miles: parseFloat(document.getElementById('trip-miles').value)||0,
+      trips: parseInt(document.getElementById('trip-count').value)||1,
+      purpose: purpose
+    }
+  });
 }
 
 function calcInvMiles() {
@@ -7762,15 +7855,15 @@ function calItemsByDate() {
     if (!j.date) return;
     (out[j.date] = out[j.date] || []).push({ kind:'job', id:j.id, label:j.title||'Job', time:j.time||'', done:!!j.done, onclick:`editJob('${j.id}')` });
   });
-  const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses');
+  const hidInv = isModuleHidden('invoicing');
   if (!hidInv) (cache.invoices||[]).forEach(i => {
     if (!i.due || i.status==='draft' || effectiveStatus(i)==='paid') return;
     (out[i.due] = out[i.due] || []).push({ kind:'invoice', id:i.id, label:'#'+(i.number||'')+' '+(i.customer_name||''), time:'', done:false, onclick:`editInvoice('${i.id}')` });
   });
   (cache.recurring||[]).forEach(r => {
     if (!r.active || !r.next_date) return;
-    if (r.kind==='invoice' ? hidInv : hidExp) return;   // drop chips for hidden sections
-    const label = r.label || ((r.data||{}).vendor) || ((cache.customers.find(c=>c.id===((r.data||{}).customer_id))||{}).name) || 'Recurring';
+    if (recurHidden(r.kind)) return;   // drop chips for hidden sections
+    const label = r.label || ((r.data||{}).vendor) || ((cache.customers.find(c=>c.id===((r.data||{}).customer_id))||{}).name) || ((r.data||{}).purpose) || 'Recurring';
     (out[r.next_date] = out[r.next_date] || []).push({ kind:'recurring', id:r.id, label, time:'', done:false, onclick:`openRecurringManager('${r.kind}')` });
   });
   // Budget bills: recurring ones land on their due day in the shown month; one-time
@@ -8648,8 +8741,38 @@ async function recomputeInvoiceTotals(invId) {
   if (!r.error) { const idx=cache.invoices.findIndex(i=>i.id===invId); if(idx>-1) cache.invoices[idx]={...cache.invoices[idx],...upd}; }
 }
 
-// ====== RECURRING (invoices & expenses) ======
+// ====== RECURRING (invoices, expenses & trips) ======
 let recurManagerKind = 'invoice';
+
+// ONE table, three kinds — and every gate that decides whether a template may
+// generate, remind, or even be listed reads the section from HERE.
+//
+// The old shape was `kind==='invoice' ? invoicing : expenses`, a two-way ternary
+// repeated in five places (processRecurring, renderUpcoming, buildNotifications,
+// calItemsByDate, and the Worker's cron). Every one of them silently files an
+// unknown kind under Expenses — so a recurring TRIP would have gone on auto-posting
+// mileage with the Mileage section switched off, and pushing "Payment due today" for
+// a drive, and it would have looked correct in all five. Add a kind here, never in
+// another ternary. (The Worker can't import this, so it keeps its own copy of the
+// mapping right next to the query — see runRecurringReminders.)
+const RECUR_KINDS = {
+  invoice: { module:'invoicing', plural:'invoices', title:'Recurring Invoices', single:'Recurring Invoice', add:'New Recurring Invoice', type:'Recurring invoice', noun:'Draft invoice' },
+  expense: { module:'expenses',  plural:'expenses', title:'Recurring Expenses', single:'Recurring Expense', add:'New Recurring Expense', type:'Recurring expense', noun:'Expense' },
+  trip:    { module:'mileage',   plural:'trips',    title:'Recurring Trips',    single:'Recurring Trip',    add:'New Recurring Trip',    type:'Recurring trip',    noun:'Trip' },
+};
+function recurMeta(kind) { return RECUR_KINDS[kind] || RECUR_KINDS.expense; }
+function recurHidden(kind) { return isModuleHidden(recurMeta(kind).module); }
+// What ONE occurrence of a template is worth, as a display string. A trip has no
+// amount, so anything reaching straight for d.amount prints "$0.00" for a drive —
+// wrong, and wrong in the money column. Returns '' when there is nothing to say.
+function recurDetail(kind, d) {
+  d = d || {};
+  if (kind === 'trip') {
+    const mi = (parseFloat(d.miles)||0) * (parseInt(d.trips,10)||1);
+    return mi ? mi.toLocaleString(undefined,{maximumFractionDigits:2})+' mi' : '';
+  }
+  return d.amount ? fmt(d.amount) : '';
+}
 
 // Advance a date string by one period of the given frequency.
 function advanceDate(dstr, freq) {
@@ -8661,10 +8784,31 @@ function advanceDate(dstr, freq) {
   return d.toISOString().slice(0,10);
 }
 
-// Create one real invoice/expense from a recurring template, dated dstr.
+// Create one real invoice/expense/trip from a recurring template, dated dstr.
 async function genOneRecurring(rec, dstr) {
   const d = rec.data || {};
-  if (rec.kind==='expense') {
+  if (rec.kind==='trip') {
+    // Same row shape saveTrip() writes, so a generated trip is indistinguishable
+    // from a hand-logged one in the mileage log, the year total and the reports.
+    const cust = d.customer_id ? cache.customers.find(c=>c.id===d.customer_id) : null;
+    // A customer deleted after the schedule was made must not strand it: the client
+    // link is the OPTIONAL half here (unlike the invoice branch, where a customer is
+    // required and a dead id should fail loudly), while the miles are the record the
+    // deduction rests on. Drop a link that no longer resolves and log the trip
+    // anyway. Guarded on a non-empty list, so a customers fetch that came back empty
+    // — safe() hands out [] when a table won't load — can't quietly unlink a trip
+    // whose customer is alive and well.
+    const cid = (d.customer_id && (cust || !cache.customers.length)) ? d.customer_id : null;
+    const miles = parseFloat(d.miles||0), count = parseInt(d.trips,10)||1;
+    const row = {user_id:currentUser.id,date:dstr,customer_id:cid,client_name:cust?cust.name:'',miles:miles,trips:count,total_miles:miles*count,purpose:d.purpose||rec.label||'',invoice_number:'',expense_id:null};
+    const r = await sb.from('trips').insert(row).select().single();
+    // Throws for the same reason the other two branches do: processRecurring
+    // advances next_date on whatever came back without an error, so swallowing a
+    // failure here would skip that occurrence PERMANENTLY — and an unlogged
+    // business mile is a deduction the owner can never get back.
+    if (r.error) throw new Error(r.error.message || 'could not save the trip');
+    if (r.data) cache.trips.unshift(r.data);
+  } else if (rec.kind==='expense') {
     const row = {user_id:currentUser.id,date:dstr,vendor:d.vendor||rec.label||'Recurring',category:d.category||'Other',amount:parseFloat(d.amount||0),method:d.method||'',account_id:d.account_id||null,description:d.description||('Recurring — '+(rec.label||'')),reimbursed:false,invoice_id:null};
     const r = await sb.from('expenses').insert(row).select().single();
     // THROW on failure. This used to swallow the error and return normally, and
@@ -8693,14 +8837,14 @@ async function genOneRecurring(rec, dstr) {
 async function processRecurring() {
   let count = 0;
   // A switched-off section must not keep filling up behind the user's back: an
-  // auto-posted expense or a generated draft invoice would be invisible until the
-  // section came back on. The schedule is left alone (next_date is NOT advanced),
-  // so turning the section back on catches everything up exactly as it always did.
-  const hidInv = isModuleHidden('invoicing'), hidExp = isModuleHidden('expenses');
+  // auto-posted expense, a generated draft invoice or a logged trip would be
+  // invisible until the section came back on. The schedule is left alone (next_date
+  // is NOT advanced), so turning the section back on catches everything up exactly
+  // as it always did.
   let failed = 0;
   for (const rec of (cache.recurring||[])) {
     if (!rec.active) continue;
-    if (rec.kind==='invoice' ? hidInv : hidExp) continue;
+    if (recurHidden(rec.kind)) continue;
     let guard = 0;
     // Per-item try, for two separate reasons.
     //   1. BOOT. All three login paths `await processRecurring()` immediately before
@@ -8737,14 +8881,19 @@ async function generateRecurringNow(id) {
   // rather than reporting success for a record that was never written.
   try { await genOneRecurring(rec, today()); }
   catch (e) { showToast("Couldn't generate: " + (e.message || 'save failed'), 'error'); return; }
-  showToast((rec.kind==='invoice'?'Draft invoice':'Expense')+' generated','success');
+  showToast(recurMeta(rec.kind).noun+' generated','success');
   renderRecurringList(recurManagerKind);
+  // The manager sits ON TOP of the list the new record belongs in (Invoices,
+  // Expenses, Mileage), and nothing else redraws it — so closing the sheet used to
+  // reveal a list with the record missing, which reads as "it didn't work".
+  rerenderCurrentView();
 }
 
 function openRecurringManager(kind) {
   recurManagerKind = kind;
-  document.getElementById('recur-title').textContent = kind==='invoice'?'Recurring Invoices':'Recurring Expenses';
-  document.getElementById('recur-add-label').textContent = kind==='invoice'?'New Recurring Invoice':'New Recurring Expense';
+  const meta = recurMeta(kind);
+  document.getElementById('recur-title').textContent = meta.title;
+  document.getElementById('recur-add-label').textContent = meta.add;
   renderRecurringList(kind);
   openModal('modal-recurring');
 }
@@ -8752,15 +8901,20 @@ function openRecurringManager(kind) {
 function renderRecurringList(kind) {
   const el = document.getElementById('recur-list');
   const list = (cache.recurring||[]).filter(r=>r.kind===kind);
-  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-repeat"></i><p>No recurring ${kind==='invoice'?'invoices':'expenses'} yet</p></div>`; return; }
+  if (!list.length) { el.innerHTML = `<div class="empty"><i class="ti ti-repeat"></i><p>No recurring ${recurMeta(kind).plural} yet</p></div>`; return; }
+  const custName = id => (cache.customers.find(c=>c.id===id)||{}).name || '';
   el.innerHTML = list.map(r=>{
     const d = r.data||{};
-    const who = kind==='invoice' ? ((cache.customers.find(c=>c.id===d.customer_id)||{}).name||'—') : (d.vendor||'—');
+    const who = kind==='invoice' ? (custName(d.customer_id)||'—')
+              : kind==='trip'    ? (custName(d.customer_id) || d.purpose || '—')
+              : (d.vendor||'—');
+    // Miles for a trip, money for the other two — never $0.00 for a drive.
+    const detail = recurDetail(kind, d) || (kind==='trip' ? '0 mi' : fmt(0));
     return `<div style="border:1px solid var(--border);border-radius:var(--radius-sm);padding:.6rem .75rem;margin-bottom:.5rem">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:.5rem">
         <div style="min-width:0">
           <div style="font-weight:600;font-size:13.5px">${escHtml(r.label||who)}</div>
-          <div style="font-size:11.5px;color:var(--text3)">${escHtml(who)} · ${fmt(d.amount||0)} · ${escHtml(r.frequency||'monthly')} · next ${fmtDate(r.next_date)}${r.active?'':' · paused'}</div>
+          <div style="font-size:11.5px;color:var(--text3)">${escHtml(who)} · ${escHtml(detail)} · ${escHtml(r.frequency||'monthly')} · next ${fmtDate(r.next_date)}${r.active?'':' · paused'}</div>
         </div>
         <div style="display:flex;gap:.3rem;flex-shrink:0">
           <button class="btn btn-sm" onclick="generateRecurringNow('${r.id}')" title="Generate now"><i class="ti ti-bolt"></i></button>
@@ -8773,18 +8927,35 @@ function renderRecurringList(kind) {
 }
 
 function openRecurEdit(kind, rec) {
-  document.getElementById('recur-id').value = rec?rec.id:'';
+  // `rec.id` — not `rec`. repeatTrip() hands in a SYNTHETIC template built from the
+  // trip on screen, which has no id: `rec ? rec.id : ''` would set the field to the
+  // string "undefined", and saveRecurring's `if (id)` would then UPDATE a row that
+  // does not exist instead of inserting the new schedule — silently saving nothing.
+  document.getElementById('recur-id').value = (rec && rec.id) ? rec.id : '';
   document.getElementById('recur-kind').value = kind;
-  document.getElementById('recur-edit-title').textContent = (rec?'Edit ':'New ')+(kind==='invoice'?'Recurring Invoice':'Recurring Expense');
+  const meta = recurMeta(kind);
+  document.getElementById('recur-edit-title').textContent = ((rec && rec.id) ? 'Edit ' : 'New ') + meta.single;
   document.getElementById('recur-label').value = rec?(rec.label||''):'';
   document.getElementById('recur-freq').value = rec?(rec.frequency||'monthly'):'monthly';
   document.getElementById('recur-next').value = rec?(rec.next_date||today()):today();
   document.getElementById('recur-active').checked = rec?!!rec.active:true;
   document.getElementById('recur-notify').checked = rec?(rec.notify!==false):true;
   const d = (rec&&rec.data)?rec.data:{};
-  const invF = document.getElementById('recur-inv-fields'), expF = document.getElementById('recur-exp-fields');
-  if (kind==='invoice') {
-    invF.style.display=''; expF.style.display='none';
+  const invF = document.getElementById('recur-inv-fields'), expF = document.getElementById('recur-exp-fields'),
+        tripF = document.getElementById('recur-trip-fields');
+  invF.style.display='none'; expF.style.display='none'; tripF.style.display='none';
+  if (kind==='trip') {
+    tripF.style.display='';
+    const tsel = document.getElementById('recur-trip-client');
+    tsel.innerHTML = '<option value="">— none —</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+    tsel.value = d.customer_id||'';
+    document.getElementById('recur-trip-miles').value = d.miles!=null?d.miles:'';
+    document.getElementById('recur-trip-count').value = d.trips!=null?d.trips:1;
+    document.getElementById('recur-trip-purpose').value = d.purpose||'';
+    calcRecurTripMiles();
+    paintRecurTripHint();
+  } else if (kind==='invoice') {
+    invF.style.display='';
     const sel = document.getElementById('recur-inv-customer');
     sel.innerHTML = '<option value="">Select customer...</option>' + cache.customers.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
     sel.value = d.customer_id||'';
@@ -8793,7 +8964,7 @@ function openRecurEdit(kind, rec) {
     document.getElementById('recur-inv-due').value = d.due_days!=null?d.due_days:30;
     document.getElementById('recur-inv-notes').value = d.notes||'';
   } else {
-    invF.style.display='none'; expF.style.display='';
+    expF.style.display='';
     const csel = document.getElementById('recur-exp-category');
     csel.innerHTML = getCategories().map(c=>`<option>${escHtml(c)}</option>`).join('');
     csel.value = d.category||'Other';
@@ -8811,7 +8982,13 @@ async function saveRecurring() {
   const id = document.getElementById('recur-id').value;
   const kind = document.getElementById('recur-kind').value;
   let data;
-  if (kind==='invoice') {
+  if (kind==='trip') {
+    data = {customer_id:document.getElementById('recur-trip-client').value||null,miles:parseFloat(document.getElementById('recur-trip-miles').value)||0,trips:parseInt(document.getElementById('recur-trip-count').value)||1,purpose:document.getElementById('recur-trip-purpose').value};
+    // The miles are the ONLY requirement, exactly as in saveTrip(): a client link is
+    // an optional convenience that disappears with the Invoices section, so demanding
+    // one would make recurring mileage unusable for anyone running Mileage alone.
+    if (!data.miles) { showToast('Enter the miles for this trip','error'); return; }
+  } else if (kind==='invoice') {
     data = {customer_id:document.getElementById('recur-inv-customer').value||null,description:document.getElementById('recur-inv-desc').value,amount:parseFloat(document.getElementById('recur-inv-amount').value)||0,due_days:parseInt(document.getElementById('recur-inv-due').value)||30,notes:document.getElementById('recur-inv-notes').value};
     if (!data.customer_id) { showToast('Customer is required','error'); return; }
   } else {

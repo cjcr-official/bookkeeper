@@ -100,6 +100,10 @@ function buildNotifSandbox(hidden, cache) {
     const fmt = v => '$' + v;
     const fmtDate = d => d;
     const fmtTime = t => t;
+    ${extractConst('RECUR_KINDS')}
+    ${extract('recurMeta')}
+    ${extract('recurHidden')}
+    ${extract('recurDetail')}
     ${extract('buildNotifications')}
     return buildNotifications();
   `);
@@ -245,7 +249,8 @@ const NOTIF_FIXTURE = {
   jobs:     [{ id:'j1', date:_d(1), title:'On-site', done:false }],
   customers:[],
   recurring:[{ id:'r1', active:true, next_date:_d(1), kind:'invoice', label:'Monthly retainer', data:{} },
-             { id:'r2', active:true, next_date:_d(1), kind:'expense', label:'Web hosting', data:{} }],
+             { id:'r2', active:true, next_date:_d(1), kind:'expense', label:'Web hosting', data:{} },
+             { id:'r3', active:true, next_date:_d(1), kind:'trip', label:'Weekly bank run', data:{ miles:12.5, trips:1 } }],
 };
 const notifIds = hidden => buildNotifSandbox(hidden, NOTIF_FIXTURE).map(n => n.id.replace(/-.*/, ''));
 
@@ -264,10 +269,25 @@ test('a switched-off section puts nothing in the bell', () => {
 });
 
 test('recurring notifications follow the section that owns each kind', () => {
-  const withInvOff = buildNotifSandbox(['invoicing'], NOTIF_FIXTURE).filter(n => n.id.startsWith('rec-'));
-  eq(withInvOff.map(n => n.id.split('-')[1]), ['r2'], 'the recurring INVOICE should be gone, the expense kept');
-  const withExpOff = buildNotifSandbox(['expenses'], NOTIF_FIXTURE).filter(n => n.id.startsWith('rec-'));
-  eq(withExpOff.map(n => n.id.split('-')[1]), ['r1'], 'the recurring EXPENSE should be gone, the invoice kept');
+  // Every one of these gates used to be `kind==='invoice' ? invoicing : expenses`,
+  // which files ANY unfamiliar kind under Expenses. A recurring trip would then have
+  // pushed "due" rows for a section the user has on, and gone silent for the section
+  // it actually belongs to — both wrong, and both invisible in review.
+  const recs = hidden => buildNotifSandbox(hidden, NOTIF_FIXTURE)
+    .filter(n => n.id.startsWith('rec-')).map(n => n.id.split('-')[1]);
+  eq(recs([]), ['r1', 'r2', 'r3'], 'all three kinds should reach the bell');
+  eq(recs(['invoicing']), ['r2', 'r3'], 'the recurring INVOICE should be gone, the others kept');
+  eq(recs(['expenses']), ['r1', 'r3'], 'the recurring EXPENSE should be gone, the others kept');
+  eq(recs(['mileage']), ['r1', 'r2'], 'the recurring TRIP should be gone, the others kept');
+});
+
+test('a recurring trip is measured in miles, never in dollars', () => {
+  // The bell body reaches for the occurrence's worth. A trip has no `amount`, so a
+  // money-only reader prints nothing (or "$0.00") for a drive.
+  const trip = buildNotifSandbox([], NOTIF_FIXTURE).find(n => n.id.startsWith('rec-r3-'));
+  ok(trip, 'the recurring trip is missing from the bell');
+  ok(/12\.5 mi/.test(trip.body), 'expected miles in the body, got: ' + trip.body);
+  ok(!/\$/.test(trip.body), 'a trip must not be priced: ' + trip.body);
 });
 
 test('everything off → an empty bell, not a crash', () => {
@@ -279,8 +299,28 @@ test('processRecurring skips kinds whose section is off', () => {
   // Otherwise a hidden section keeps filling up behind the user's back: expenses
   // auto-post and draft invoices pile up where nobody can see them.
   const body = extract('processRecurring');
-  ok(/rec\.kind==='invoice' \? hidInv : hidExp/.test(body),
+  ok(/recurHidden\(rec\.kind\)/.test(body),
     'processRecurring still generates for switched-off sections');
+  // The gate must be the shared table, not another two-way ternary — that shape is
+  // what silently files a new kind under Expenses.
+  ok(!/kind===?'invoice'\s*\?/.test(body),
+    'processRecurring is back to guessing the section from a ternary');
+});
+
+test('every recurring kind maps to a real section — client and Worker agree', () => {
+  const kinds = new Function(`${extractConst('RECUR_KINDS')} return RECUR_KINDS;`)();
+  const ids = build().MODULES.map(m => m.id);
+  for (const [kind, meta] of Object.entries(kinds))
+    ok(ids.includes(meta.module), `recurring kind '${kind}' maps to '${meta.module}', which is not a module`);
+  ok(kinds.trip && kinds.trip.module === 'mileage', 'a recurring trip belongs to Mileage');
+  // The Worker cron can't import RECUR_KINDS, so it keeps a second copy of the
+  // mapping. Two copies that disagree = a push for a section the user switched off.
+  const worker = readFileSync(join(__dirname, '..', 'worker', 'push-cron.js'), 'utf8');
+  const fn = worker.match(/function recurModuleId\(kind\) \{[\s\S]*?\n\}/);
+  ok(fn, 'the Worker has no recurModuleId() — its gate cannot know about new kinds');
+  const workerModule = new Function(`${fn[0]} return recurModuleId;`)();
+  for (const [kind, meta] of Object.entries(kinds))
+    eq(workerModule(kind), meta.module, `the Worker files a '${kind}' under the wrong section`);
 });
 
 // --------------------------------------------- shared surfaces + settings gates
@@ -291,9 +331,9 @@ test('Home\'s calendar surfaces linger while ANY of their sources is on', () => 
   // rows, so tagging it with `budget` would leave a permanently-empty Upcoming card
   // on Home for someone running Budget on its own.
   const want = {
-    'dash-grp-cal':  'jobs invoicing expenses budget loan',   // header over both cards
-    'dash-card-up':  'jobs invoicing expenses loan',          // renderUpcoming's sources
-    'dash-card-cal': 'jobs invoicing expenses budget loan',   // calItemsByDate's sources
+    'dash-grp-cal':  'jobs invoicing expenses mileage budget loan',   // header over both cards
+    'dash-card-up':  'jobs invoicing expenses mileage loan',          // renderUpcoming's sources
+    'dash-card-cal': 'jobs invoicing expenses mileage budget loan',   // calItemsByDate's sources
   };
   for (const [id, list] of Object.entries(want)) {
     const tag = src.match(new RegExp('<div[^>]*id="' + id + '"[^>]*>'));

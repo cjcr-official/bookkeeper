@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **513** (see `version.json` — that file is the source of truth).
+Current version: **514** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -1015,7 +1015,13 @@ alter table trips add column if not exists invoice_id uuid references invoices(i
 alter table trips add column if not exists invoice_number text;
 alter table trips add column if not exists expense_id uuid references expenses(id) on delete set null;
 
--- recurring invoices/expenses
+-- recurring invoices/expenses/trips. `kind` is one of the RECUR_KINDS ids —
+-- 'invoice' | 'expense' | 'trip' — and `data` is that kind's payload:
+--   invoice  {customer_id, description, amount, due_days, notes}
+--   expense  {vendor, category, amount, method, description}
+--   trip     {customer_id, miles, trips, purpose}     (v514, recurring mileage)
+-- No migration was needed for trips: the table was already kind-keyed with a free
+-- jsonb payload, which is the whole reason a new recurring kind is cheap.
 create table if not exists recurring (
   id uuid primary key default gen_random_uuid(),
   user_id uuid, kind text, label text,
@@ -1365,9 +1371,27 @@ minute until the cache refreshes.
   `balanceDue(inv)` and `effectiveStatus(inv)` (fully-paid → paid; past-due →
   overdue). Outstanding = sum of balances (excl. drafts). PDF shows Paid/Balance
   Due when partly paid.
-- **Recurring (invoices/expenses):** `recurring` table; `processRecurring()` runs
-  on boot, catches up missed periods, generates invoices as DRAFTS and auto-posts
-  expenses. Keep monthly billing day ≤ 28 (JS month rollover).
+- **Recurring (invoices/expenses/trips):** `recurring` table; `processRecurring()`
+  runs on boot, catches up missed periods, generates invoices as DRAFTS, auto-posts
+  expenses and (v514) logs mileage trips. Keep monthly billing day ≤ 28 (JS month
+  rollover).
+  **`RECUR_KINDS` is the single kind → section table, and every gate reads it.**
+  What it replaced was `kind==='invoice' ? invoicing : expenses` — a two-way ternary
+  repeated in FIVE places (`processRecurring`, `renderUpcoming`,
+  `buildNotifications`, `calItemsByDate`, and the Worker's `runRecurringReminders`)
+  — and every one of them silently files an unfamiliar kind under **Expenses**. A
+  recurring trip added that way keeps auto-posting mileage with the Mileage section
+  switched off, pushes "Payment due today" for a drive, and stops generating when
+  Expenses is switched off, which has nothing to do with it. All five are wrong, all
+  five look right in review. **Add a kind to `RECUR_KINDS`, never to another
+  ternary.** `recurHidden(kind)` is the gate, `recurMeta(kind)` the labels, and
+  `recurDetail(kind, data)` the worth of one occurrence — money for an
+  invoice/expense, **miles** for a trip, because anything reaching straight for
+  `d.amount` prints "$0.00" for a drive (Upcoming carries it in a separate `note`
+  field for exactly this reason; the money column stays money). The Worker can't
+  import the table, so it keeps a deliberate second copy in `recurModuleId()` —
+  `test/modules.test.mjs` asserts the two agree, since two copies that drift mean a
+  push for a section the user switched off.
   **This is the only path that writes financial records with nobody watching, so
   three rules hold it together (v494, `test/recurring.test.mjs`):** (1) `genOneRecurring`
   **throws** on a failed insert — it used to swallow the error and return normally
@@ -1433,6 +1457,29 @@ minute until the cache refreshes.
   plain unlinked driving (bank run, parts pickup) is recordable. An unlinked trip
   titles itself from its purpose (`tripTitle`), falling back to "Trip". Don't put the
   "must link something" requirement back.
+  **Recurring mileage (v514)** — a trip that gets made on a schedule (weekly bank
+  run, monthly parts pickup) is set up once instead of logged fifty times. It is
+  `kind:'trip'` on the **existing** `recurring` table (data `{customer_id, miles,
+  trips, purpose}`), so it inherits the catch-up engine, the pause switch, the due-date
+  push and the per-item failure isolation for free — don't give it a table of its own.
+  `genOneRecurring` writes the row `saveTrip()` writes, `total_miles` included, so a
+  generated trip is indistinguishable from a hand-logged one in the log, the year
+  total and the reports. Two ways in: **Recurring** on the Mileage topbar
+  (`openRecurringManager('trip')`), and **Repeat** in the Log Trip footer
+  (`repeatTrip()`), which builds a template out of the trip on screen — it reads the
+  FORM, not the stored row, seeds `next_date` one period ahead so the trip already
+  logged isn't duplicated, and deliberately does NOT save the trip itself (two records
+  from one button is a duplicate nobody asked for). It's edit-only, because a template
+  is built from a trip that exists. Miles are the only requirement, matching
+  `saveTrip` — a client link is the same optional convenience it is there, and
+  demanding one would make recurring mileage unusable for anyone running Mileage
+  alone. The client picker prefills the customer's saved **one-way** figure into the
+  miles field, identical to the Log Trip form (the same customer must not produce two
+  different numbers depending on which form you opened) — and because this schedule
+  then repeats that figure unattended, `paintRecurTripHint()` spells out BOTH the
+  one-way and the round-trip distance, so a half-length trip gets caught before it
+  becomes twelve of them. Home's Upcoming card and the month calendar now draw
+  recurring trips, which is why both carry `mileage` in their `data-module-all` lists.
 - **Settings → Business Logo:** stored as a downscaled PNG data URL on
   `profiles.logo` (NOT Storage — data URLs render in the html2canvas PDF
   without tainting and sync across devices). Saves immediately on pick. Shows
