@@ -296,6 +296,35 @@ test('every path that changes a summarised figure repaints the summaries', () =>
   }
 });
 
+// --- a computed figure must not wear an editable field's clothes ---------------
+test('the recurring-trip form has exactly one typeable miles box', () => {
+  // REPORTED FROM THE FIELD: "Need to be able to input mileage. It's not allowing me
+  // to." The miles input was fine — the owner was tapping "Total Miles", which was a
+  // readonly <input> styled exactly like the two editable boxes above it. On a phone
+  // a .form-row stacks, so the form read as three identical number boxes with the
+  // biggest, boldest one — the one labelled with the word closest to "mileage" —
+  // silently refusing focus and showing no keyboard. Indistinguishable from broken.
+  const block = src.slice(src.indexOf('id="recur-trip-fields"'), src.indexOf('id="recur-active"'));
+  ok(block, 'the recurring trip fields are gone');
+  // eq() here is strict-equals, so compare joined strings rather than arrays.
+  const dead = [...block.matchAll(/<input[^>]*>/g)].map(m => m[0]).filter(t => /\breadonly\b|\bdisabled\b/.test(t));
+  eq(dead.join(', '), '', 'a readonly input on this form is the box the owner tried to type into');
+  const typeable = [...block.matchAll(/<input[^>]*id="([^"]+)"[^>]*>/g)].map(m => m[1]).filter(id => /miles/.test(id));
+  eq(typeable.join(', '), 'recur-trip-miles', 'exactly one miles field, and it must be editable');
+  // The total still has to be SHOWN — hiding it would trade one confusion for another.
+  ok(/id="recur-trip-total"/.test(block), 'the running total disappeared entirely');
+  ok(!/<input[^>]*id="recur-trip-total"/.test(block), 'the total is back to being an input');
+  ok(/innerHTML/.test(extract('calcRecurTripMiles')),
+    'calcRecurTripMiles still writes a field value — it must paint text now');
+});
+
+test('the recurring editor labels its fields for the kind being set up', () => {
+  // "e.g. Monthly maintenance — Acme" over a trip schedule is an invoice's example
+  // sitting on the wrong form.
+  ok(/recur-label'\)\.placeholder = meta\.hint/.test(extract('openRecurEdit')),
+    'the label placeholder is not per-kind');
+});
+
 console.log('');
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
