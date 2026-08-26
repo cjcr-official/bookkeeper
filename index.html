@@ -2183,14 +2183,21 @@ tr.bulk-sel{background:var(--accent-bg)}
       <div id="recur-trip-fields">
         <div class="form-group" data-module="invoicing"><label>Client <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="recur-trip-client" onchange="onRecurTripClientChange()"><option value="">— none —</option></select></div>
         <div class="form-row">
-          <div class="form-group"><label>Miles (per round trip)</label><input id="recur-trip-miles" type="number" min="0" step="0.01" inputmode="decimal" oninput="calcRecurTripMiles()"></div>
+          <div class="form-group"><label>Miles (per round trip)</label><input id="recur-trip-miles" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 24.5" oninput="calcRecurTripMiles()"></div>
           <div class="form-group"><label>Round Trips</label><input id="recur-trip-count" type="number" min="1" step="1" value="1" oninput="calcRecurTripMiles()"></div>
         </div>
-        <div class="form-row">
-          <div class="form-group"><label>Total Miles</label><input id="recur-trip-total" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
-          <div class="form-group"><label>Purpose</label><input id="recur-trip-purpose" type="text" placeholder="e.g. Weekly bank run"></div>
-        </div>
-        <div id="recur-trip-hint" style="font-size:11px;color:var(--text3);margin-top:-.25rem"></div>
+        <!-- The total is a computed LINE, never a readonly <input> (v515). It used to
+             be a boxed field styled exactly like the two editable ones above it —
+             and on a phone a .form-row stacks, so the form read as three identical
+             number boxes with the biggest, boldest one, the one labelled with the
+             word closest to "mileage", locked. Tapping it focuses nothing and iOS
+             shows no keyboard, which is indistinguishable from the app being broken.
+             (Reported from the field: "Need to be able to input mileage. It's not
+             allowing me to.") One typeable miles box, and nothing else that looks
+             typeable. Don't put a readonly input back on a form. -->
+        <div id="recur-trip-total" style="font-size:12.5px;color:var(--text2);margin:-.5rem 0 1.15rem;font-family:'JetBrains Mono',monospace"></div>
+        <div class="form-group"><label>Purpose</label><input id="recur-trip-purpose" type="text" placeholder="Defaults to the label above"></div>
+        <div id="recur-trip-hint" style="font-size:11px;color:var(--text3);margin-top:-.5rem"></div>
         <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Logs this trip in your mileage log automatically each period, starting on the <b>Next Date</b> above.</div>
       </div>
       <label style="display:flex;align-items:center;gap:.5rem;margin-top:.6rem;font-size:13px"><input type="checkbox" id="recur-active" checked style="width:auto"> Active</label>
@@ -5999,10 +6006,16 @@ function calcTripMiles() {
 // the same kind of thing as a recurring expense, so it rides the SAME `recurring`
 // table and the same catch-up engine — kind 'trip', data {customer_id, miles,
 // trips, purpose}. No new table, no migration.
+// The running total, as TEXT — see the markup note: a readonly input on this form
+// is the thing the owner tried to type into. It also states what the schedule will
+// DO with the figure, which a box labelled "Total Miles" never did.
 function calcRecurTripMiles() {
   const miles = parseFloat(document.getElementById('recur-trip-miles').value)||0;
   const count = parseInt(document.getElementById('recur-trip-count').value)||1;
-  document.getElementById('recur-trip-total').value = (miles*count).toFixed(2);
+  const total = miles*count;
+  document.getElementById('recur-trip-total').innerHTML = total
+    ? `Logs <b style="color:var(--accent)">${total.toFixed(2)} mi</b> each time`
+    : `<span style="color:var(--text3)">Enter the miles above — that's what gets logged each time.</span>`;
 }
 // Name the customer's SAVED one-way figure and its round trip, in that order. The
 // miles field prefills from the raw one-way value (identical to the Log Trip form,
@@ -8756,9 +8769,9 @@ let recurManagerKind = 'invoice';
 // another ternary. (The Worker can't import this, so it keeps its own copy of the
 // mapping right next to the query — see runRecurringReminders.)
 const RECUR_KINDS = {
-  invoice: { module:'invoicing', plural:'invoices', title:'Recurring Invoices', single:'Recurring Invoice', add:'New Recurring Invoice', type:'Recurring invoice', noun:'Draft invoice' },
-  expense: { module:'expenses',  plural:'expenses', title:'Recurring Expenses', single:'Recurring Expense', add:'New Recurring Expense', type:'Recurring expense', noun:'Expense' },
-  trip:    { module:'mileage',   plural:'trips',    title:'Recurring Trips',    single:'Recurring Trip',    add:'New Recurring Trip',    type:'Recurring trip',    noun:'Trip' },
+  invoice: { module:'invoicing', plural:'invoices', title:'Recurring Invoices', single:'Recurring Invoice', add:'New Recurring Invoice', type:'Recurring invoice', noun:'Draft invoice', hint:'e.g. Monthly maintenance — Acme' },
+  expense: { module:'expenses',  plural:'expenses', title:'Recurring Expenses', single:'Recurring Expense', add:'New Recurring Expense', type:'Recurring expense', noun:'Expense',       hint:'e.g. Adobe subscription' },
+  trip:    { module:'mileage',   plural:'trips',    title:'Recurring Trips',    single:'Recurring Trip',    add:'New Recurring Trip',    type:'Recurring trip',    noun:'Trip',          hint:'e.g. Weekly bank run' },
 };
 function recurMeta(kind) { return RECUR_KINDS[kind] || RECUR_KINDS.expense; }
 function recurHidden(kind) { return isModuleHidden(recurMeta(kind).module); }
@@ -8936,6 +8949,9 @@ function openRecurEdit(kind, rec) {
   const meta = recurMeta(kind);
   document.getElementById('recur-edit-title').textContent = ((rec && rec.id) ? 'Edit ' : 'New ') + meta.single;
   document.getElementById('recur-label').value = rec?(rec.label||''):'';
+  // The placeholder has to describe the kind being set up — "Monthly maintenance —
+  // Acme" over a trip schedule is an invoice's example on the wrong form.
+  document.getElementById('recur-label').placeholder = meta.hint;
   document.getElementById('recur-freq').value = rec?(rec.frequency||'monthly'):'monthly';
   document.getElementById('recur-next').value = rec?(rec.next_date||today()):today();
   document.getElementById('recur-active').checked = rec?!!rec.active:true;

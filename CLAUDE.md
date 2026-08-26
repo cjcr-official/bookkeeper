@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **514** (see `version.json` — that file is the source of truth).
+Current version: **515** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -1480,6 +1480,22 @@ minute until the cache refreshes.
   one-way and the round-trip distance, so a half-length trip gets caught before it
   becomes twelve of them. Home's Upcoming card and the month calendar now draw
   recurring trips, which is why both carry `mileage` in their `data-module-all` lists.
+  **The running total is a LINE OF TEXT, never a readonly `<input>` (v515).** It
+  shipped as a boxed "Total Miles" field styled exactly like the two editable boxes
+  above it — and a `.form-row` stacks on a phone, so the form read as three identical
+  number boxes with the biggest, boldest one, the one labelled with the word closest
+  to "mileage", silently refusing focus. iOS shows no keyboard for a readonly input,
+  so tapping it is indistinguishable from the app being broken; that is exactly what
+  the owner hit ("Need to be able to input mileage. It's not allowing me to"), while
+  the miles field beside it was working the whole time. `calcRecurTripMiles()` paints
+  `Logs <b>24.50 mi</b> each time` instead — which also says what the schedule will
+  DO with the figure, where a box labelled "Total Miles" only restated it. **One
+  typeable miles box, and nothing else on the form that looks typeable**;
+  `test/forms.test.mjs` fails on any `readonly`/`disabled` input in that block. The
+  Log Trip and Invoice forms still have their own readonly totals — same trap, older
+  and familiar — so leave them alone unless the owner asks. The recurring editor's
+  Label placeholder is per-kind too (`RECUR_KINDS[kind].hint`): an invoice's example
+  sitting over a trip schedule is its own small lie.
 - **Settings → Business Logo:** stored as a downscaled PNG data URL on
   `profiles.logo` (NOT Storage — data URLs render in the html2canvas PDF
   without tainting and sync across devices). Saves immediately on pick. Shows
