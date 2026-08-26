@@ -63,8 +63,28 @@ Worker → **Settings → Variables and Secrets** → Add:
 | `SUPABASE_SERVICE_KEY` | **Secret**| service_role key from Supabase → Project Settings → API |
 | `VAPID_PRIVATE_KEY`    | **Secret**| the private key from step 2 |
 | `MANUAL_KEY`           | **Secret**| any random string (gates `/run?key=...`) |
+| `SIGNUP_CODE`          | **Secret**| *(optional)* invite code that lets someone create an account. **Leave it unset and nobody can.** |
+| `SIGNUP_ALLOWED_EMAILS`| **Secret**| *(optional)* comma-separated allowlist — even with the code, only these addresses may register |
 
 ⚠️ The `service_role` key bypasses RLS — treat it like a password.
+
+### 5b. Close the door (do this — the app is private)
+
+Bookkeeper is a personal app, so the only way to a new login is `POST /signup`,
+which demands `SIGNUP_CODE`. **But that is only half of it.** Supabase's own
+`POST /auth/v1/signup` accepts the anon key, and the anon key is hard-coded in
+`index.html` — public by design. Until you turn it off, anyone can create an
+account by talking to Supabase directly and never opening the app at all.
+
+**Supabase dashboard → Authentication → Sign In / Providers → turn OFF
+"Allow new users to sign up".**
+
+That does *not* lock you out: the Worker creates users on the `service_role`
+key, which bypasses the setting. It is exactly why signup moved server-side.
+
+To invite someone: set `SIGNUP_CODE` to a long random string, give it to them,
+and delete the secret once they're in. Settings → Security in the app shows
+whether both doors are shut, and re-checks the Supabase toggle on demand.
 
 ### 6. iPhone — install and subscribe
 

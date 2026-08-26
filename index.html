@@ -1420,7 +1420,7 @@ tr.bulk-sel{background:var(--accent-bg)}
     </div>
     <div class="auth-tabs">
       <button class="auth-tab active" onclick="switchAuthTab('login',this)">Sign In</button>
-      <button class="auth-tab" onclick="switchAuthTab('signup',this)">Create Account</button>
+      <button class="auth-tab" id="auth-signup-tab" onclick="switchAuthTab('signup',this)">Create Account</button>
     </div>
     <div class="auth-error" id="auth-error"></div>
     <div class="auth-success" id="auth-success"></div>
@@ -1429,8 +1429,13 @@ tr.bulk-sel{background:var(--accent-bg)}
       <div class="form-group"><label>Password</label><input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••"></div>
       <button class="btn btn-primary btn-full" type="submit" id="login-btn"><i class="ti ti-login"></i> Sign In</button>
       <div style="text-align:center;margin-top:1rem"><button type="button" style="background:none;border:none;color:var(--accent);font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="doResetPassword()">Forgot password?</button></div>
+      <div id="auth-private-note" style="display:none;text-align:center;font-size:11px;color:var(--text3);margin-top:1rem;line-height:1.5">This app is private — new accounts are by invitation only.</div>
     </form>
     <form id="signup-form" onsubmit="doSignup();return false" style="display:none">
+      <div class="form-group"><label>Invite code</label>
+        <input id="signup-code" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="From the owner of this app" disabled>
+        <div style="font-size:11px;color:var(--text3);margin-top:.4rem;line-height:1.4">This app is private. Accounts are created by invitation only.</div>
+      </div>
       <div class="form-group"><label>Email</label><input id="signup-email" type="email" name="username" autocomplete="username" placeholder="you@example.com" disabled></div>
       <div class="form-group"><label>Password</label>
         <input id="signup-password" type="password" autocomplete="new-password" placeholder="Minimum 8 characters" disabled>
@@ -1839,6 +1844,15 @@ tr.bulk-sel{background:var(--accent-bg)}
             </button>
             <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Unlike App Lock (this device only), 2FA is tied to your account and applies on every device. You'll need an authenticator app (Google Authenticator, Authy, 1Password, iOS Passwords…).</div>
             <div id="mfa-trust-row" style="display:none;margin-top:.6rem"><button class="btn btn-sm" onclick="forgetTrustedDeviceUI()"><i class="ti ti-shield-x"></i> Forget this trusted device</button><span style="font-size:11px;color:var(--text3);margin-left:.5rem">This device skips the code until it expires — tap to require it again.</span></div>
+            <div style="border-top:1px solid var(--border);margin:1rem 0 .25rem"></div>
+            <!-- Who can get IN. The two rows below are different doors and the
+                 second is the one that actually matters — see renderSignupStatus. -->
+            <div class="setting-row" style="cursor:default">
+              <span><span class="setting-row-title">New sign-ups</span><span class="setting-row-sub" id="signup-gate-sub">Checking…</span></span>
+              <span id="signup-gate-pill" style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:.22rem .6rem;border-radius:var(--radius-pill);background:var(--bg2);color:var(--text3);white-space:nowrap">—</span>
+            </div>
+            <div id="signup-direct-warn" style="display:none;font-size:11.5px;line-height:1.55;margin-top:.6rem;padding:.6rem .7rem;border-radius:10px"></div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.8rem"><button class="btn btn-sm" onclick="recheckSignupStatus(this)"><i class="ti ti-refresh"></i> Re-check</button></div>
           </div>
         </div>
         <div class="card settings-section" data-sec="account">
@@ -2927,6 +2941,105 @@ function toggleSignupPw() {
   if (t) t.textContent = hidden ? 'Hide' : 'Show';
 }
 
+// ── Sign-up gate ──
+// This is a personal app, so the resting state is CLOSED: the Create Account tab
+// isn't drawn at all unless the Worker says an invite code is configured. The
+// default below is `false` and every failure path leaves it there — a Worker that
+// is down, an old Worker that 404s the route, an HTML body where JSON was
+// expected. Fail-open here would be the one bug worth avoiding: the tab would
+// quietly reappear on exactly the days the server is unreachable.
+//
+// This is convenience, not the lock. The lock is server-side (POST /signup, which
+// refuses without the code) plus the Supabase dashboard toggle that closes
+// Supabase's own public signup endpoint — see refreshSignupGate's note.
+let _signupOpen = false, _signupDirect = 'unknown';
+
+function applySignupGate() {
+  const tab = document.getElementById('auth-signup-tab');
+  const note = document.getElementById('auth-private-note');
+  if (note) note.style.display = _signupOpen ? 'none' : 'block';
+  if (!tab) return;
+  tab.style.display = _signupOpen ? '' : 'none';
+  // With only one tab left, the tab strip is just a label — hide the strip too.
+  // EXCEPT during the 2FA challenge, which hides the strip itself and owns it
+  // until resetAuthView puts it back. Testing the strip's own display instead
+  // ("don't touch it if it's already hidden") reads as the same thing and is
+  // not: the gate's own first paint hides it, so a later open:true could never
+  // put it back and the Create Account tab stayed invisible on an open app.
+  const tabs = document.querySelector('.auth-tabs');
+  const mfa = document.getElementById('mfa-login-form');
+  const inMfa = !!(mfa && mfa.style.display === 'block');
+  if (tabs && !inMfa) tabs.style.display = _signupOpen ? '' : 'none';
+  // If the signup form was somehow the visible one, put the user back on Sign In.
+  if (!_signupOpen && document.getElementById('signup-form').style.display === 'block') {
+    switchAuthTab('login', document.querySelectorAll('.auth-tab')[0]);
+  }
+}
+// Ask the Worker whether sign-ups are open. Also reports `direct`: whether
+// Supabase's OWN public signup endpoint is still enabled. That one matters more
+// than anything in this file — the anon key is hard-coded in this page, so while
+// that toggle is on, anyone can create an account by posting straight to Supabase
+// and never touching our /signup at all. Settings → Security surfaces the answer.
+async function refreshSignupGate() {
+  try {
+    const res = await fetch('/signup-status', { headers: { Accept: 'application/json' } });
+    // An old Worker (or the SPA asset fallback) answers 200 with index.html, so
+    // check the shape, not the status — a stray truthy body must not open the door.
+    const j = res.ok ? await res.json().catch(() => null) : null;
+    _signupOpen = !!(j && j.open === true);
+    _signupDirect = (j && typeof j.direct === 'string') ? j.direct : 'unknown';
+  } catch (e) { _signupOpen = false; _signupDirect = 'unknown'; }
+  applySignupGate();
+  renderSignupStatus();
+}
+
+// Settings → Security. Two rows, two different doors, and the second is the one
+// that matters: the invite code only guards OUR /signup, while Supabase's own
+// public signup endpoint answers the anon key that ships in this page. Locking
+// the first and leaving the second open is a lock on a door standing next to an
+// open window, so say so in as many words rather than reporting a tidy "Closed".
+function renderSignupStatus() {
+  const pill = document.getElementById('signup-gate-pill');
+  const sub  = document.getElementById('signup-gate-sub');
+  const warn = document.getElementById('signup-direct-warn');
+  if (!pill || !sub || !warn) return;
+  if (_signupOpen) {
+    pill.textContent = 'Invite only';
+    pill.style.background = 'color-mix(in srgb, var(--amber) 16%, transparent)';
+    pill.style.color = 'var(--amber)';
+    sub.textContent = 'Anyone holding the current invite code can create an account. Clear the Worker’s SIGNUP_CODE secret when you’re done inviting.';
+  } else {
+    pill.textContent = 'Closed';
+    pill.style.background = 'color-mix(in srgb, var(--green) 16%, transparent)';
+    pill.style.color = 'var(--green)';
+    sub.textContent = 'No one can create an account. To invite someone, set a SIGNUP_CODE secret on the Worker and give them the code.';
+  }
+  if (_signupDirect === 'open') {
+    warn.style.display = 'block';
+    warn.style.background = 'color-mix(in srgb, var(--red) 12%, transparent)';
+    warn.style.color = 'var(--red)';
+    warn.innerHTML = '<strong><i class="ti ti-alert-triangle"></i> Supabase is still accepting public sign-ups.</strong><br>'
+      + 'Anyone can create an account by talking to Supabase directly — without ever opening this app — so the invite code above is not protecting you yet. '
+      + 'Fix it in the Supabase dashboard: <strong>Authentication → Sign In / Providers → turn off “Allow new users to sign up”</strong>. '
+      + 'It won’t lock you out: invites through this app keep working.';
+  } else if (_signupDirect === 'closed') {
+    warn.style.display = 'block';
+    warn.style.background = 'color-mix(in srgb, var(--green) 12%, transparent)';
+    warn.style.color = 'var(--green)';
+    warn.innerHTML = '<i class="ti ti-shield-check"></i> Supabase is refusing public sign-ups, so this app is the only way in.';
+  } else {
+    warn.style.display = 'block';
+    warn.style.background = 'var(--bg2)';
+    warn.style.color = 'var(--text3)';
+    warn.innerHTML = '<i class="ti ti-help-circle"></i> Couldn’t check whether Supabase’s own public sign-up is switched off. Check it by hand: <strong>Supabase → Authentication → Sign In / Providers → “Allow new users to sign up”</strong> should be off.';
+  }
+}
+async function recheckSignupStatus(btn) {
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Checking...'; }
+  await refreshSignupGate();
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-refresh"></i> Re-check'; }
+}
+
 function showAuthError(msg) {
   const el = document.getElementById('auth-error');
   el.textContent = msg; el.classList.add('show');
@@ -2949,27 +3062,50 @@ async function doLogin() {
   if (error) showAuthError(error.message);
 }
 
+// Signup goes through the WORKER, never sb.auth.signUp(). That call hits
+// Supabase's public signup endpoint with the anon key that is hard-coded in this
+// page, so it would create an account for anyone who asked — which is the exact
+// thing this app doesn't want. The Worker checks the invite code against a secret
+// the browser never sees and creates the login on the service key instead.
+// Don't restore a client-side signUp() fallback: a fallback for "the Worker said
+// no" is a way around the Worker saying no.
 async function doSignup() {
   const email = document.getElementById('signup-email').value.trim();
   const password = document.getElementById('signup-password').value;
   const company = document.getElementById('signup-company').value.trim();
+  const code = document.getElementById('signup-code').value.trim();
   if (!email||!password) { showAuthError('Please fill in all fields.'); return; }
   if (password.length < 8) { showAuthError('Password must be at least 8 characters.'); return; }
+  if (!code) { showAuthError('Enter the invite code you were given.'); return; }
   const btn = document.getElementById('signup-btn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Creating account...';
-  const {data, error} = await sb.auth.signUp({email, password});
-  btn.disabled = false; btn.innerHTML = '<i class="ti ti-user-plus"></i> Create Account';
-  if (error) { showAuthError(error.message); return; }
-  if (company && data.user) {
-    await sb.from('profiles').upsert({id: data.user.id, company});
+  let out = null;
+  try {
+    const res = await fetch('/signup', {
+      method: 'POST', headers: {'Content-Type':'application/json', Accept:'application/json'},
+      body: JSON.stringify({email, password, company, code})
+    });
+    out = await res.json().catch(()=>null);
+    if (!res.ok || !out || out.ok !== true) {
+      showAuthError((out && out.error) || 'Could not create the account. Try again.');
+      return;
+    }
+  } catch (e) {
+    showAuthError('Could not reach the server. Check your connection and try again.');
+    return;
+  } finally {
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-user-plus"></i> Create Account';
   }
   // Switch to the Sign In tab, carrying the email over so they just type the
-  // password they just set (or saved) to log in.
+  // password they just set (or saved) to log in. The Worker creates the login
+  // pre-confirmed — the owner already vouched for them by handing over the code —
+  // so there is no confirmation email to wait on.
   const signInTab = document.querySelectorAll('.auth-tab')[0];
   switchAuthTab('login', signInTab);
   document.getElementById('login-email').value = email;
   document.getElementById('login-password').value = '';
-  showAuthSuccess('Account created! Check your email to confirm, then sign in.');
+  document.getElementById('signup-code').value = '';
+  showAuthSuccess('Account created — sign in with the password you just set.');
 }
 
 async function doResetPassword() {
@@ -3104,6 +3240,9 @@ function resetAuthView() {
   document.getElementById('signup-form').style.display='none';
   setActiveAuthForm('login');
   document.querySelectorAll('.auth-tab').forEach((t,i)=>t.classList.toggle('active', i===0));
+  // This just un-hid the tab strip wholesale, so re-apply the gate — otherwise
+  // signing out hands back a Create Account tab on an app that has none.
+  applySignupGate();
 }
 function showMfaChallenge() {
   document.getElementById('app').style.display='none';
@@ -12131,6 +12270,10 @@ function showSettingsSection(name) {
   // have left the scroll mid-page). No-op when nothing was scrolled.
   const m = document.querySelector('.main'); if (m) m.scrollTo({ top: 0, behavior: 'smooth' });
   if (name === 'about') { renderAboutVersions(); checkForUpdate(); }
+  // Re-ask on open: the answer can change without this device doing anything
+  // (the code gets set from a laptop, the Supabase toggle gets flipped), and a
+  // stale "Closed" here would be a false all-clear.
+  if (name === 'security') { renderSignupStatus(); refreshSignupGate(); }
 }
 
 // ── Payment methods (Settings → How to pay) ──
@@ -12869,6 +13012,7 @@ new MutationObserver(muts => {
 
 // ====== BOOT ======
 async function boot() {
+  refreshSignupGate();   // fire-and-forget; the tab stays hidden until it answers
   // Safety: always hide loading after 6 seconds no matter what
   setTimeout(()=>{
     const ls = document.getElementById('loading-screen');
