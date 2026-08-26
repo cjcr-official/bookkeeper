@@ -676,8 +676,17 @@ async function runReminders(env) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Which Section owns each recurring kind. The client's own copy is RECUR_KINDS in
+// index.html — the Worker can't import it, so this is the deliberate second copy;
+// keep them in step. It matters because the shape it replaced was a two-way ternary
+// that filed anything unfamiliar under Expenses: a recurring TRIP would have gone on
+// pushing "Payment due today" for a drive, with Mileage switched off.
+function recurModuleId(kind) {
+  return kind === 'invoice' ? 'invoicing' : kind === 'trip' ? 'mileage' : 'expenses';
+}
+
 // Recurring reminders — one morning push (>= 8am Denver) on the day a recurring
-// invoice/expense comes due, deduped per occurrence via recurring.reminded_date.
+// invoice/expense/trip comes due, deduped per occurrence via recurring.reminded_date.
 async function runRecurringReminders(env) {
   const { dateStr: todayDen, hour } = denverParts();
   if (hour < 6) return { checked: 0, fired: 0 };          // earliest selectable ping hour
@@ -698,19 +707,23 @@ async function runRecurringReminders(env) {
   let fired = 0, failed = 0;
   for (const r of due) {
     if (hour < (hourByUser[r.user_id] ?? 8)) continue;    // before this user's chosen time
-    // A recurring invoice belongs to Invoices, a recurring expense to Expenses —
-    // with that section off the client isn't generating them either (see
+    // A recurring invoice belongs to Invoices, an expense to Expenses, a trip to
+    // Mileage — with that section off the client isn't generating them either (see
     // processRecurring), so a "due today" ping would be about nothing.
-    if (moduleOff(hiddenBy, r.user_id, r.kind === 'invoice' ? 'invoicing' : 'expenses')) continue;
+    if (moduleOff(hiddenBy, r.user_id, recurModuleId(r.kind))) continue;
     const sub = subByUser[r.user_id];
     if (!sub || !sub.endpoint) continue;                  // no device yet — try again next run
     try {
       const d = r.data || {};
-      const label = r.label || (r.kind === 'invoice' ? 'Invoice' : 'Expense');
-      const amt = fmtMoney(d.amount != null ? d.amount : d.total);
+      const isTrip = r.kind === 'trip';
+      const label = r.label || (r.kind === 'invoice' ? 'Invoice' : isTrip ? 'Trip' : 'Expense');
+      // A trip is worth MILES, not money — reaching for d.amount would push "($0.00)"
+      // for a drive.
+      const detail = isTrip ? fmtMiles((Number(d.miles) || 0) * (parseInt(d.trips, 10) || 1))
+                            : fmtMoney(d.amount != null ? d.amount : d.total);
       await sendWebPush(sub, env, {
-        title: r.kind === 'invoice' ? 'Invoice due today' : 'Payment due today',
-        body: label + (amt ? ' (' + amt + ')' : '') + ' is due today',
+        title: r.kind === 'invoice' ? 'Invoice due today' : isTrip ? 'Trip today' : 'Payment due today',
+        body: label + (detail ? ' (' + detail + ')' : '') + (isTrip ? ' is on today\u2019s schedule' : ' is due today'),
         url: '/', tag: 'recur-' + r.id
       });
       await supaPatch(env, `recurring?id=eq.${r.id}`, { reminded_date: r.next_date });
@@ -879,6 +892,11 @@ function fmtMoney(n) {
   const v = Number(n);
   if (!isFinite(v)) return '';
   return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtMiles(n) {
+  const v = Number(n);
+  if (!isFinite(v) || !v) return '';
+  return v.toLocaleString('en-US', { maximumFractionDigits: 2 }) + ' mi';
 }
 async function makeVapidJwt(audience, subject, pubB64, privB64) {
   const header = { alg: 'ES256', typ: 'JWT' };
