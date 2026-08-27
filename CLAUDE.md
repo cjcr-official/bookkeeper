@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **515** (see `version.json` — that file is the source of truth).
+Current version: **516** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -637,7 +637,8 @@ node test/touch.test.mjs       # viewport zoom + the 16px minimum on touch input
 node test/retention.test.mjs   # account deletion actually deletes every table
 node test/reminders.test.mjs   # the Worker's Denver wall-clock → UTC reminder math
 node test/recurring.test.mjs   # unattended auto-posting: no silent skips, no duplicates
-node test/forms.test.mjs       # a save must not blank a select value it didn't recognise
+node test/forms.test.mjs       # a save must not blank a select value it didn't recognise,
+                               #   + what a collapsed form fold states and what stays typeable
 node test/dates.test.mjs       # "what day is it" — local calendar dates, never UTC
 node test/home.test.mjs        # Home's refresh contract + its fold controls
 node test/loan.test.mjs        # the amortization engine, against closed-form annuities
@@ -1491,11 +1492,33 @@ minute until the cache refreshes.
   `Logs <b>24.50 mi</b> each time` instead — which also says what the schedule will
   DO with the figure, where a box labelled "Total Miles" only restated it. **One
   typeable miles box, and nothing else on the form that looks typeable**;
-  `test/forms.test.mjs` fails on any `readonly`/`disabled` input in that block. The
-  Log Trip and Invoice forms still have their own readonly totals — same trap, older
-  and familiar — so leave them alone unless the owner asks. The recurring editor's
+  `test/forms.test.mjs` fails on any `readonly`/`disabled` input in **either** mileage
+  form — the owner then asked for the two to match (v516), which spent the carve-out
+  the Log Trip form had for being older and familiar, so `calcTripMiles()` paints
+  `Logs <b>24.50 mi</b>` the same way. The INVOICE form's readonly totals are
+  untouched; leave them alone unless the owner asks. The recurring editor's
   Label placeholder is per-kind too (`RECUR_KINDS[kind].hint`): an invoice's example
   sitting over a trip schedule is its own small lie.
+  **The two mileage forms are one form twice, and the optional half is folded
+  (v516).** Log Trip asked for date, round trips, a client, a linked expense, a locked
+  total, miles, a purpose and an invoice number — with the two optional pickers wedged
+  between the date and the miles, i.e. between the only two fields a bank run actually
+  needs. Both forms now read core-first (date · miles · round trips · total line ·
+  purpose) with every optional attachment in ONE `.form-fold` headed **Optional
+  links** — `tripfold-links` (client, linked expense, invoice #, and the Maps link,
+  which belongs beside the client picker that paints it) and `tripfold-recur-links`
+  (client). Same three rules the invoice folds follow, all pinned by
+  `test/forms.test.mjs`: nothing is unmounted, so `saveTrip`/`saveRecurring` and
+  `repeatTrip` read exactly what they always did; a collapsed header STATES what is
+  attached (`updateTripFold` / `updateRecurTripFold`, repainted from every path that
+  can change one — both selects, the invoice field, and on open); and a record that
+  already has an attachment opens its own fold. The summary skips a half whose section
+  is off, for the same reason `paintRecurTripHint` blanks itself — with Invoices off
+  the header would be the one thing still naming a customer on a form that has no
+  customer field. `toggleFold(id, force)` is now the SINGLE toggle behind all three
+  folded forms; `toggleInvFold(key)` is the invoice form's thin `key → id` wrapper.
+  Put a new optional trip field in the fold; the test fails if one drifts back above
+  it.
 - **Settings → Business Logo:** stored as a downscaled PNG data URL on
   `profiles.logo` (NOT Storage — data URLs render in the html2canvas PDF
   without tainting and sync across devices). Saves immediately on pick. Shows
