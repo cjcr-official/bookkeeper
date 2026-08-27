@@ -258,8 +258,8 @@ test('folding moved the fields, it did not drop them', () => {
 test('a fold body is hidden by CSS, so the values survive being collapsed', () => {
   ok(/\.form-fold-body\{display:none/.test(src), 'fold bodies must hide, not unmount');
   ok(/\.form-fold\.open .form-fold-body\{display:block/.test(src));
-  ok(!/removeChild|innerHTML\s*=\s*''/.test(extract('toggleInvFold')),
-    'toggleInvFold must not tear the fields out of the DOM');
+  ok(!/removeChild|innerHTML\s*=\s*''/.test(extract('toggleFold')),
+    'toggleFold must not tear the fields out of the DOM');
 });
 
 test('every fold header has a summary slot and an aria-expanded state', () => {
@@ -271,7 +271,11 @@ test('every fold header has a summary slot and an aria-expanded state', () => {
   const heads = [...modal.matchAll(/class="form-fold-head"[^>]*/g)];
   eq(heads.length, 4, 'expected one header per fold');
   ok(heads.every(h => h[0].includes('aria-expanded')), 'a fold header must report its state');
-  ok(/aria-expanded/.test(extract('toggleInvFold')), 'toggling must update aria-expanded');
+  // One implementation behind all three folded forms (invoice, Log Trip, recurring
+  // trip); toggleInvFold is the invoice form's thin key → id wrapper over it.
+  ok(/aria-expanded/.test(extract('toggleFold')), 'toggling must update aria-expanded');
+  ok(/toggleFold\('invfold-'/.test(extract('toggleInvFold')),
+    'toggleInvFold must delegate, not fork a second toggle');
 });
 
 test('openInvoiceModal opens a fold that already holds something', () => {
@@ -323,6 +327,141 @@ test('the recurring editor labels its fields for the kind being set up', () => {
   // sitting on the wrong form.
   ok(/recur-label'\)\.placeholder = meta\.hint/.test(extract('openRecurEdit')),
     'the label placeholder is not per-kind');
+});
+
+// ============================================================================
+// The two MILEAGE forms, which are meant to be the same form twice.
+//
+// The Log Trip form asked for date, round trips, a client, a linked expense, a
+// locked total, miles, a purpose and an invoice number — with the two optional
+// pickers wedged between the date and the miles, i.e. between the only two fields
+// a bank run actually needs. The optional attachments are one fold now, on BOTH
+// forms, under the same rules the invoice folds follow: nothing is unmounted, a
+// collapsed header states what is attached, and a record that already has an
+// attachment opens the fold itself.
+// ============================================================================
+const tripModal = src.slice(src.indexOf('id="modal-trip"'), src.indexOf("closeModal('modal-trip')\">Cancel"));
+const recurTrip = src.slice(src.indexOf('id="recur-trip-fields"'), src.indexOf('id="recur-active"'));
+
+test('the optional trip fields are grouped, not scattered through the form', () => {
+  // The point of the change: what you always fill in comes first, and everything
+  // optional is together in one place after it. A field that drifts back above the
+  // fold puts an optional picker between the date and the miles again.
+  const fold = tripModal.indexOf('id="tripfold-links"');
+  ok(fold > 0, 'the Log Trip form lost its optional-links fold');
+  for (const id of ['trip-date', 'trip-miles', 'trip-count', 'trip-purpose'])
+    ok(tripModal.indexOf('id="' + id + '"') < fold, id + ' should be above the fold — it is not optional');
+  for (const id of ['trip-client', 'trip-expense', 'trip-invoice', 'trip-maps-link'])
+    ok(tripModal.indexOf('id="' + id + '"') > fold, id + ' is optional and belongs inside the fold');
+});
+
+test('the recurring trip form is organised the same way', () => {
+  // "Recurring mileage should look the same" — same fold, same header, same order.
+  const fold = recurTrip.indexOf('id="tripfold-recur-links"');
+  ok(fold > 0, 'the recurring trip form lost its optional-links fold');
+  for (const id of ['recur-trip-miles', 'recur-trip-count', 'recur-trip-total', 'recur-trip-purpose'])
+    ok(recurTrip.indexOf('id="' + id + '"') < fold, id + ' should be above the fold');
+  for (const id of ['recur-trip-client', 'recur-trip-hint'])
+    ok(recurTrip.indexOf('id="' + id + '"') > fold, id + ' is optional and belongs inside the fold');
+  for (const block of [tripModal, recurTrip]) {
+    const head = block.match(/class="form-fold-head"[^>]*/);
+    ok(head && head[0].includes('aria-expanded'), 'a fold header must report its state');
+    ok(/<span>Optional links<\/span>/.test(block), 'both forms should use the same header');
+  }
+});
+
+test('neither mileage form has a second box that looks typeable', () => {
+  // v515 fixed this on the recurring form; the owner then asked for the two to
+  // match, which spends the "older and familiar" carve-out the Log Trip form had.
+  // A readonly <input> beside the miles field is the box the owner taps and gets no
+  // keyboard for — indistinguishable from the app being broken.
+  for (const [name, block] of [['Log Trip', tripModal], ['recurring trip', recurTrip]]) {
+    const dead = [...block.matchAll(/<input[^>]*>/g)].map(m => m[0]).filter(t => /\breadonly\b|\bdisabled\b/.test(t));
+    eq(dead.join(', '), '', 'a readonly input on the ' + name + ' form is the box the owner tried to type into');
+    const typeable = [...block.matchAll(/<input[^>]*id="([^"]+)"[^>]*>/g)].map(m => m[1]).filter(id => /miles/.test(id));
+    eq(typeable.length, 1, 'the ' + name + ' form should have exactly one miles field, and it must be editable');
+  }
+  ok(/id="trip-total"/.test(tripModal), 'the Log Trip running total disappeared entirely');
+  ok(!/<input[^>]*id="trip-total"/.test(tripModal), 'the Log Trip total is back to being an input');
+  ok(/innerHTML/.test(extract('calcTripMiles')), 'calcTripMiles still writes a field value — it must paint text now');
+});
+
+test('folding the trip links moved them, it did not drop them', () => {
+  // saveTrip() and saveRecurring() read each of these by id.
+  for (const id of ['trip-id', 'trip-date', 'trip-client', 'trip-miles', 'trip-count',
+                    'trip-purpose', 'trip-invoice', 'trip-expense'])
+    ok(tripModal.includes('id="' + id + '"'), 'the Log Trip form lost #' + id);
+  for (const id of ['recur-trip-client', 'recur-trip-miles', 'recur-trip-count', 'recur-trip-purpose'])
+    ok(recurTrip.includes('id="' + id + '"'), 'the recurring trip form lost #' + id);
+});
+
+// A fake element store for updateTripFold(), which reads .value / a select's
+// selected option text and writes .textContent.
+function tripFoldDoc(fields) {
+  const els = new Map();
+  const mk = id => {
+    const f = fields[id];
+    if (f && f.options) return { options: f.options.map(t => ({ text: t })), selectedIndex: f.selectedIndex, value: f.value || '' };
+    return { value: f == null ? '' : String(f), textContent: '' };
+  };
+  return { getElementById(id) { if (!els.has(id)) els.set(id, mk(id)); return els.get(id); } };
+}
+function tripSum(fields, expenses = [], hidden = []) {
+  const doc = tripFoldDoc(fields);
+  new Function('document', 'cache', 'isModuleHidden',
+    `${extract('updateTripFold')}\nupdateTripFold();`)(doc, { expenses }, m => hidden.includes(m));
+  return doc.getElementById('tripfold-sum-links').textContent;
+}
+const noClient = { options: ['— none —'], selectedIndex: 0, value: '' };
+
+test('a collapsed trip fold still says what is attached', () => {
+  eq(tripSum({
+    'trip-client': { options: ['— none —', 'Acme Corp'], selectedIndex: 1, value: 'c1' },
+    'trip-expense': 'e1', 'trip-invoice': ' 2612 ',
+  }, [{ id: 'e1', vendor: 'NAPA' }]), 'Acme Corp · NAPA · Inv #2612');
+});
+
+test('an unattached trip reads as None, never as an empty header', () => {
+  eq(tripSum({ 'trip-client': noClient, 'trip-expense': '', 'trip-invoice': '' }), 'None');
+});
+
+test('a linked expense the cache has not got is still counted', () => {
+  // The picker lists every expense; the cache is the same array, but a summary that
+  // silently drops an attachment is exactly what folding must never do.
+  eq(tripSum({ 'trip-client': noClient, 'trip-expense': 'gone', 'trip-invoice': '' }), 'Expense');
+});
+
+test('the summary does not name a record from a switched-off section', () => {
+  // A hidden field keeps its VALUE, not its voice: with Invoices off there is no
+  // customer field on the form, so the header must not be the one thing still
+  // naming one. (Same rule paintRecurTripHint follows.)
+  const attached = {
+    'trip-client': { options: ['— none —', 'Acme Corp'], selectedIndex: 1, value: 'c1' },
+    'trip-expense': 'e1', 'trip-invoice': '2612',
+  };
+  const exp = [{ id: 'e1', vendor: 'NAPA' }];
+  eq(tripSum(attached, exp, ['invoicing']), 'NAPA');
+  eq(tripSum(attached, exp, ['expenses']), 'Acme Corp · Inv #2612');
+});
+
+test('a trip that already has a link opens its fold, with a painted summary', () => {
+  const fn = extract('openTripModal');
+  ok(/toggleFold\('tripfold-links'/.test(fn), 'openTripModal never decides the fold state');
+  ok(/customer_id/.test(fn) && /expense_id/.test(fn) && /invoice_number/.test(fn),
+    'all three attachments should count as content worth opening for');
+  ok(/updateTripFold\(\)/.test(fn), 'the summary must be painted before the modal shows');
+  ok(/toggleFold\('tripfold-recur-links'/.test(extract('openRecurEdit')),
+    'openRecurEdit never decides the recurring fold state');
+  ok(/updateRecurTripFold\(\)/.test(extract('openRecurEdit')), 'the recurring summary is never painted');
+});
+
+test('every path that can change an attachment repaints the summary', () => {
+  ok(extract('onTripClientChange').includes('updateTripFold()'), 'picking a client leaves the summary stale');
+  ok(extract('onRecurTripClientChange').includes('updateRecurTripFold()'), 'the recurring summary goes stale');
+  for (const id of ['trip-expense', 'trip-invoice']) {
+    const tag = tripModal.match(new RegExp('<(?:input|select)[^>]*id="' + id + '"[^>]*>'));
+    ok(tag && /updateTripFold\(\)/.test(tag[0]), id + ' can change a summary without repainting it');
+  }
 });
 
 console.log('');

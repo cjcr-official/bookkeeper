@@ -1345,6 +1345,10 @@ tr.bulk-sel{background:var(--accent-bg)}
 .form-fold-head:active{transform:scale(.995)}
 .form-fold-chev{flex-shrink:0;color:var(--text3);font-size:16px;line-height:1;transition:transform .15s}
 .form-fold.open .form-fold-chev{transform:rotate(90deg)}
+/* The section NAME never wraps: it is what the header is for. A long summary yields
+   instead — .form-fold-sum already has min-width:0 and an ellipsis, so it shrinks to
+   "…" before "Optional links" is allowed to break over two lines on a phone. */
+.form-fold-head>span:not(.form-fold-sum){white-space:nowrap;flex-shrink:0}
 .form-fold-sum{margin-left:auto;min-width:0;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500;color:var(--text3);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .form-fold.open .form-fold-sum{opacity:.55}
 .form-fold-body{display:none;padding:.15rem .75rem .85rem}
@@ -2181,7 +2185,6 @@ tr.bulk-sel{background:var(--accent-bg)}
            container's own display is JS-managed by openRecurEdit, so it carries no
            data-module of its own (see CLAUDE.md → Sections). -->
       <div id="recur-trip-fields">
-        <div class="form-group" data-module="invoicing"><label>Client <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="recur-trip-client" onchange="onRecurTripClientChange()"><option value="">— none —</option></select></div>
         <div class="form-row">
           <div class="form-group"><label>Miles (per round trip)</label><input id="recur-trip-miles" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 24.5" oninput="calcRecurTripMiles()"></div>
           <div class="form-group"><label>Round Trips</label><input id="recur-trip-count" type="number" min="1" step="1" value="1" oninput="calcRecurTripMiles()"></div>
@@ -2196,9 +2199,25 @@ tr.bulk-sel{background:var(--accent-bg)}
              allowing me to.") One typeable miles box, and nothing else that looks
              typeable. Don't put a readonly input back on a form. -->
         <div id="recur-trip-total" style="font-size:12.5px;color:var(--text2);margin:-.5rem 0 1.15rem;font-family:'JetBrains Mono',monospace"></div>
+        <div style="font-size:11px;color:var(--text3);margin:-.75rem 0 1rem">Repeats into your mileage log on its own, starting on the <b>Next Date</b> above.</div>
         <div class="form-group"><label>Purpose</label><input id="recur-trip-purpose" type="text" placeholder="Defaults to the label above"></div>
-        <div id="recur-trip-hint" style="font-size:11px;color:var(--text3);margin-top:-.5rem"></div>
-        <div style="font-size:11px;color:var(--text3);margin-top:.35rem">Logs this trip in your mileage log automatically each period, starting on the <b>Next Date</b> above.</div>
+        <!-- Same fold, same header, same rules as the Log Trip form: the one optional
+             attachment lives here instead of above the miles you always type. It is
+             the whole fold that follows Invoices — with that section off there is
+             nothing left inside, so the header goes too rather than sitting over an
+             empty body. -->
+        <div class="form-fold" id="tripfold-recur-links" data-module="invoicing">
+          <button type="button" class="form-fold-head" aria-expanded="false" onclick="toggleFold('tripfold-recur-links')">
+            <i class="ti ti-chevron-right form-fold-chev"></i>
+            <span>Optional links</span>
+            <span class="form-fold-sum" id="tripfold-sum-recur-links"></span>
+          </button>
+          <div class="form-fold-body">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:.6rem">Attach this schedule to a client. Leave it empty for ordinary driving — a weekly bank run needs no customer at all.</div>
+            <div class="form-group"><label>Client</label><select id="recur-trip-client" onchange="onRecurTripClientChange()"><option value="">— none —</option></select></div>
+            <div id="recur-trip-hint" style="font-size:11px;color:var(--text3);margin-top:-.5rem"></div>
+          </div>
+        </div>
       </div>
       <label style="display:flex;align-items:center;gap:.5rem;margin-top:.6rem;font-size:13px"><input type="checkbox" id="recur-active" checked style="width:auto"> Active</label>
       <label style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;font-size:13px"><input type="checkbox" id="recur-notify" checked style="width:auto"> Push reminder on the due date</label>
@@ -2247,30 +2266,47 @@ tr.bulk-sel{background:var(--accent-bg)}
     <div class="modal-header"><h2 id="trip-title">Log Trip</h2><button class="btn btn-sm" aria-label="Close" onclick="closeModal('modal-trip')"><i class="ti ti-x"></i></button></div>
     <div class="modal-body">
       <input type="hidden" id="trip-id">
-      <div class="form-row">
-        <div class="form-group"><label>Date</label><input id="trip-date" type="date"></div>
-        <div class="form-group"><label>Round Trips</label><input id="trip-count" type="number" min="1" step="1" value="1" oninput="calcTripMiles()"></div>
-      </div>
-      <!-- Linking is OPTIONAL and each side follows its own module: a trip is a
-           standalone record (date + miles + purpose is a valid mileage log), it can
-           just also be attached to a customer or an expense when that helps. Both
-           groups carry data-module so a switched-off section never shows a field
-           you can't use — and data-module-all drops the whole row + hint only when
-           BOTH sections are off. -->
-      <div class="form-row" data-module-all="invoicing expenses">
-        <div class="form-group" data-module="invoicing"><label>Client <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="trip-client" onchange="onTripClientChange()"><option value="">— none —</option></select></div>
-        <div class="form-group" data-module="expenses"><label>Linked Expense <span style="color:var(--text3);font-weight:400;font-size:11px">(optional)</span></label><select id="trip-expense"><option value="">— none —</option></select></div>
-      </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:-.35rem;margin-bottom:.5rem" data-module-all="invoicing expenses">Optional — link a client or an expense to this trip, or leave both empty and just describe it below.</div>
+      <!-- The top of the form is the whole mileage log: when, how far, what for.
+           Date + miles + purpose is a complete entry and the only thing the IRS asks
+           for — so the three OPTIONAL attachments (client, expense, invoice #) are
+           grouped into one fold below instead of sitting between the fields you
+           always fill in. Same shape as the recurring-trip form. -->
+      <div class="form-group"><label>Date</label><input id="trip-date" type="date"></div>
       <div class="form-row">
         <div class="form-group"><label>Miles (per round trip)</label><input id="trip-miles" type="number" min="0" step="0.01" inputmode="decimal" oninput="calcTripMiles()"></div>
-        <div class="form-group"><label>Total Miles</label><input id="trip-total" type="text" readonly style="background:var(--bg2);font-weight:700"></div>
+        <div class="form-group"><label>Round Trips</label><input id="trip-count" type="number" min="1" step="1" value="1" oninput="calcTripMiles()"></div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label>Purpose</label><input id="trip-purpose" type="text" placeholder="e.g. On-site repair, bank run"></div>
-        <div class="form-group" data-module="invoicing"><label>Invoice #</label><input id="trip-invoice" type="text" placeholder="optional"></div>
+      <!-- The running total is a computed LINE, never a readonly <input> (v515 fixed
+           the same trap on the recurring form; the owner asked for these two to match).
+           A .form-row stacks on a phone, so a boxed "Total Miles" styled like the two
+           editable boxes above it reads as a third one — the biggest, boldest, and the
+           one labelled with the word closest to "mileage" — that silently refuses
+           focus and shows no keyboard. One typeable miles box, and nothing else on the
+           form that looks typeable. -->
+      <div id="trip-total" style="font-size:12.5px;color:var(--text2);margin:-.5rem 0 1.15rem;font-family:'JetBrains Mono',monospace"></div>
+      <div class="form-group"><label>Purpose</label><input id="trip-purpose" type="text" placeholder="e.g. On-site repair, bank run"></div>
+      <!-- Linking is OPTIONAL and each field follows its own module: a trip is a
+           standalone record that can ALSO be attached to a customer, an expense or an
+           invoice when that helps. Each carries data-module so a switched-off section
+           never shows a field you can't use — and data-module-all drops the whole
+           fold only when both sections are off. Collapsed ≠ hidden: the header
+           summarises what is attached (updateTripFold), and a trip that already has a
+           link opens the fold itself (openTripModal). Nothing is unmounted, so
+           saveTrip() reads exactly what it always did. -->
+      <div class="form-fold" id="tripfold-links" data-module-all="invoicing expenses">
+        <button type="button" class="form-fold-head" aria-expanded="false" onclick="toggleFold('tripfold-links')">
+          <i class="ti ti-chevron-right form-fold-chev"></i>
+          <span>Optional links</span>
+          <span class="form-fold-sum" id="tripfold-sum-links"></span>
+        </button>
+        <div class="form-fold-body">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:.6rem">Attach this trip to a client, an expense or an invoice. Leave them empty for ordinary driving — a bank run needs none of them.</div>
+          <div class="form-group" data-module="invoicing"><label>Client</label><select id="trip-client" onchange="onTripClientChange()"><option value="">— none —</option></select></div>
+          <div id="trip-maps-link" style="font-size:12px;margin:-.35rem 0 .75rem"></div>
+          <div class="form-group" data-module="expenses"><label>Linked Expense</label><select id="trip-expense" onchange="updateTripFold()"><option value="">— none —</option></select></div>
+          <div class="form-group" data-module="invoicing"><label>Invoice #</label><input id="trip-invoice" type="text" placeholder="optional" oninput="updateTripFold()"></div>
+        </div>
       </div>
-      <div id="trip-maps-link" style="font-size:12px"></div>
     </div>
     <div class="modal-footer">
       <!-- "I make this trip every month" → a schedule, instead of logging it by hand
@@ -4737,21 +4773,27 @@ async function migrateInvoiceNumbers() {
   }
 }
 
-// ── Invoice form folds ───────────────────────────────────────────────────────
+// ── Form folds ───────────────────────────────────────────────────────────────
 // The invoice form used to show everything at once — status, payment, a bank
 // picker, three mileage boxes, customer expenses and notes — for what is usually
-// "pick a customer, type a line, save". The optional blocks are folds now, and two
-// rules keep that from HIDING anything: a collapsed header states its own contents
-// (updateInvFolds), and a section that already HAS content opens itself when the
-// invoice loads (openInvoiceModal). Nothing is removed from the DOM, so every field
-// keeps its value and saveInvoice reads exactly what it always did.
-function toggleInvFold(key, force) {
-  const el = document.getElementById('invfold-' + key); if (!el) return;
+// "pick a customer, type a line, save"; the Log Trip form did the same with two
+// optional pickers sitting between the date and the miles. The optional blocks are
+// folds now, and two rules keep that from HIDING anything: a collapsed header states
+// its own contents (updateInvFolds / updateTripFold / updateRecurTripFold), and a
+// section that already HAS content opens itself when the record loads. Nothing is
+// removed from the DOM, so every field keeps its value and the save paths read
+// exactly what they always did.
+//
+// ONE toggle behind all three folded forms. It flips a class and the aria state and
+// nothing else: the body is display:none, never removed.
+function toggleFold(id, force) {
+  const el = document.getElementById(id); if (!el) return;
   const open = force == null ? !el.classList.contains('open') : !!force;
   el.classList.toggle('open', open);
   const head = el.querySelector('.form-fold-head');
   if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
 }
+function toggleInvFold(key, force) { toggleFold('invfold-' + key, force); }
 
 // What each collapsed fold says about itself. Called from every path that can change
 // one of those figures — the payment fields, calcInvMiles, renderInvExpenses,
@@ -5973,6 +6015,10 @@ function openTripModal(trip) {
     document.getElementById('trip-expense').value = '';
   }
   calcTripMiles();
+  // A fold that HOLDS something opens itself, so editing a trip that is attached to a
+  // client or an invoice still shows it without a tap the user has no reason to make.
+  toggleFold('tripfold-links', !!(trip && (trip.customer_id || trip.expense_id || trip.invoice_number)));
+  updateTripFold();
   openModal('modal-trip');
 }
 function editTrip(id) { openTripModal(cache.trips.find(t=>t.id===id)); }
@@ -5993,12 +6039,43 @@ function onTripClientChange() {
     link.innerHTML = `<span style="color:var(--text3)">No saved miles for this client — enter manually or set it in their record.</span>`;
   } else { link.innerHTML = ''; }
   calcTripMiles();
+  updateTripFold();
 }
 
+// The running total, as TEXT — see the markup note: a readonly input on a mileage
+// form is the box the owner tries to type the mileage into.
 function calcTripMiles() {
   const miles = parseFloat(document.getElementById('trip-miles').value)||0;
   const count = parseInt(document.getElementById('trip-count').value)||1;
-  document.getElementById('trip-total').value = (miles*count).toFixed(2);
+  const total = miles*count;
+  document.getElementById('trip-total').innerHTML = total
+    ? `Logs <b style="color:var(--accent)">${total.toFixed(2)} mi</b>`
+    : `<span style="color:var(--text3)">Enter the miles above — that's what gets logged.</span>`;
+}
+
+// What the collapsed "Optional links" fold says about itself. Same rule as the
+// invoice folds: folding may hide controls, never facts — so every path that can
+// change one of the three attachments repaints this (the two selects and the invoice
+// field from their own handlers, openTripModal on load).
+function updateTripFold() {
+  const el = document.getElementById('tripfold-sum-links'); if (!el) return;
+  // Each half is skipped when its section is off — the field is hidden but keeps its
+  // VALUE, and a summary is the one place that value could still speak. With Invoices
+  // off, naming a customer above a form that has no customer field is the same leak
+  // paintRecurTripHint() guards against.
+  const inv0 = !isModuleHidden('invoicing'), exp0 = !isModuleHidden('expenses');
+  const parts = [];
+  const cSel = document.getElementById('trip-client');
+  if (inv0 && cSel && cSel.value && cSel.selectedIndex >= 0) parts.push(cSel.options[cSel.selectedIndex].text);
+  const eSel = document.getElementById('trip-expense');
+  if (exp0 && eSel && eSel.value) {
+    const e = (cache.expenses||[]).find(x => x.id === eSel.value);
+    parts.push(e ? (e.vendor || e.category || 'Expense') : 'Expense');
+  }
+  const invEl = document.getElementById('trip-invoice');
+  const num = invEl ? (invEl.value||'').trim() : '';
+  if (inv0 && num) parts.push('Inv #' + num);
+  el.textContent = parts.length ? parts.join(' · ') : 'None';
 }
 
 // ── Recurring trips ─────────────────────────────────────────────────────────
@@ -6035,6 +6112,14 @@ function paintRecurTripHint() {
     ? `Saved one-way for ${escHtml(c.name)}: <b>${one.toLocaleString(undefined,{maximumFractionDigits:2})} mi</b> · round trip <b>${(one*2).toLocaleString(undefined,{maximumFractionDigits:2})} mi</b>`
     : (c ? `No saved miles for ${escHtml(c.name)} — type them above.` : '');
 }
+// The recurring form's own "Optional links" summary — the same contract as
+// updateTripFold(), over the one attachment this form has.
+function updateRecurTripFold() {
+  const el = document.getElementById('tripfold-sum-recur-links'); if (!el) return;
+  const sel = document.getElementById('recur-trip-client');
+  const name = (sel && sel.value && sel.selectedIndex >= 0) ? sel.options[sel.selectedIndex].text : '';
+  el.textContent = name || 'None';
+}
 function onRecurTripClientChange() {
   const c = cache.customers.find(x=>x.id===document.getElementById('recur-trip-client').value);
   const mi = document.getElementById('recur-trip-miles');
@@ -6042,6 +6127,7 @@ function onRecurTripClientChange() {
   if (c && c.miles && !mi.value) mi.value = c.miles;
   paintRecurTripHint();
   calcRecurTripMiles();
+  updateRecurTripFold();
 }
 // "I make this trip every month." Builds a recurring template out of the trip on
 // screen instead of making the owner retype it in the Recurring editor.
@@ -8970,6 +9056,9 @@ function openRecurEdit(kind, rec) {
     document.getElementById('recur-trip-purpose').value = d.purpose||'';
     calcRecurTripMiles();
     paintRecurTripHint();
+    // Same rule as the Log Trip form: a fold that already holds a client opens itself.
+    toggleFold('tripfold-recur-links', !!d.customer_id);
+    updateRecurTripFold();
   } else if (kind==='invoice') {
     invF.style.display='';
     const sel = document.getElementById('recur-inv-customer');
