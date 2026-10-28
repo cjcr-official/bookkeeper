@@ -37,10 +37,17 @@ its network location; trust is established per request through explicit verifica
   server-side only and is never exposed to clients. Bank access tokens live in a table with
   Row Level Security enabled and no client-readable policy — only the Worker's service key can
   read them.
-- **Explicit, strong verification.** Authentication requires a password plus multi-factor
-  authentication (time-based one-time passcode) and a platform passkey / biometric (Face ID /
-  Touch ID via WebAuthn) is required before linking a bank. MFA must be enabled before a bank
-  can be connected.
+- **Explicit, strong verification — enforced on the server.** Bank data requires a password
+  **plus** a time-based one-time passcode (TOTP) entered **in the current session**. The Worker
+  reads the session's assurance level (`aal`) after verifying the token and refuses Plaid Link,
+  token exchange, transaction pulls and bank refreshes to any session below `aal2` — so a stolen
+  password alone, or a "remembered" device that skipped the code at sign-in, cannot reach bank
+  data. A user without a verified TOTP factor cannot use bank sync at all. Disconnecting a bank
+  is deliberately *not* gated: removing access is never harder than granting it.
+- **Device verification before Plaid Link.** In addition, the app requires a platform
+  passkey / biometric check (Face ID / fingerprint via WebAuthn, user verification required)
+  before Plaid Link opens. This is a device-level check performed in the browser; the
+  server-enforced factor is the TOTP requirement above.
 - **Assume breach.** Secrets are never shipped to the browser; all data is encrypted in transit
   and at rest; sessions expire and are re-verified.
 
@@ -54,7 +61,10 @@ application with no managed endpoints or corporate network.
   multi-factor authentication; phishing-resistant methods (passkeys/biometrics) are used where
   supported.
 - End users of the application authenticate via Supabase Auth over HTTPS, with optional
-  account-level MFA and an on-device passcode / Face ID app lock.
+  account-level MFA and an on-device passcode / Face ID app lock. **MFA is mandatory for bank
+  sync** and is enforced by the Worker (see §3).
+- Self-service registration is closed: accounts are created only through the Worker's
+  invite-gated `/signup`, and Supabase's public sign-up is disabled in the dashboard.
 
 ## 5. Authorization model (role-based access control)
 
@@ -79,14 +89,30 @@ application with no managed endpoints or corporate network.
 
 ## 7. Periodic access reviews
 
-The owner performs an access review **at least quarterly**, confirming for each system
-(Supabase, Cloudflare, GitHub, Plaid): (a) only authorized accounts have access, (b) MFA is
-enabled, and (c) no stale credentials or unused tokens remain. Linked bank connections are
-reviewed and any no-longer-needed connections are disconnected. Each review is recorded below.
+The owner performs an access review **at least quarterly** (next due within three months of
+the last row below), confirming for each system (Supabase, Cloudflare, GitHub, Plaid):
+(a) only authorized accounts have access, (b) MFA is enabled, and (c) no stale credentials or
+unused tokens remain. Linked bank connections are reviewed and any no-longer-needed connections
+are disconnected. Each review is recorded below.
+
+**Checklist for each review** (the Plaid-specific items are mapped in
+[`plaid-requirements.md`](plaid-requirements.md)):
+
+1. **Supabase** — dashboard members; Auth → Users lists only expected accounts; "Allow new users
+   to sign up" is **off**; every app user with a linked bank has a verified TOTP factor.
+2. **Cloudflare** — account members; Worker secrets list matches CLAUDE.md (drop unused ones,
+   e.g. `ANTHROPIC_API_KEY`); `SIGNUP_CODE` is **unset** unless an invite is in progress.
+3. **GitHub** — collaborators and deploy keys; CodeQL, Dependabot and secret-scanning alerts
+   open/closed within the Vulnerability Management SLAs.
+4. **Plaid** — team members and their MFA; API keys (rotate the secret if anyone else ever saw
+   it); production Items in the dashboard match the banks shown in the app — remove any orphan.
+5. **Code** — re-run the Plaid security pass in `plaid-requirements.md` §B against the current
+   Worker and `node test/plaid.test.mjs`.
 
 | Review date | Systems reviewed | Findings / actions |
 |---|---|---|
 | 2026-07-10 | Supabase, Cloudflare, GitHub, Plaid | Initial review — sole owner access confirmed; MFA enabled; no stale access. |
+| 2026-10-28 | Plaid integration (code + policies); Supabase, Cloudflare, GitHub, Plaid dashboards **pending owner confirmation** | Q4 review (was due 2026-10-10). **Code pass — 4 findings, all fixed in v517:** (1) 2FA before bank access was enforced only in the browser — the Worker now requires an `aal2` session for Link, exchange, transaction pulls and refresh; (2) disconnect and account deletion deleted the stored token even when Plaid's revoke failed, leaving an unrevokable live connection — the token is now kept and the user told to retry; (3) a failed token save after linking left a live Item at Plaid with no token — the Item is now revoked; (4) the privacy, retention and information-security policies said no Plaid transaction data is stored — corrected to list the reconciliation references that are. Tests: `test/plaid.test.mjs`. **Open items:** see `plaid-requirements.md` §C. **Dashboard checks (checklist items 1–4): to be confirmed by the owner — not yet verified this quarter.** |
 
 ## 8. Secrets management
 

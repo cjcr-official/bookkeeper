@@ -43,8 +43,16 @@ Security contact: **casejohnstoncomputerrepair@hotmail.com**.
 - **Confidential:** user-entered business records (invoices, customers, expenses, etc.).
 - **Public:** the privacy policy, marketing/app description.
 
-Bank transaction data retrieved from Plaid is **not stored** (pulled live for reconciliation);
-the only Plaid-derived item retained is the access token, held server-side only.
+Bank transaction data retrieved from Plaid is **not stored in bulk** — it is pulled live for each
+reconciliation and held in memory for the session only. Plaid-derived data that IS retained:
+
+- the **access token**, held server-side only (service-key-only table, never sent to the browser);
+- the linked bank's **name** and the user's nickname for it;
+- **reconciliation references** — the date, description and amount of the specific transactions
+  the user matched, split, corrected or set aside, plus each month's pass/fail result — stored in
+  the user's own profile row (RLS, encrypted at rest) so a finished reconciliation survives the
+  next pull. Deleted with the account. (Corrected 2026-10-28: earlier text said only the access
+  token was retained.)
 
 ## 5. Access control
 
@@ -105,3 +113,4 @@ The owner records the date of each review.
 | Review date | Reviewed by | Notes |
 |---|---|---|
 | 2026-07-10 | Case Johnston | Initial version. |
+| 2026-10-28 | Case Johnston (with Claude Code) | Plaid security pass. §4 corrected to list the Plaid-derived data actually retained. See `plaid-requirements.md`. |
