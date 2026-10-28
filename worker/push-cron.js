@@ -1,8 +1,10 @@
 // Bookkeeper Worker.
 //   /run?key=... — push reminder cron trigger (per-job + recurring, every minute)
 //   /plaid/* — bank reconciliation via Plaid: status (GET), link-token, exchange,
-//              transactions, disconnect (all POST, auth'd by Supabase token).
-//              The Plaid access_token is stored server-side only (plaid_items).
+//              transactions, disconnect (all POST, auth'd by Supabase token;
+//              everything that reaches bank data also needs an aal2 session —
+//              see plaidAuth). The Plaid access_token is stored server-side only
+//              (plaid_items) and is forgotten only once Plaid confirms the revoke.
 //   /signup, /signup-status — the invite-only sign-up gate. This app is private;
 //              the client no longer calls Supabase's public signup endpoint at
 //              all. See the SIGN-UP GATE section below.
@@ -104,6 +106,39 @@ async function authUser(req, env) {
   if (!r.ok) return null;
   const u = await r.json();
   return u && u.id ? u : null;
+}
+
+// Claims of a bearer token GoTrue has ALREADY accepted (authUser above). Only read
+// after that check passes — decoding alone proves nothing, the signature check is
+// GoTrue's. Returns {} for anything that isn't a readable JWT.
+function jwtClaims(req) {
+  try {
+    const auth = req.headers.get('Authorization') || '';
+    const part = (auth.startsWith('Bearer ') ? auth.slice(7) : '').split('.')[1] || '';
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)));
+  } catch (e) { return {}; }
+}
+
+// Bank data needs a session that passed 2FA. The client asks for a TOTP factor
+// before it opens Plaid Link, but a check in the browser is a suggestion: the anon
+// key is public, so a stolen PASSWORD alone mints a perfectly valid aal1 token that
+// can call these endpoints straight from curl. And the "remember this device"
+// option deliberately leaves sessions at aal1. So the Worker decides: a session
+// must be aal2 — i.e. the user typed an authenticator code in THIS session — to
+// open Link, exchange a token, pull transactions or force a bank refresh.
+// `mfa_required` tells the client what to do about it: 'verify' (step up with a
+// code) or 'enroll' (2FA isn't on, so bank sync can't be either). /plaid/status
+// (bank names only) and /plaid/disconnect (REMOVING access must never be harder
+// than granting it) stay at plain sign-in.
+async function plaidAuth(req, env) {
+  const user = await authUser(req, env);
+  if (!user) return { res: jsonResp({ error: 'Session expired — sign in again.' }, 401) };
+  if (jwtClaims(req).aal === 'aal2') return { user };
+  const hasFactor = (user.factors || []).some(f => f && f.status === 'verified');
+  return hasFactor
+    ? { res: jsonResp({ error: 'Enter your two-factor code to use bank sync.', mfa_required: 'verify' }, 403) }
+    : { res: jsonResp({ error: 'Turn on two-factor authentication (Settings › Security) to use bank sync.', mfa_required: 'enroll' }, 403) };
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -212,12 +247,28 @@ async function plaidApi(env, path, body) {
 // can link several banks, so there may be MANY rows per user; the primary key is
 // item_id (unique per Plaid item), so upserting on item_id adds a new bank and a
 // re-link of the same bank just refreshes its row.
+// Throws when the write doesn't land: the caller has just been handed a LIVE bank
+// connection, and a token we failed to store is one we can never revoke.
 async function plaidStore(env, userId, row) {
-  await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?on_conflict=item_id`, {
+  const r = await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?on_conflict=item_id`, {
     method: 'POST',
     headers: { apikey: env.SUPABASE_SERVICE_KEY, Authorization: `Bearer ${env.SUPABASE_SERVICE_KEY}`, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify({ user_id: userId, ...row, updated_at: new Date().toISOString() })
   });
+  if (!r.ok) throw new Error(`plaid_items store ${r.status} ${await r.text().catch(() => '')}`);
+}
+// Revoke an item at Plaid. True when Plaid confirms it — or says the item/token is
+// already gone, which is the same end state. False means the bank connection may
+// still be LIVE, so the caller must keep the token: deleting our copy of a token
+// Plaid still honours turns "disconnected" into "connected and unrevokable".
+const PLAID_GONE = ['ITEM_NOT_FOUND', 'INVALID_ACCESS_TOKEN'];
+async function plaidRemoveItem(env, accessToken) {
+  try { await plaidApi(env, '/item/remove', { access_token: accessToken }); return true; }
+  catch (e) {
+    if (e.plaid && PLAID_GONE.includes(e.plaid.error_code)) return true;
+    console.error('plaid item/remove', e.plaid || String(e && e.message || e));
+    return false;
+  }
 }
 async function plaidLoadAll(env, userId) {
   const rows = await supaGet(env, `plaid_items?user_id=eq.${userId}&select=access_token,item_id,institution&order=updated_at.asc`);
@@ -248,8 +299,8 @@ async function plaidStatus(req, env) {
 // instead of adding a new one.
 async function plaidLinkToken(req, env) {
   if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured (missing PLAID_CLIENT_ID / PLAID_SECRET).' }, 500);
-  const user = await authUser(req, env);
-  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  const { user, res: denied } = await plaidAuth(req, env);
+  if (denied) return denied;
   let b; try { b = await req.json(); } catch { b = {}; }
   try {
     const cfg = { user: { client_user_id: user.id }, client_name: 'Bookkeeper', country_codes: ['US'], language: 'en' };
@@ -276,8 +327,8 @@ async function plaidLinkToken(req, env) {
 // login) without disturbing the user's other connected banks.
 async function plaidExchange(req, env) {
   if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured.' }, 500);
-  const user = await authUser(req, env);
-  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  const { user, res: denied } = await plaidAuth(req, env);
+  if (denied) return denied;
   let b; try { b = await req.json(); } catch { return jsonResp({ error: 'Bad request.' }, 400); }
   if (!b.public_token) return jsonResp({ error: 'Missing public_token.' }, 400);
   try {
@@ -291,7 +342,14 @@ async function plaidExchange(req, env) {
         institution = inst.institution && inst.institution.name;
       }
     } catch (e) { /* institution name is best-effort */ }
-    await plaidStore(env, user.id, { access_token: ex.access_token, item_id: ex.item_id, institution });
+    try { await plaidStore(env, user.id, { access_token: ex.access_token, item_id: ex.item_id, institution }); }
+    catch (e) {
+      // Couldn't keep the token → don't leave the bank linked at Plaid with no way
+      // for anyone to ever revoke it. Undo the link and say so.
+      console.error('plaid exchange store', String(e && e.message || e));
+      await plaidRemoveItem(env, ex.access_token);
+      return jsonResp({ error: 'Couldn’t save the bank connection — nothing was linked. Try again.' }, 502);
+    }
     await plaidRefreshMirror(env, user.id);
     return jsonResp({ ok: true, institution });
   } catch (e) { console.error('plaid exchange', e.plaid || e); return jsonResp({ error: e.message || 'Plaid error' }, 502); }
@@ -328,8 +386,8 @@ async function plaidPullItemRange(env, item, start, end) {
 // error status so the client can react (re-auth, retry).
 async function plaidTransactions(req, env) {
   if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured.' }, 500);
-  const user = await authUser(req, env);
-  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  const { user, res: denied } = await plaidAuth(req, env);
+  if (denied) return denied;
   const allItems = (await plaidLoadAll(env, user.id).catch(() => [])).filter(i => i.access_token);
   if (!allItems.length) return jsonResp({ error: 'No bank connected yet.' }, 400);
   let b; try { b = await req.json(); } catch { b = {}; }
@@ -371,8 +429,8 @@ async function plaidTransactions(req, env) {
 // Plaid Link instead. With an `item_id`, repair just that bank; without, all of them.
 async function plaidRefresh(req, env) {
   if (!plaidConfigured(env)) return jsonResp({ error: 'Bank sync isn’t configured.' }, 500);
-  const user = await authUser(req, env);
-  if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
+  const { user, res: denied } = await plaidAuth(req, env);
+  if (denied) return denied;
   let b; try { b = await req.json(); } catch { b = {}; }
   const allItems = (await plaidLoadAll(env, user.id).catch(() => [])).filter(i => i.access_token);
   const items = (b && b.item_id) ? allItems.filter(i => i.item_id === b.item_id) : allItems;
@@ -409,9 +467,15 @@ async function plaidDisconnect(req, env) {
   let b; try { b = await req.json(); } catch { b = {}; }
   const items = await plaidLoadAll(env, user.id).catch(() => []);
   const targets = (b && b.item_id) ? items.filter(i => i.item_id === b.item_id) : items;
+  const stillLinked = [];
   for (const item of targets) {
-    if (item.access_token && plaidConfigured(env)) {
-      try { await plaidApi(env, '/item/remove', { access_token: item.access_token }); } catch (e) { console.error('plaid item/remove', e.plaid || e); }
+    // Only forget the token once Plaid has let go of the item. If the revoke fails
+    // the bank is still connected, and keeping the row is what lets the user retry.
+    // (With Plaid unconfigured there is nothing that COULD revoke it; dropping the
+    // row is the most that can be done, as before.)
+    if (item.access_token && plaidConfigured(env) && !(await plaidRemoveItem(env, item.access_token))) {
+      stillLinked.push(item.institution || 'your bank');
+      continue;
     }
     try {
       // Scope the DELETE to the caller as well as the item. `targets` is already
@@ -425,6 +489,7 @@ async function plaidDisconnect(req, env) {
     } catch (e) { console.error('plaid_items delete', e); }
   }
   await plaidRefreshMirror(env, user.id);
+  if (stillLinked.length) return jsonResp({ error: `Couldn’t disconnect ${stillLinked.join(', ')} at Plaid — it’s still linked. Try again in a moment.` }, 502);
   return jsonResp({ ok: true });
 }
 
@@ -571,16 +636,26 @@ async function deleteAccount(req, env) {
   const user = await authUser(req, env);
   if (!user) return jsonResp({ error: 'Session expired — sign in again.' }, 401);
   const uid = user.id;
-  // 1. Unlink banks at Plaid, then drop the stored tokens.
-  try {
-    const items = await plaidLoadAll(env, uid).catch(() => []);
-    for (const item of items) {
-      if (item.access_token && plaidConfigured(env)) {
-        try { await plaidApi(env, '/item/remove', { access_token: item.access_token }); } catch (e) { console.error('del plaid remove', e.plaid || e); }
-      }
+  // 1. Unlink banks at Plaid, then drop the stored tokens. This step goes FIRST and
+  // can stop the whole deletion: if Plaid won't confirm a revoke, the bank is still
+  // connected, and deleting the token (and the login) now would leave a live bank
+  // connection that nobody — not the user, not us — could ever revoke. Nothing has
+  // been deleted yet at that point, so "try again" is an honest answer.
+  let items;
+  try { items = await plaidLoadAll(env, uid); }
+  catch (e) {
+    // No plaid_items table at all (bank sync never set up) means no tokens — not a
+    // reason to refuse the deletion. Any other failure is: we can't see what's linked.
+    if (/supabase 404|PGRST205|42P01/.test(String(e && e.message))) items = [];
+    else { console.error('del plaid load', e); return jsonResp({ error: 'Couldn’t check your bank connections — nothing was deleted. Try again.' }, 502); }
+  }
+  for (const item of items) {
+    if (item.access_token && plaidConfigured(env) && !(await plaidRemoveItem(env, item.access_token))) {
+      return jsonResp({ error: `Couldn’t disconnect ${item.institution || 'your bank'} at Plaid — nothing was deleted. Try again in a moment.` }, 502);
     }
-    await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?user_id=eq.${uid}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') });
-  } catch (e) { console.error('del plaid', e); }
+  }
+  try { await fetch(`${env.SUPABASE_URL}/rest/v1/plaid_items?user_id=eq.${uid}`, { method: 'DELETE', headers: svcHeaders(env, 'return=minimal') }); }
+  catch (e) { console.error('del plaid', e); }
   // 2. Storage files (best-effort).
   for (const bucket of ['receipts', 'statements']) {
     try { await deleteUserStorage(env, bucket, uid); } catch (e) { console.error('del storage ' + bucket, e); }

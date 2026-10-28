@@ -44,7 +44,7 @@
     <h1>Data Retention and Disposal Policy</h1>
     <div class="meta">
       Case Johnston Computer Repair, LLC — “Bookkeeper” application<br>
-      Effective July 10, 2026 · Reviewed annually
+      Effective July 10, 2026 · Updated October 28, 2026 · Reviewed annually
     </div>
   </header>
 
@@ -76,12 +76,17 @@
     <tr>
       <td>Bank account access tokens (from Plaid)</td>
       <td>Server-side only (Worker service key; never exposed to the browser)</td>
-      <td>Held only while the bank is linked; deleted immediately on disconnect or account deletion.</td>
+      <td>Held only while the bank is linked. On disconnect or account deletion the connection is first revoked at Plaid; the stored token is deleted once Plaid confirms the revoke (if it cannot be confirmed, nothing is deleted and the user is asked to retry, so a live connection is never left without a way to revoke it).</td>
     </tr>
     <tr>
       <td>Bank transaction data (from the Plaid API)</td>
-      <td>Not stored</td>
-      <td>Retrieved live for on-screen reconciliation and not retained after the session.</td>
+      <td>Not stored in bulk; held in memory only for the session</td>
+      <td>Retrieved live for on-screen reconciliation and discarded when the app is closed.</td>
+    </tr>
+    <tr>
+      <td>Reconciliation references derived from Plaid data (the date, description and amount of the specific transactions the user matched, split, corrected or set aside; per-month pass/fail results; the linked bank's name and the user's nickname for it)</td>
+      <td>Supabase, in the user's own profile row (encrypted at rest, row-level security)</td>
+      <td>Kept while the account is active so completed reconciliations survive the next pull. Kept after a bank is disconnected so the history can be restored if it is reconnected; deleted on account closure or request.</td>
     </tr>
   </table>
   <p>We retain data only for as long as it is needed to provide the service to the user, or as

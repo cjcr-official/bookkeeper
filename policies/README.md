@@ -8,6 +8,8 @@ application). These support the Plaid security-diligence remediation attestation
 - [Information Security Policy (ISP)](information-security-policy.md)
 - [Access Control Policy (incl. Zero Trust)](access-control-policy.md)
 - [Vulnerability Management Policy](vulnerability-management-policy.md)
+- [Plaid requirements map & security pass](plaid-requirements.md) — what Plaid asks for, where
+  each answer lives, the code checks behind them, and the open gaps. Re-run every quarter.
 
 The Privacy Policy and Data Retention & Disposal Policy live at the project root
 (`privacy.html`, `data-retention-policy.html`) because they are published to end users.
@@ -24,5 +26,10 @@ The Privacy Policy and Data Retention & Disposal Policy live at the project root
 | Performs vulnerability scanning | Vulnerability Management Policy §3 (GitHub CodeQL/Dependabot/Secret Protection) |
 | Patches vulnerabilities within a defined SLA | Vulnerability Management Policy §4 |
 | Information Security Policy (ISP) | Information Security Policy |
+| MFA before Plaid Link is surfaced / client 2FA | Access Control Policy §3 (server-enforced since v517) |
+| Data deletion & retention policy | `data-retention-policy.html` (corrected 2026-10-28) |
+
+The full Plaid security-questionnaire mapping — including the questions these documents do
+**not** cover yet — is in [plaid-requirements.md](plaid-requirements.md).
 
 Reviewed at least annually. Owner: Case Johnston — casejohnstoncomputerrepair@hotmail.com

@@ -1847,7 +1847,7 @@ tr.bulk-sel{background:var(--accent-bg)}
               <span class="theme-switch" id="mfa-switch"><span class="theme-switch-knob"></span></span>
             </button>
             <div style="font-size:11px;color:var(--text3);margin-top:.75rem;line-height:1.5">Unlike App Lock (this device only), 2FA is tied to your account and applies on every device. You'll need an authenticator app (Google Authenticator, Authy, 1Password, iOS Passwords…).</div>
-            <div id="mfa-trust-row" style="display:none;margin-top:.6rem"><button class="btn btn-sm" onclick="forgetTrustedDeviceUI()"><i class="ti ti-shield-x"></i> Forget this trusted device</button><span style="font-size:11px;color:var(--text3);margin-left:.5rem">This device skips the code until it expires — tap to require it again.</span></div>
+            <div id="mfa-trust-row" style="display:none;margin-top:.6rem"><button class="btn btn-sm" onclick="forgetTrustedDeviceUI()"><i class="ti ti-shield-x"></i> Forget this trusted device</button><span style="font-size:11px;color:var(--text3);margin-left:.5rem">This device skips the code at sign-in until it expires (bank sync still asks once per session) — tap to require it again.</span></div>
             <div style="border-top:1px solid var(--border);margin:1rem 0 .25rem"></div>
             <!-- Who can get IN. The two rows below are different doors and the
                  second is the one that actually matters — see renderSignupStatus. -->
@@ -9646,13 +9646,21 @@ function loadPlaidLink() {
   return _plaidReady;
 }
 // Authenticated call to a Worker /plaid/* endpoint; throws with the server message.
-async function plaidFetch(path, opts = {}) {
+// The Worker refuses bank data to a session that hasn't passed 2FA in THIS session
+// (aal2) — a "remembered" device opens the app at aal1 — and answers 403
+// {mfa_required:'verify'}. That's the cue to ask for the authenticator code once and
+// retry; the raised session lasts until sign-out, so it's one prompt, not one per
+// call. The browser can't skip this: the Worker is the one saying no.
+async function plaidFetch(path, opts = {}, steppedUp = false) {
   const { data: sess } = await sb.auth.getSession();
   const token = sess && sess.session && sess.session.access_token;
   if (!token) throw new Error('Please sign in again.');
   const res = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...(opts.headers || {}) } });
   let data = null, parsed = true;
   try { data = await res.json(); } catch (e) { parsed = false; data = {}; }
+  if (res.status === 403 && data && data.mfa_required === 'verify' && !steppedUp && (await plaidStepUp())) {
+    return plaidFetch(path, opts, true);
+  }
   if (!res.ok || data.error) { const e = new Error(data.error || ('Failed (' + res.status + ')')); e.data = data; throw e; }
   // A 200 that ISN'T JSON is not a success. wrangler.toml sets
   // not_found_handling = "single-page-application", so any /plaid/* request the
@@ -9666,9 +9674,39 @@ async function plaidFetch(path, opts = {}) {
   if (!parsed) throw new Error('Unexpected reply from the server (not JSON) — try again in a moment.');
   return data;
 }
+// Raise this session to aal2 with the authenticator code. Concurrent callers share
+// one prompt (Statements fires several pulls at once); a Cancel holds off re-asking
+// for a minute so the page's background checks don't pop the sheet straight back up.
+// Resolves true once verified, false when cancelled / no factor / three bad codes.
+let _plaidStepUp = null, _plaidStepUpDeclined = 0;
+function plaidStepUp() {
+  if (_plaidStepUp) return _plaidStepUp;
+  if (Date.now() - _plaidStepUpDeclined < 60000) return Promise.resolve(false);
+  _plaidStepUp = (async () => {
+    const factor = await mfaVerifiedFactor();
+    if (!factor) return false;
+    for (let tries = 0; tries < 3; tries++) {
+      const code = await askText({
+        title: 'Confirm it’s you',
+        message: tries ? 'That code didn’t work — enter the current one.' : 'Bank sync asks for your authenticator code once per session.',
+        label: 'Authentication code', inputMode: 'numeric', placeholder: '000000', okLabel: 'Verify'
+      });
+      if (code == null) { _plaidStepUpDeclined = Date.now(); return false; }
+      const c = String(code).replace(/\s+/g, '');
+      if (!/^\d{6}$/.test(c)) continue;
+      try {
+        const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: factor.id, code: c });
+        if (!error) return true;
+      } catch (_) {}
+    }
+    return false;
+  })().finally(() => { _plaidStepUp = null; });
+  return _plaidStepUp;
+}
 // Turn a Plaid/network error into plain, actionable guidance — never a raw API
 // code. The Worker flags re-auth with e.data.reconnect; otherwise match the message.
 function plaidErrMsg(e) {
+  if (e && e.data && e.data.mfa_required) return e.message;   // the Worker's own words say what to do
   if (e && e.data && e.data.reconnect) return 'Your bank needs you to sign in again. Tap Reconnect on the bank above, then pull this month again.';
   const m = ((e && e.message) || '').toLowerCase();
   if (/rate|too many|429/.test(m)) return 'The bank is limiting requests right now. Wait a minute, then try again.';
@@ -10097,7 +10135,12 @@ async function plaidDisconnect(itemId) {
     _plaidCache = {};   // history window changed — drop any cached months
     showToast('Bank disconnected');
     renderPlaidBlock();
-  } catch (e) { showToast(e.message || 'Failed to disconnect', 'error'); }
+  } catch (e) {
+    // The Worker keeps a bank it couldn't revoke at Plaid (and may have removed
+    // others in the same call), so redraw from the truth rather than the old list.
+    showToast(e.message || 'Failed to disconnect', 'error');
+    renderPlaidBlock();
+  }
 }
 // Repair a bank link. Two things can be "broken": the data feed has gone stale
 // (Plaid stopped re-syncing — e.g. a transaction that settled still shows as
@@ -10122,7 +10165,12 @@ async function plaidReconnect(itemId) {
       renderPlaidBlock();
       return;
     }
-  } catch (e) { /* couldn't refresh — fall through to a full re-auth */ }
+  } catch (e) {
+    // Not a broken link — the session just hasn't passed 2FA. Re-authing the bank
+    // wouldn't help (the Link token is behind the same check), so stop and say so.
+    if (e && e.data && e.data.mfa_required) { showToast(e.message, 'error'); return; }
+    /* otherwise couldn't refresh — fall through to a full re-auth */
+  }
   // Stage 2 — the bank wants a fresh sign-in: open update-mode Plaid Link.
   if (!(await requirePlaidMfa())) return;
   if (!(await requirePlaidPasskey())) return;

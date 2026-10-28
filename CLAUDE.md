@@ -7,7 +7,7 @@ business (Case Johnston Computer Repair, LLC). It runs as an installable **iPhon
 — think "lightweight QuickBooks": invoices, customers, expenses, accounts, mileage,
 payments, recurring items, receipts, reports, jobs/calendar, and push reminders.
 
-Current version: **516** (see `version.json` — that file is the source of truth).
+Current version: **517** (see `version.json` — that file is the source of truth).
 
 ---
 
@@ -430,6 +430,31 @@ this first (silent refresh) and only opens Plaid Link when `needs_reauth` — so
 "Reconnect" fixes both stale-data and login-required breakage without a
 disconnect/re-add.
 
+**Bank data needs a 2FA'd session, enforced by the WORKER (v517).** The client's
+`requirePlaidMfa()` / `requirePlaidPasskey()` gates run in the browser, and the anon key is
+public — so a stolen password minted an `aal1` token that every `/plaid/*` route accepted
+from curl, and "remember this device" leaves real sessions at `aal1` too. `plaidAuth()`
+(GoTrue-verified user + the token's `aal` claim, read only AFTER GoTrue accepted it) now
+guards `link-token`, `exchange`, `transactions` and `refresh`, answering 403
+`{mfa_required:'verify'|'enroll'}`. `plaidFetch` treats `'verify'` as a cue to step up:
+`plaidStepUp()` asks for the authenticator code once (concurrent calls share one prompt; a
+Cancel holds off re-asking for 60s so `refreshLiveAudit` can't pop it straight back up),
+`challengeAndVerify` raises the session to `aal2` for its lifetime, and the call retries once.
+`/plaid/status` and `/plaid/disconnect` stay at plain sign-in — removing access must never be
+harder than granting it. **Any new `/plaid/*` route that touches bank data uses `plaidAuth`,
+and any new client call goes through `plaidFetch`** (`test/plaid.test.mjs` fails on a bare
+`fetch('/plaid/…')`).
+
+**A token is forgotten only after Plaid lets go of the item (v517).** Disconnect and account
+deletion used to delete the `plaid_items` row even when `/item/remove` failed — "disconnected"
+in the app, still live at Plaid, and with the only token gone, unrevokable by anyone.
+`plaidRemoveItem()` returns true on success or `ITEM_NOT_FOUND`/`INVALID_ACCESS_TOKEN`
+(already gone); otherwise disconnect keeps the row and returns 502, and `deleteAccount`
+stops BEFORE deleting anything (Plaid is step 1, so "nothing was deleted, try again" is
+true). `plaidStore` throws on a failed write and `plaidExchange` then revokes the brand-new
+item instead of reporting success. The Plaid requirements map + quarterly code checklist live
+in `policies/plaid-requirements.md`.
+
 **Per-bank nicknames (v460+):** Plaid only gives the institution name, so two
 accounts at the same bank (or a generic "Your bank") are indistinguishable.
 `profiles.bank_labels` (jsonb `{item_id: nickname}`) lets the user name each account;
@@ -625,7 +650,7 @@ stray `}` inside a call passed cleanly). A broken Worker deploys and every endpo
 node --input-type=module --check < worker/push-cron.js
 ```
 
-Sixteen test suites run the SHIPPED code (they extract functions out of `index.html` by
+Seventeen test suites run the SHIPPED code (they extract functions out of `index.html` by
 brace-matching and eval them with stubbed globals — no copy-paste, no build step):
 
 ```bash
@@ -646,6 +671,7 @@ node test/budget.test.mjs      # paydays, bill months, and what a paid bill actu
 node test/time.test.mjs        # Time Clock: a punch belongs to its LOCAL day
 node test/a11y.test.mjs        # tappable divs stay operable through every redraw
 node test/signup.test.mjs      # nobody registers without an invite — and it fails CLOSED
+node test/plaid.test.mjs       # bank data needs aal2; a token is never dropped before Plaid revokes it
 ```
 
 `retention.test.mjs` and `reminders.test.mjs` are the two that read the **Worker**. `deleteAccount()`
